@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { ApiConfiguration, ChannelType } from '@/types/database';
+import { ChannelType } from '@/types/database';
+import { Tables } from '@/integrations/supabase/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,10 +22,12 @@ import {
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 
+type ApiConfigRow = Tables<'api_configurations'>;
+
 interface ApiKeyCardProps {
   channel: ChannelType;
-  config: ApiConfiguration | null;
-  onSave: (data: Partial<ApiConfiguration>) => Promise<void>;
+  config: ApiConfigRow | null;
+  onSave: (data: Record<string, unknown>) => Promise<void>;
   onTest?: () => Promise<boolean>;
 }
 
