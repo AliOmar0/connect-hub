@@ -4,64 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Phone, MessageSquare, MoreVertical, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDistanceToNow, intervalToDuration, formatDuration } from "date-fns";
+import { Session, Customer, Employee } from "@/types/database";
+import { useNavigate } from "react-router-dom";
 
-interface Session {
-  id: string;
-  customerName: string;
-  type: "call" | "message";
-  channel: "whatsapp" | "messenger" | "phone";
-  agent: string;
-  duration: string;
-  status: "active" | "on-hold" | "transferring";
+interface ActiveSessionsPanelProps {
+  sessions?: Array<Session & { customer?: Customer; employee?: Employee & { profile?: any } }>;
 }
-
-const sessions: Session[] = [
-  {
-    id: "1",
-    customerName: "Fatima Hassan",
-    type: "call",
-    channel: "phone",
-    agent: "Mohammed Ali",
-    duration: "12:34",
-    status: "active",
-  },
-  {
-    id: "2",
-    customerName: "Ahmad Khalil",
-    type: "message",
-    channel: "whatsapp",
-    agent: "Sara Ibrahim",
-    duration: "05:22",
-    status: "active",
-  },
-  {
-    id: "3",
-    customerName: "Noor Saleh",
-    type: "message",
-    channel: "messenger",
-    agent: "Omar Yousef",
-    duration: "08:15",
-    status: "on-hold",
-  },
-  {
-    id: "4",
-    customerName: "Layla Mahmoud",
-    type: "call",
-    channel: "phone",
-    agent: "Rania Ahmed",
-    duration: "03:47",
-    status: "active",
-  },
-  {
-    id: "5",
-    customerName: "Karim Nasser",
-    type: "message",
-    channel: "whatsapp",
-    agent: "Mohammed Ali",
-    duration: "15:02",
-    status: "transferring",
-  },
-];
 
 const statusConfig = {
   active: {
@@ -78,89 +27,125 @@ const statusConfig = {
   },
 };
 
-const channelIcons = {
+const channelIcons: Record<string, string> = {
   whatsapp: "🟢",
   messenger: "🔵",
-  phone: "📞",
+  voice: "📞",
+  sms: "💬",
+  email: "📧",
 };
 
-export default function ActiveSessionsPanel() {
+function formatDurationFromSeconds(seconds: number | null): string {
+  if (!seconds) return "0:00";
+  const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
+  return formatDuration(duration, { format: ["minutes", "seconds"] })
+    .replace(/ minutes?/, "m")
+    .replace(/ seconds?/, "s") || "0:00";
+}
+
+export default function ActiveSessionsPanel({ sessions = [] }: ActiveSessionsPanelProps) {
+  const navigate = useNavigate();
+  const displaySessions = sessions.slice(0, 5);
+
   return (
     <Card className="shadow-card">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <CardTitle className="font-display text-lg font-semibold flex items-center gap-2">
-            Active Sessions
+            Active AI Sessions
             <Badge variant="secondary" className="bg-gold/10 text-gold border border-gold/20">
               {sessions.length} live
             </Badge>
           </CardTitle>
-          <Button variant="ghost" size="sm" className="text-muted-foreground">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="text-muted-foreground"
+            onClick={() => navigate("/sessions")}
+          >
             View All
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {sessions.map((session, index) => (
-          <div
-            key={session.id}
-            className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors group fade-in-up"
-            style={{ animationDelay: `${index * 100}ms` }}
-          >
-            {/* Customer Avatar */}
-            <Avatar className="h-10 w-10 border-2 border-border">
-              <AvatarFallback className="bg-navy/10 text-navy font-semibold text-sm">
-                {session.customerName
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")}
-              </AvatarFallback>
-            </Avatar>
-
-            {/* Session Info */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-sm truncate">
-                  {session.customerName}
-                </span>
-                <span className="text-sm">{channelIcons[session.channel]}</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Agent: {session.agent}</span>
-              </div>
-            </div>
-
-            {/* Duration & Type */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1 text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-                <Clock className="h-3 w-3" />
-                {session.duration}
-              </div>
-              {session.type === "call" ? (
-                <Phone className="h-4 w-4 text-gold" />
-              ) : (
-                <MessageSquare className="h-4 w-4 text-navy" />
-              )}
-            </div>
-
-            {/* Status */}
-            <Badge
-              variant="outline"
-              className={cn("text-[10px] font-medium", statusConfig[session.status].className)}
-            >
-              {statusConfig[session.status].label}
-            </Badge>
-
-            {/* Actions */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <MoreVertical className="h-4 w-4" />
-            </Button>
+        {displaySessions.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No active sessions
           </div>
-        ))}
+        ) : (
+          displaySessions.map((session, index) => {
+            const customerName = session.customer?.name || "Unknown";
+            const agentName = session.employee?.profile
+              ? `${session.employee.profile.first_name || ""} ${session.employee.profile.last_name || ""}`.trim()
+              : "Unassigned";
+            const duration = session.duration_seconds
+              ? formatDurationFromSeconds(session.duration_seconds)
+              : formatDistanceToNow(new Date(session.started_at), { addSuffix: false });
+            const isCall = session.channel === "voice";
+
+            return (
+              <div
+                key={session.id}
+                className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors group fade-in-up"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                {/* Customer Avatar */}
+                <Avatar className="h-10 w-10 border-2 border-border">
+                  <AvatarFallback className="bg-navy/10 text-navy font-semibold text-sm">
+                    {customerName
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")
+                      .toUpperCase() || "?"}
+                  </AvatarFallback>
+                </Avatar>
+
+                {/* Session Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm truncate">
+                      {customerName}
+                    </span>
+                    <span className="text-sm">{channelIcons[session.channel] || "💬"}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Agent: {agentName}</span>
+                  </div>
+                </div>
+
+                {/* Duration & Type */}
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
+                    <Clock className="h-3 w-3" />
+                    {duration}
+                  </div>
+                  {isCall ? (
+                    <Phone className="h-4 w-4 text-gold" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4 text-navy" />
+                  )}
+                </div>
+
+                {/* Status */}
+                <Badge
+                  variant="outline"
+                  className={cn("text-[10px] font-medium", statusConfig[session.status as keyof typeof statusConfig]?.className || statusConfig.active.className)}
+                >
+                  {statusConfig[session.status as keyof typeof statusConfig]?.label || "Active"}
+                </Badge>
+
+                {/* Actions */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </Button>
+              </div>
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );

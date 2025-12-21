@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   MessageSquare,
@@ -16,6 +17,8 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/useAuth";
+import { supabase } from "@/integrations/supabase/client";
 import pibLogo from "@/assets/pib-logo.png";
 
 interface NavItemProps {
@@ -77,20 +80,124 @@ const NavItem = ({ to, icon: Icon, label, collapsed, badge }: NavItemProps) => {
 
 export default function DashboardSidebar() {
   const [collapsed, setCollapsed] = useState(false);
+  const { user, userRole, signOut } = useAuth();
+  const navigate = useNavigate();
 
-  const mainNavItems = [
-    { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/messages", icon: MessageSquare, label: "Messages", badge: 12 },
-    { to: "/calls", icon: Phone, label: "Calls", badge: 3 },
-    { to: "/sessions", icon: Headphones, label: "Active Sessions", badge: 5 },
-    { to: "/employees", icon: Users, label: "Employees" },
-    { to: "/analytics", icon: BarChart3, label: "Analytics" },
+  const { data: profile } = useQuery({
+    queryKey: ["user-profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch real notification count
+  const { data: unreadNotifications } = useQuery({
+    queryKey: ["unread-notifications-count", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return 0;
+      const { count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_read", false);
+      return count || 0;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch real counts for messages, calls, sessions
+  const { data: messageCount } = useQuery({
+    queryKey: ["unread-messages-count", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return 0;
+      // Count unread messages in active sessions
+      const { count } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .is("read_at", null)
+        .eq("direction", "inbound");
+      return count || 0;
+    },
+    enabled: !!user?.id,
+  });
+
+  const { data: activeSessionsCount } = useQuery({
+    queryKey: ["active-sessions-count"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("sessions")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "active");
+      return count || 0;
+    },
+  });
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/auth");
+  };
+
+  const getUserName = () => {
+    if (profile?.first_name || profile?.last_name) {
+      return `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
+    }
+    return user?.email?.split("@")[0] || "User";
+  };
+
+  const getUserInitials = () => {
+    if (profile?.first_name && profile?.last_name) {
+      return `${profile.first_name[0]}${profile.last_name[0]}`.toUpperCase();
+    }
+    if (profile?.first_name) {
+      return profile.first_name[0].toUpperCase();
+    }
+    if (user?.email) {
+      return user.email[0].toUpperCase();
+    }
+    return "U";
+  };
+
+  const getRoleLabel = () => {
+    const roleLabels: Record<string, string> = {
+      admin: "Administrator",
+      supervisor: "Supervisor",
+      manager: "Manager",
+      agent: "Agent",
+      viewer: "Viewer",
+    };
+    return roleLabels[userRole || "viewer"] || "User";
+  };
+
+  // Define all navigation items with real badge counts
+  const allMainNavItems = [
+    { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "supervisor", "manager", "viewer"] },
+    { to: "/messages", icon: MessageSquare, label: "Messages", badge: messageCount || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
+    { to: "/calls", icon: Phone, label: "Calls", roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
+    { to: "/sessions", icon: Headphones, label: "Active AI Sessions", badge: activeSessionsCount || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
+    { to: "/employees", icon: Users, label: "Employees", roles: ["admin", "supervisor", "manager"] },
+    { to: "/analytics", icon: BarChart3, label: "Analytics", roles: ["admin", "supervisor", "manager"] },
   ];
 
-  const secondaryNavItems = [
-    { to: "/notifications", icon: Bell, label: "Notifications", badge: 8 },
-    { to: "/settings", icon: Settings, label: "Settings" },
+  const allSecondaryNavItems = [
+    { to: "/notifications", icon: Bell, label: "Notifications", badge: unreadNotifications || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
+    { to: "/settings", icon: Settings, label: "Settings", roles: ["admin", "supervisor", "manager"] },
   ];
+
+  // Filter navigation items based on user role
+  const mainNavItems = allMainNavItems.filter(
+    (item) => !item.roles || item.roles.includes(userRole || "viewer")
+  );
+
+  const secondaryNavItems = allSecondaryNavItems.filter(
+    (item) => !item.roles || item.roles.includes(userRole || "viewer")
+  );
 
   return (
     <aside
@@ -142,30 +249,38 @@ export default function DashboardSidebar() {
         {!collapsed ? (
           <div className="flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50">
             <div className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm">
-              AM
+              {getUserInitials()}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">
-                Ahmad Mansour
+                {getUserName()}
               </p>
               <p className="text-xs text-sidebar-foreground/60 truncate">
-                Administrator
+                {getRoleLabel()}
               </p>
             </div>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-foreground">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-foreground"
+              onClick={handleSignOut}
+            >
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
         ) : (
           <Tooltip>
             <TooltipTrigger asChild>
-              <button className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm">
-                AM
+              <button 
+                className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm"
+                onClick={handleSignOut}
+              >
+                {getUserInitials()}
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              <p className="font-medium">Ahmad Mansour</p>
-              <p className="text-xs text-muted-foreground">Administrator</p>
+              <p className="font-medium">{getUserName()}</p>
+              <p className="text-xs text-muted-foreground">{getRoleLabel()}</p>
             </TooltipContent>
           </Tooltip>
         )}

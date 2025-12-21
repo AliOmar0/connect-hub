@@ -19,7 +19,8 @@ import {
   Star,
   MoreVertical,
   Clock,
-  ArrowUpRight
+  ArrowUpRight,
+  Users
 } from 'lucide-react';
 import { format, formatDistanceToNow, intervalToDuration, formatDuration } from 'date-fns';
 import {
@@ -34,6 +35,7 @@ interface SessionsTableProps {
   sessions: (Session & { customer?: Customer; employee?: Employee })[];
   loading?: boolean;
   onViewSession?: (session: Session) => void;
+  onAssignAgent?: (session: Session) => void;
 }
 
 const channelIcons: Record<ChannelType, React.ElementType> = {
@@ -60,7 +62,7 @@ function formatSessionDuration(seconds: number | null): string {
     .replace(/ minutes?/, 'm') || '< 1m';
 }
 
-export default function SessionsTable({ sessions, loading, onViewSession }: SessionsTableProps) {
+export default function SessionsTable({ sessions, loading, onViewSession, onAssignAgent }: SessionsTableProps) {
   if (loading) {
     return (
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -237,12 +239,16 @@ export default function SessionsTable({ sessions, loading, onViewSession }: Sess
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onViewSession?.(session)}>
                           <ArrowUpRight className="h-4 w-4 mr-2" />
                           View Details
                         </DropdownMenuItem>
-                        <DropdownMenuItem>Assign Agent</DropdownMenuItem>
-                        <DropdownMenuItem>Add Notes</DropdownMenuItem>
+                        {onAssignAgent && (
+                          <DropdownMenuItem onClick={() => onAssignAgent(session)}>
+                            <Users className="h-4 w-4 mr-2" />
+                            Assign Agent
+                          </DropdownMenuItem>
+                        )}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableCell>

@@ -10,8 +10,48 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
+import { formatDistanceToNow } from "date-fns";
 
 export default function DashboardHeader() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Fetch real notification count and recent notifications
+  const { data: notifications } = useQuery({
+    queryKey: ["header-notifications", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return { count: 0, items: [] };
+      const { data, count } = await supabase
+        .from("notifications")
+        .select("*", { count: "exact" })
+        .eq("user_id", user.id)
+        .eq("is_read", false)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      return { count: count || 0, items: data || [] };
+    },
+    enabled: !!user?.id,
+  });
+
+  // Fetch unread messages count
+  const { data: unreadMessages } = useQuery({
+    queryKey: ["header-unread-messages", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return 0;
+      const { count } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .is("read_at", null)
+        .eq("direction", "inbound");
+      return count || 0;
+    },
+    enabled: !!user?.id,
+  });
+
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between gap-4">
       {/* Search */}
@@ -42,11 +82,18 @@ export default function DashboardHeader() {
         </div>
 
         {/* Quick Actions */}
-        <Button variant="outline" size="icon" className="relative">
+        <Button 
+          variant="outline" 
+          size="icon" 
+          className="relative"
+          onClick={() => navigate("/messages")}
+        >
           <MessageSquare className="h-4 w-4" />
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-gold text-navy-dark text-[10px] font-bold rounded-full flex items-center justify-center">
-            3
-          </span>
+          {unreadMessages && unreadMessages > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 bg-gold text-navy-dark text-[10px] font-bold rounded-full flex items-center justify-center">
+              {unreadMessages > 99 ? "99+" : unreadMessages}
+            </span>
+          )}
         </Button>
 
         {/* Notifications */}
@@ -54,51 +101,65 @@ export default function DashboardHeader() {
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="icon" className="relative">
               <Bell className="h-4 w-4" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
-                8
-              </span>
+              {notifications && notifications.count > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {notifications.count > 99 ? "99+" : notifications.count}
+                </span>
+              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
             <DropdownMenuLabel className="flex items-center justify-between">
               Notifications
-              <Badge variant="secondary">8 new</Badge>
+              {notifications && notifications.count > 0 && (
+                <Badge variant="secondary">{notifications.count} new</Badge>
+              )}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <div className="max-h-80 overflow-y-auto">
-              <DropdownMenuItem className="flex flex-col items-start gap-1 py-3 cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-gold" />
-                  <span className="font-medium text-sm">New WhatsApp message</span>
-                </div>
-                <span className="text-xs text-muted-foreground pl-4">
-                  Customer inquiry about loan services
-                </span>
-                <span className="text-xs text-muted-foreground pl-4">2 min ago</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem className="flex flex-col items-start gap-1 py-3 cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-chart-info" />
-                  <span className="font-medium text-sm">Call ended</span>
-                </div>
-                <span className="text-xs text-muted-foreground pl-4">
-                  Duration: 12:34 with Fatima Hassan
-                </span>
-                <span className="text-xs text-muted-foreground pl-4">5 min ago</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem className="flex flex-col items-start gap-1 py-3 cursor-pointer">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-chart-success" />
-                  <span className="font-medium text-sm">Session transferred</span>
-                </div>
-                <span className="text-xs text-muted-foreground pl-4">
-                  Assigned to Mohammed Ali
-                </span>
-                <span className="text-xs text-muted-foreground pl-4">10 min ago</span>
-              </DropdownMenuItem>
+              {notifications && notifications.items.length > 0 ? (
+                notifications.items.map((notif: any) => (
+                  <DropdownMenuItem
+                    key={notif.id}
+                    className="flex flex-col items-start gap-1 py-3 cursor-pointer"
+                    onClick={() => {
+                      if (notif.action_url) {
+                        navigate(notif.action_url);
+                      } else {
+                        navigate("/notifications");
+                      }
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className={`w-2 h-2 rounded-full ${
+                        notif.type === "error" ? "bg-destructive" :
+                        notif.type === "warning" ? "bg-yellow-500" :
+                        notif.type === "success" ? "bg-green-500" :
+                        "bg-blue-500"
+                      }`} />
+                      <span className="font-medium text-sm">{notif.title}</span>
+                    </div>
+                    {notif.message && (
+                      <span className="text-xs text-muted-foreground pl-4">
+                        {notif.message}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground pl-4">
+                      {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
+                    </span>
+                  </DropdownMenuItem>
+                ))
+              ) : (
+                <DropdownMenuItem disabled className="text-center text-sm text-muted-foreground py-4">
+                  No new notifications
+                </DropdownMenuItem>
+              )}
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-center justify-center text-sm text-primary font-medium">
+            <DropdownMenuItem 
+              className="text-center justify-center text-sm text-primary font-medium"
+              onClick={() => navigate("/notifications")}
+            >
               View all notifications
             </DropdownMenuItem>
           </DropdownMenuContent>

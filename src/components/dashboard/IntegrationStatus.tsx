@@ -3,48 +3,22 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Settings, ExternalLink, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Tables } from "@/integrations/supabase/types";
+import { formatDistanceToNow } from "date-fns";
 
-interface Integration {
-  id: string;
-  name: string;
-  description: string;
-  status: "connected" | "pending" | "error";
-  icon: string;
-  lastSync?: string;
+type ApiConfig = Tables<"api_configurations">;
+
+interface IntegrationStatusProps {
+  integrations?: ApiConfig[];
 }
 
-const integrations: Integration[] = [
-  {
-    id: "whatsapp",
-    name: "WhatsApp Business",
-    description: "Meta Business API integration",
-    status: "connected",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg",
-    lastSync: "2 min ago",
-  },
-  {
-    id: "messenger",
-    name: "Facebook Messenger",
-    description: "Meta Messenger API",
-    status: "connected",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/b/be/Facebook_Messenger_logo_2020.svg",
-    lastSync: "5 min ago",
-  },
-  {
-    id: "instagram",
-    name: "Instagram Direct",
-    description: "Instagram messaging API",
-    status: "pending",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/a/a5/Instagram_icon.png",
-  },
-  {
-    id: "sms",
-    name: "SMS Gateway",
-    description: "Twilio SMS integration",
-    status: "error",
-    icon: "📱",
-  },
-];
+const channelNames: Record<string, { name: string; description: string }> = {
+  whatsapp: { name: "WhatsApp Business", description: "Meta Business API integration" },
+  messenger: { name: "Facebook Messenger", description: "Meta Messenger API" },
+  sms: { name: "SMS Gateway", description: "SMS integration" },
+  voice: { name: "Voice Calls", description: "Voice call integration" },
+  email: { name: "Email", description: "Email integration" },
+};
 
 const statusConfig = {
   connected: {
@@ -64,7 +38,16 @@ const statusConfig = {
   },
 };
 
-export default function IntegrationStatus() {
+export default function IntegrationStatus({ integrations = [] }: IntegrationStatusProps) {
+  const displayIntegrations = integrations.length > 0
+    ? integrations
+    : [
+        { channel: "whatsapp" as const, is_active: false },
+        { channel: "messenger" as const, is_active: false },
+        { channel: "sms" as const, is_active: false },
+        { channel: "voice" as const, is_active: false },
+      ].map((item) => ({ ...item, id: item.channel } as ApiConfig));
+
   return (
     <Card className="shadow-card">
       <CardHeader className="pb-3">
@@ -78,9 +61,17 @@ export default function IntegrationStatus() {
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {integrations.map((integration, index) => {
-          const StatusIcon = statusConfig[integration.status].icon;
-          
+        {displayIntegrations.map((integration, index) => {
+          const channelInfo = channelNames[integration.channel] || {
+            name: integration.channel,
+            description: `${integration.channel} integration`,
+          };
+          const status = integration.is_active ? "connected" : "pending";
+          const StatusIcon = statusConfig[status].icon;
+          const lastSync = integration.last_verified_at
+            ? formatDistanceToNow(new Date(integration.last_verified_at), { addSuffix: true })
+            : undefined;
+
           return (
             <div
               key={integration.id}
@@ -89,24 +80,21 @@ export default function IntegrationStatus() {
             >
               {/* Icon */}
               <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
-                {integration.icon.startsWith("http") ? (
-                  <img
-                    src={integration.icon}
-                    alt={integration.name}
-                    className="w-6 h-6 object-contain"
-                  />
-                ) : (
-                  <span className="text-xl">{integration.icon}</span>
-                )}
+                <span className="text-xl">
+                  {integration.channel === "whatsapp" ? "🟢" :
+                   integration.channel === "messenger" ? "🔵" :
+                   integration.channel === "voice" ? "📞" :
+                   integration.channel === "sms" ? "💬" : "📧"}
+                </span>
               </div>
 
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{integration.name}</span>
+                  <span className="font-medium text-sm">{channelInfo.name}</span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate">
-                  {integration.description}
+                  {channelInfo.description}
                 </p>
               </div>
 
@@ -116,15 +104,15 @@ export default function IntegrationStatus() {
                   variant="outline"
                   className={cn(
                     "text-[10px] font-medium gap-1",
-                    statusConfig[integration.status].className
+                    statusConfig[status].className
                   )}
                 >
                   <StatusIcon className="h-3 w-3" />
-                  {statusConfig[integration.status].label}
+                  {statusConfig[status].label}
                 </Badge>
-                {integration.lastSync && (
+                {lastSync && (
                   <span className="text-[10px] text-muted-foreground">
-                    Synced {integration.lastSync}
+                    Synced {lastSync}
                   </span>
                 )}
               </div>

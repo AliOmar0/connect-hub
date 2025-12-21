@@ -14,11 +14,52 @@ export default function MessagesPage() {
 
   useEffect(() => {
     fetchSessions();
+
+    // Real-time subscription for sessions
+    const sessionsChannel = supabase
+      .channel("sessions-realtime")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sessions",
+        },
+        () => {
+          fetchSessions();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sessionsChannel);
+    };
   }, []);
 
   useEffect(() => {
     if (selectedSession) {
       fetchMessages(selectedSession);
+
+      // Real-time subscription for messages in selected session
+      const messagesChannel = supabase
+        .channel(`messages-${selectedSession}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "messages",
+            filter: `session_id=eq.${selectedSession}`,
+          },
+          () => {
+            fetchMessages(selectedSession);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(messagesChannel);
+      };
     }
   }, [selectedSession]);
 
@@ -45,13 +86,19 @@ export default function MessagesPage() {
   const handleSendMessage = async (content: string) => {
     if (!selectedSession) return;
     const session = sessions.find(s => s.id === selectedSession);
-    await supabase.from('messages').insert({
+    const { error } = await supabase.from('messages').insert({
       session_id: selectedSession,
       direction: 'outbound',
       content,
       channel: session?.channel || 'whatsapp',
     });
-    fetchMessages(selectedSession);
+    
+    if (error) {
+      console.error("Error sending message:", error);
+      return;
+    }
+    
+    // Message will be updated via real-time subscription
   };
 
   const currentSession = sessions.find(s => s.id === selectedSession) || null;

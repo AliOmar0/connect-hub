@@ -1,5 +1,5 @@
 // Database types matching Supabase schema
-export type AppRole = 'admin' | 'supervisor' | 'agent' | 'viewer';
+export type AppRole = 'admin' | 'supervisor' | 'manager' | 'agent' | 'viewer';
 export type ChannelType = 'whatsapp' | 'messenger' | 'sms' | 'voice' | 'email';
 export type SessionStatus = 'active' | 'waiting' | 'completed' | 'escalated' | 'missed';
 export type MessageDirection = 'inbound' | 'outbound';
