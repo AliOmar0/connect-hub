@@ -10,16 +10,9 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const data = [
-  { hour: "6AM", time: 1.2 },
-  { hour: "8AM", time: 2.8 },
-  { hour: "10AM", time: 3.5 },
-  { hour: "12PM", time: 2.1 },
-  { hour: "2PM", time: 4.2 },
-  { hour: "4PM", time: 3.8 },
-  { hour: "6PM", time: 2.5 },
-  { hour: "8PM", time: 1.8 },
-];
+interface ResponseTimeChartProps {
+  data?: Array<{ hour: string; time: number }>;
+}
 
 const getBarColor = (value: number) => {
   if (value <= 2) return "hsl(150, 60%, 45%)"; // Green - excellent
@@ -27,7 +20,13 @@ const getBarColor = (value: number) => {
   return "hsl(0, 84%, 60%)"; // Red - needs improvement
 };
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{ value: number }>;
+  label?: string;
+}
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   if (active && payload && payload.length) {
     const value = payload[0].value;
     let status = "Excellent";
@@ -51,7 +50,18 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export default function ResponseTimeChart() {
+export default function ResponseTimeChart({ data = [] }: ResponseTimeChartProps) {
+  const chartData = data.length > 0 ? data : [
+    { hour: "6AM", time: 0 },
+    { hour: "8AM", time: 0 },
+    { hour: "10AM", time: 0 },
+    { hour: "12PM", time: 0 },
+    { hour: "2PM", time: 0 },
+    { hour: "4PM", time: 0 },
+    { hour: "6PM", time: 0 },
+    { hour: "8PM", time: 0 },
+  ];
+
   return (
     <Card className="shadow-card">
       <CardHeader className="pb-2">
@@ -76,7 +86,7 @@ export default function ResponseTimeChart() {
       <CardContent className="pt-4">
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={data} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
+            <BarChart data={chartData} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
               <defs>
                 <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopOpacity={1} />
@@ -98,7 +108,7 @@ export default function ResponseTimeChart() {
               />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }} />
               <Bar dataKey="time" radius={[4, 4, 0, 0]} animationDuration={1000}>
-                {data.map((entry, index) => (
+                {chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={getBarColor(entry.time)} />
                 ))}
               </Bar>

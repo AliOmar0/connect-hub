@@ -9,7 +9,7 @@ interface AuthContextType {
   userRole: AppRole | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, firstName?: string, lastName?: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, firstName?: string, lastName?: string) => Promise<{ data: { user: User | null; session: Session | null } | null; error: Error | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -54,6 +54,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const fetchUserRole = async (userId: string) => {
     try {
+      // First, ensure profile exists (fallback if trigger didn't fire)
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (profileError || !profile) {
+        // Profile doesn't exist, create it
+        const { data: userData } = await supabase.auth.getUser();
+        if (userData?.user) {
+          const { error: insertError } = await supabase
+            .from('profiles')
+            .insert({
+              user_id: userId,
+              email: userData.user.email || '',
+              first_name: userData.user.user_metadata?.first_name || '',
+              last_name: userData.user.user_metadata?.last_name || '',
+            })
+            .select()
+            .single();
+          
+          if (insertError) {
+            console.error('Error creating profile:', insertError);
+          } else {
+            // Also ensure role exists
+            const { error: roleError } = await supabase
+              .from('user_roles')
+              .insert({ user_id: userId, role: 'agent' })
+              .select()
+              .single();
+            
+            if (roleError && !roleError.message.includes('duplicate')) {
+              console.error('Error creating user role:', roleError);
+            }
+          }
+        }
+      }
+
+      // Fetch user role
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
@@ -76,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string, firstName?: string, lastName?: string) => {
     const redirectUrl = `${window.location.origin}/`;
     
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -87,7 +127,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     });
-    return { error: error as Error | null };
+    return { 
+      data: data ? { user: data.user, session: data.session } : null,
+      error: error as Error | null 
+    };
   };
 
   const signOut = async () => {

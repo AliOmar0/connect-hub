@@ -9,22 +9,22 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-const data = [
-  { name: "Mon", messages: 420, calls: 85 },
-  { name: "Tue", messages: 380, calls: 92 },
-  { name: "Wed", messages: 510, calls: 78 },
-  { name: "Thu", messages: 470, calls: 105 },
-  { name: "Fri", messages: 590, calls: 95 },
-  { name: "Sat", messages: 340, calls: 45 },
-  { name: "Sun", messages: 280, calls: 35 },
-];
+interface ConversationsChartProps {
+  data?: Array<{ name: string; messages: number; calls: number }>;
+}
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{ name: string; value: number; color: string }>;
+  label?: string;
+}
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-card border border-border rounded-lg p-3 shadow-elevated">
         <p className="font-semibold text-sm mb-2">{label}</p>
-        {payload.map((entry: any, index: number) => (
+        {payload.map((entry, index) => (
           <div key={index} className="flex items-center gap-2 text-sm">
             <div
               className="w-2 h-2 rounded-full"
@@ -40,7 +40,17 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
-export default function ConversationsChart() {
+export default function ConversationsChart({ data = [] }: ConversationsChartProps) {
+  const chartData = data.length > 0 ? data : [
+    { name: "Mon", messages: 0, calls: 0 },
+    { name: "Tue", messages: 0, calls: 0 },
+    { name: "Wed", messages: 0, calls: 0 },
+    { name: "Thu", messages: 0, calls: 0 },
+    { name: "Fri", messages: 0, calls: 0 },
+    { name: "Sat", messages: 0, calls: 0 },
+    { name: "Sun", messages: 0, calls: 0 },
+  ];
+
   return (
     <Card className="col-span-2 shadow-card">
       <CardHeader className="pb-2">
@@ -61,7 +71,7 @@ export default function ConversationsChart() {
       <CardContent className="pt-4">
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="messagesGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="hsl(220, 55%, 35%)" stopOpacity={0.4} />

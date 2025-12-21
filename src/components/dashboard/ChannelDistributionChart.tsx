@@ -2,14 +2,20 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MessageSquare, Phone } from "lucide-react";
 
-const data = [
-  { name: "WhatsApp", value: 45, color: "hsl(142, 70%, 45%)" },
-  { name: "Messenger", value: 28, color: "hsl(220, 90%, 56%)" },
-  { name: "Phone Calls", value: 18, color: "hsl(45, 95%, 50%)" },
-  { name: "Other", value: 9, color: "hsl(220, 20%, 70%)" },
-];
+interface ChannelDistributionChartProps {
+  data?: Array<{ name: string; value: number; color: string }>;
+}
 
-const CustomTooltip = ({ active, payload }: any) => {
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{
+    name: string;
+    value: number;
+    payload: { color: string };
+  }>;
+}
+
+const CustomTooltip = ({ active, payload }: TooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-card border border-border rounded-lg p-3 shadow-elevated">
@@ -27,7 +33,16 @@ const CustomTooltip = ({ active, payload }: any) => {
   return null;
 };
 
-export default function ChannelDistributionChart() {
+export default function ChannelDistributionChart({ data = [] }: ChannelDistributionChartProps) {
+  const chartData = data.length > 0 ? data : [
+    { name: "WhatsApp", value: 0, color: "hsl(142, 70%, 45%)" },
+    { name: "Messenger", value: 0, color: "hsl(220, 90%, 56%)" },
+    { name: "Phone Calls", value: 0, color: "hsl(45, 95%, 50%)" },
+    { name: "Other", value: 0, color: "hsl(220, 20%, 70%)" },
+  ];
+
+  const total = chartData.reduce((sum, item) => sum + item.value, 0);
+
   return (
     <Card className="shadow-card">
       <CardHeader className="pb-2">
@@ -40,7 +55,7 @@ export default function ChannelDistributionChart() {
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
               <Pie
-                data={data}
+                data={chartData}
                 cx="50%"
                 cy="50%"
                 innerRadius={55}
@@ -50,7 +65,7 @@ export default function ChannelDistributionChart() {
                 animationDuration={1000}
                 animationBegin={200}
               >
-                {data.map((entry, index) => (
+                {chartData.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
                     fill={entry.color}
@@ -64,7 +79,7 @@ export default function ChannelDistributionChart() {
           </ResponsiveContainer>
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="text-center">
-              <p className="text-3xl font-bold font-display">2.4k</p>
+              <p className="text-3xl font-bold font-display">{total}</p>
               <p className="text-xs text-muted-foreground">Total</p>
             </div>
           </div>
@@ -72,7 +87,7 @@ export default function ChannelDistributionChart() {
         
         {/* Legend */}
         <div className="grid grid-cols-2 gap-2 mt-4">
-          {data.map((item) => (
+          {chartData.map((item) => (
             <div key={item.name} className="flex items-center gap-2">
               <div
                 className="w-2.5 h-2.5 rounded-full"
