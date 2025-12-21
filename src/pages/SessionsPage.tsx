@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import SessionsTable from "@/components/sessions/SessionsTable";
 import { supabase } from "@/integrations/supabase/client";
-import { Session, Customer, Employee } from "@/types/database";
+import { Session, Customer, Employee, Profile } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -69,11 +69,11 @@ export default function SessionsPage() {
       }
 
       // Client-side search filtering
-      let filtered = (data as any) || [];
+      let filtered = (data || []) as Array<Session & { customer?: Customer; employee?: Employee & { profile?: Profile } }>;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         filtered = filtered.filter(
-          (session: any) =>
+          (session) =>
             session.customer?.name?.toLowerCase().includes(term) ||
             session.customer?.phone?.toLowerCase().includes(term) ||
             session.customer?.email?.toLowerCase().includes(term) ||
@@ -82,7 +82,7 @@ export default function SessionsPage() {
         );
       }
 
-      return filtered as Array<Session & { customer?: Customer; employee?: Employee & { profile?: any } }>;
+      return filtered;
     },
   });
 
@@ -117,7 +117,7 @@ export default function SessionsPage() {
         .select("*, profile:profiles(*)")
         .eq("is_active", true)
         .order("created_at");
-      return (data as any) as Array<Employee & { profile?: any }>;
+      return (data || []) as Array<Employee & { profile?: Profile }>;
     },
     enabled: canAssign,
   });
@@ -132,7 +132,7 @@ export default function SessionsPage() {
           .select("profile:profiles(user_id)")
           .eq("id", employeeId)
           .single();
-        userId = (employee as any)?.profile?.user_id || null;
+        userId = (employee as { profile?: { user_id?: string } })?.profile?.user_id || null;
       }
 
       // Update session
@@ -165,7 +165,7 @@ export default function SessionsPage() {
       setSelectedSession(null);
       setSelectedEmployeeId("");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to assign session");
     },
   });

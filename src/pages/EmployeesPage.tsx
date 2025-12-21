@@ -52,7 +52,7 @@ export default function EmployeesPage() {
         return [];
       }
 
-      return (data as any) as Array<Employee & { profile?: Profile }>;
+      return (data || []) as Array<Employee & { profile?: Profile }>;
     },
   });
 
@@ -64,13 +64,13 @@ export default function EmployeesPage() {
         .select("*")
         .order("first_name");
 
-      return (data as any) as Profile[];
+      return (data || []) as Profile[];
     },
     enabled: canManage && isDialogOpen,
   });
 
   const createMutation = useMutation({
-    mutationFn: async (employeeData: any) => {
+    mutationFn: async (employeeData: Partial<Employee>) => {
       const { data, error } = await supabase
         .from("employees")
         .insert(employeeData)
@@ -85,13 +85,13 @@ export default function EmployeesPage() {
       toast.success("Employee created successfully");
       setIsDialogOpen(false);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to create employee");
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, ...data }: any) => {
+    mutationFn: async ({ id, ...data }: { id: string } & Partial<Employee>) => {
       const { error } = await supabase
         .from("employees")
         .update(data)
@@ -105,7 +105,7 @@ export default function EmployeesPage() {
       setIsDialogOpen(false);
       setEditingEmployee(null);
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to update employee");
     },
   });
@@ -119,7 +119,7 @@ export default function EmployeesPage() {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
       toast.success("Employee deleted successfully");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to delete employee");
     },
   });
@@ -246,7 +246,7 @@ function EmployeeForm({
 }: {
   employee?: Employee | null;
   profiles: Profile[];
-  onSubmit: (data: any) => void;
+  onSubmit: (data: Partial<Employee>) => void;
   onCancel: () => void;
 }) {
   const [formData, setFormData] = useState({
@@ -481,8 +481,9 @@ function CreateUserDialog() {
       // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: ["profiles"] });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
-    } catch (error: any) {
-      toast.error(error.message || "Failed to create user");
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to create user";
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

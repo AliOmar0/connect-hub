@@ -20,7 +20,13 @@ const getBarColor = (value: number) => {
   return "hsl(0, 84%, 60%)"; // Red - needs improvement
 };
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface TooltipProps {
+  active?: boolean;
+  payload?: Array<{ value: number }>;
+  label?: string;
+}
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   if (active && payload && payload.length) {
     const value = payload[0].value;
     let status = "Excellent";

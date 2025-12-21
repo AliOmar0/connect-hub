@@ -15,6 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
+import { Notification } from "@/types/database";
 
 export default function DashboardHeader() {
   const { user } = useAuth();
@@ -32,7 +33,7 @@ export default function DashboardHeader() {
         .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(5);
-      return { count: count || 0, items: data || [] };
+      return { count: count || 0, items: (data || []) as Notification[] };
     },
     enabled: !!user?.id,
   });
@@ -118,7 +119,7 @@ export default function DashboardHeader() {
             <DropdownMenuSeparator />
             <div className="max-h-80 overflow-y-auto">
               {notifications && notifications.items.length > 0 ? (
-                notifications.items.map((notif: any) => (
+                notifications.items.map((notif) => (
                   <DropdownMenuItem
                     key={notif.id}
                     className="flex flex-col items-start gap-1 py-3 cursor-pointer"

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from '@/components/settings/ApiKeyCard';
 import { supabase } from '@/integrations/supabase/client';
-import { ChannelType } from '@/types/database';
+import { ChannelType, Profile } from '@/types/database';
 import { Tables } from '@/integrations/supabase/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -25,7 +25,7 @@ export default function SettingsPage() {
     whatsapp: null, messenger: null, sms: null, voice: null, email: null,
   });
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
   
   // Notification preferences
@@ -78,9 +78,9 @@ export default function SettingsPage() {
     const { config_metadata, ...safeData } = updateData as Record<string, unknown>;
     
     if (existing) {
-      await supabase.from('api_configurations').update(safeData as any).eq('id', existing.id);
+      await supabase.from('api_configurations').update(safeData).eq('id', existing.id);
     } else {
-      await supabase.from('api_configurations').insert({ ...safeData, channel } as any);
+      await supabase.from('api_configurations').insert({ ...safeData, channel });
     }
     toast.success(`${channel} configuration saved`);
     fetchConfigs();
@@ -347,7 +347,7 @@ export default function SettingsPage() {
                           id="first-name"
                           value={profile.first_name || ""}
                           onChange={(e) =>
-                            setProfile((prev: any) => ({ ...prev, first_name: e.target.value }))
+                            setProfile((prev) => prev ? { ...prev, first_name: e.target.value } : null)
                           }
                         />
                       </div>
@@ -357,7 +357,7 @@ export default function SettingsPage() {
                           id="last-name"
                           value={profile.last_name || ""}
                           onChange={(e) =>
-                            setProfile((prev: any) => ({ ...prev, last_name: e.target.value }))
+                            setProfile((prev) => prev ? { ...prev, last_name: e.target.value } : null)
                           }
                         />
                       </div>
@@ -372,7 +372,7 @@ export default function SettingsPage() {
                         type="email"
                         value={profile.email || ""}
                         onChange={(e) =>
-                          setProfile((prev: any) => ({ ...prev, email: e.target.value }))
+                            setProfile((prev) => prev ? { ...prev, email: e.target.value } : null)
                         }
                       />
                     </div>
@@ -386,7 +386,7 @@ export default function SettingsPage() {
                         type="tel"
                         value={profile.phone || ""}
                         onChange={(e) =>
-                          setProfile((prev: any) => ({ ...prev, phone: e.target.value }))
+                            setProfile((prev) => prev ? { ...prev, phone: e.target.value } : null)
                         }
                       />
                     </div>
@@ -396,7 +396,7 @@ export default function SettingsPage() {
                         id="department"
                         value={profile.department || ""}
                         onChange={(e) =>
-                          setProfile((prev: any) => ({ ...prev, department: e.target.value }))
+                            setProfile((prev) => prev ? { ...prev, department: e.target.value } : null)
                         }
                       />
                     </div>

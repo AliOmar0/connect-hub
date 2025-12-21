@@ -5,11 +5,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Phone, MessageSquare, MoreVertical, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow, intervalToDuration, formatDuration } from "date-fns";
-import { Session, Customer, Employee } from "@/types/database";
+import { Session, Customer, Employee, Profile } from "@/types/database";
 import { useNavigate } from "react-router-dom";
 
 interface ActiveSessionsPanelProps {
-  sessions?: Array<Session & { customer?: Customer; employee?: Employee & { profile?: any } }>;
+  sessions?: Array<Session & { customer?: Customer; employee?: Employee & { profile?: Profile } }>;
 }
 
 const statusConfig = {

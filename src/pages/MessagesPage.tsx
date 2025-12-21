@@ -68,7 +68,7 @@ export default function MessagesPage() {
       .from('sessions')
       .select('*, customer:customers(*)')
       .order('started_at', { ascending: false });
-    setSessions((data as any) || []);
+    setSessions((data || []) as Session[]);
     setLoading(false);
   };
 
@@ -79,7 +79,7 @@ export default function MessagesPage() {
       .select('*')
       .eq('session_id', sessionId)
       .order('sent_at', { ascending: true });
-    setMessages((data as any) || []);
+    setMessages((data || []) as Message[]);
     setMessagesLoading(false);
   };
 

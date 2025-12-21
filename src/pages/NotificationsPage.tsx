@@ -48,7 +48,7 @@ export default function NotificationsPage() {
         return [];
       }
 
-      return (data as any) as Notification[];
+      return (data || []) as Notification[];
     },
     enabled: !!user?.id,
   });
@@ -65,7 +65,7 @@ export default function NotificationsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to mark notification as read");
     },
   });
@@ -85,7 +85,7 @@ export default function NotificationsPage() {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       toast.success("All notifications marked as read");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to mark all as read");
     },
   });
@@ -103,7 +103,7 @@ export default function NotificationsPage() {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       toast.success("Notification deleted");
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast.error(error.message || "Failed to delete notification");
     },
   });
@@ -164,7 +164,7 @@ export default function NotificationsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Select value={filter} onValueChange={(v: any) => setFilter(v)}>
+            <Select value={filter} onValueChange={(v) => setFilter(v)}>
               <SelectTrigger className="w-[180px]">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue />

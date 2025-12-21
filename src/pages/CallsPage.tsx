@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import CallsTable from "@/components/calls/CallsTable";
 import { supabase } from "@/integrations/supabase/client";
-import { Call, Customer, Employee } from "@/types/database";
+import { Call, Customer, Employee, Profile } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -50,11 +50,11 @@ export default function CallsPage() {
       }
 
       // Client-side search filtering
-      let filtered = (data as any) || [];
+      let filtered = (data || []) as Array<Call & { customer?: Customer; employee?: Employee & { profile?: Profile } }>;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         filtered = filtered.filter(
-          (call: any) =>
+          (call) =>
             call.customer?.name?.toLowerCase().includes(term) ||
             call.phone_number?.toLowerCase().includes(term) ||
             call.employee?.profile?.first_name?.toLowerCase().includes(term) ||
@@ -62,7 +62,7 @@ export default function CallsPage() {
         );
       }
 
-      return filtered as Array<Call & { customer?: Customer; employee?: Employee & { profile?: any } }>;
+      return filtered;
     },
   });
 
