@@ -33,3 +33,24 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
 } as IntersectionObserver;
 
+// Setup QueryClientProvider for tests
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { vi } from "vitest";
+
+// Create a test query client
+export const createTestQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+      },
+      mutations: {
+        retry: false,
+      },
+    },
+  });
+
+// Make QueryClientProvider available globally for tests
+global.QueryClientProvider = QueryClientProvider;
+global.createTestQueryClient = createTestQueryClient;
+
