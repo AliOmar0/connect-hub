@@ -2,16 +2,19 @@ import { useState, useEffect } from 'react';
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from '@/components/settings/ApiKeyCard';
 import { supabase } from '@/integrations/supabase/client';
-import { ApiConfiguration, ChannelType } from '@/types/database';
+import { ChannelType } from '@/types/database';
+import { Tables } from '@/integrations/supabase/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { Settings, Key, Bell, Shield } from 'lucide-react';
 
+type ApiConfigRow = Tables<'api_configurations'>;
+
 const channels: ChannelType[] = ['whatsapp', 'messenger', 'sms', 'voice', 'email'];
 
 export default function SettingsPage() {
-  const [configs, setConfigs] = useState<Record<ChannelType, ApiConfiguration | null>>({
+  const [configs, setConfigs] = useState<Record<ChannelType, ApiConfigRow | null>>({
     whatsapp: null, messenger: null, sms: null, voice: null, email: null,
   });
   const [loading, setLoading] = useState(true);
@@ -22,22 +25,25 @@ export default function SettingsPage() {
 
   const fetchConfigs = async () => {
     const { data } = await supabase.from('api_configurations').select('*');
-    const configMap: Record<ChannelType, ApiConfiguration | null> = {
+    const configMap: Record<ChannelType, ApiConfigRow | null> = {
       whatsapp: null, messenger: null, sms: null, voice: null, email: null,
     };
-    (data as ApiConfiguration[] || []).forEach(config => {
-      configMap[config.channel] = config;
+    (data || []).forEach(config => {
+      configMap[config.channel as ChannelType] = config;
     });
     setConfigs(configMap);
     setLoading(false);
   };
 
-  const handleSave = async (channel: ChannelType, data: Partial<ApiConfiguration>) => {
+  const handleSave = async (channel: ChannelType, updateData: Record<string, unknown>) => {
     const existing = configs[channel];
+    // Remove config_metadata from the update to avoid type issues
+    const { config_metadata, ...safeData } = updateData as Record<string, unknown>;
+    
     if (existing) {
-      await supabase.from('api_configurations').update(data).eq('id', existing.id);
+      await supabase.from('api_configurations').update(safeData as any).eq('id', existing.id);
     } else {
-      await supabase.from('api_configurations').insert({ ...data, channel });
+      await supabase.from('api_configurations').insert({ ...safeData, channel } as any);
     }
     toast.success(`${channel} configuration saved`);
     fetchConfigs();
