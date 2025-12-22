@@ -56,9 +56,10 @@ jobs:
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
 
           COMMITS=$(git log --format="%s" $BASE_SHA..$HEAD_SHA)
+          PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|Merge|Revert)(\(.+\))?: .+"
 
           while IFS= read -r commit; do
-            if [[ ! "$commit" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|Merge|Revert)(\(.+\))?: .+ ]]; then
+            if [[ ! "$commit" =~ $PATTERN ]]; then
               echo "❌ Commit message doesn't follow conventional commits:"
               echo "   '$commit'"
               echo "   Format: type(scope): description"
