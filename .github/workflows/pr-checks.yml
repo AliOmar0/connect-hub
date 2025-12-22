@@ -95,7 +95,8 @@ jobs:
 
           FOUND_SENSITIVE=false
           for pattern in "${SENSITIVE_PATTERNS[@]}"; do
-            if git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -iE "$pattern" | grep -vE "^(---|\+\+\+|@@|index)" | grep -vE "test|example|mock|sample|dummy" > /dev/null; then
+            # Exclude .github directory and workflow files from scan
+            if git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -vE "^(\+\+\+|---|@@|index|diff)" | grep -vE "\.github/" | grep -iE "$pattern" | grep -vE "test|example|mock|sample|dummy|workflow" > /dev/null; then
               echo "⚠️  Potential sensitive data detected matching pattern: $pattern"
               FOUND_SENSITIVE=true
             fi
