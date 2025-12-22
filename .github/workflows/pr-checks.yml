@@ -20,7 +20,8 @@ jobs:
           PR_TITLE="${{ github.event.pull_request.title }}"
           # Pattern: type(optional-scope): description
           # Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
-          if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([^)]+\))?:[[:space:]].+ ]]; then
+          PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([^)]+\))?:[[:space:]].+"
+          if [[ ! "$PR_TITLE" =~ $PATTERN ]]; then
             echo "❌ PR title must follow conventional commits format:"
             echo "   Format: type(scope): description"
             echo "   Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
@@ -37,10 +38,10 @@ jobs:
             echo "⚠️  PR is from a fork, skipping force push check"
             exit 0
           fi
-          
+
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          
+
           # Check if base branch has been force-pushed
           if ! git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA" 2>/dev/null; then
             echo "❌ Force push detected! Base branch may have been force-pushed."
@@ -53,9 +54,9 @@ jobs:
         run: |
           BASE_SHA="${{ github.event.pull_request.base.sha }}"
           HEAD_SHA="${{ github.event.pull_request.head.sha }}"
-          
+
           COMMITS=$(git log --format="%s" $BASE_SHA..$HEAD_SHA)
-          
+
           while IFS= read -r commit; do
             if [[ ! "$commit" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|Merge|Revert)(\(.+\))?: .+ ]]; then
               echo "❌ Commit message doesn't follow conventional commits:"
@@ -70,7 +71,7 @@ jobs:
         run: |
           MAX_FILE_SIZE=5242880  # 5MB
           LARGE_FILES=$(find . -type f -size +${MAX_FILE_SIZE}c -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./dist/*" -not -path "./coverage/*" || true)
-          
+
           if [ -n "$LARGE_FILES" ]; then
             echo "❌ Large files detected (>5MB):"
             echo "$LARGE_FILES"
@@ -90,7 +91,7 @@ jobs:
             "BEGIN RSA PRIVATE KEY"
             "BEGIN PRIVATE KEY"
           )
-          
+
           FOUND_SENSITIVE=false
           for pattern in "${SENSITIVE_PATTERNS[@]}"; do
             if git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -iE "$pattern" | grep -vE "^(---|\+\+\+|@@|index)" | grep -vE "test|example|mock|sample|dummy" > /dev/null; then
@@ -98,7 +99,7 @@ jobs:
               FOUND_SENSITIVE=true
             fi
           done
-          
+
           if [ "$FOUND_SENSITIVE" = true ]; then
             echo "❌ Potential sensitive data detected in changes"
             echo "Please review and ensure no secrets are committed"
@@ -136,4 +137,3 @@ jobs:
           echo "Bundle size: $BUNDLE_SIZE"
           # Add bundle size check logic here if needed
           echo "✅ Bundle size check passed"
-

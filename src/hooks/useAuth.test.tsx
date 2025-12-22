@@ -8,19 +8,25 @@ import { ReactNode } from "react";
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: {
-      getSession: vi.fn(() => Promise.resolve({ data: { session: null }, error: null })),
+      getSession: vi.fn(() =>
+        Promise.resolve({ data: { session: null }, error: null }),
+      ),
       onAuthStateChange: vi.fn(() => ({
         data: { subscription: { unsubscribe: vi.fn() } },
       })),
       signInWithPassword: vi.fn(),
       signUp: vi.fn(),
       signOut: vi.fn(),
-      getUser: vi.fn(() => Promise.resolve({ data: { user: null }, error: null })),
+      getUser: vi.fn(() =>
+        Promise.resolve({ data: { user: null }, error: null }),
+      ),
     },
     from: vi.fn(() => ({
       select: vi.fn(() => ({
         eq: vi.fn(() => ({
-          maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
+          maybeSingle: vi.fn(() =>
+            Promise.resolve({ data: null, error: null }),
+          ),
         })),
       })),
       insert: vi.fn(() => ({
@@ -88,7 +94,7 @@ describe("useAuth", () => {
     const mockSelect = vi.fn(() => ({
       eq: vi.fn(() => ({
         maybeSingle: vi.fn(() =>
-          Promise.resolve({ data: { role: "admin" }, error: null })
+          Promise.resolve({ data: { role: "admin" }, error: null }),
         ),
       })),
     }));
@@ -111,9 +117,7 @@ describe("useAuth", () => {
   it("handles missing user role gracefully", async () => {
     const mockSelect = vi.fn(() => ({
       eq: vi.fn(() => ({
-        maybeSingle: vi.fn(() =>
-          Promise.resolve({ data: null, error: null })
-        ),
+        maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
       })),
     }));
 
@@ -137,7 +141,7 @@ describe("useAuth", () => {
       Promise.resolve({
         data: { user: null, session: null },
         error: null,
-      })
+      }),
     );
     (supabase.auth.signUp as ReturnType<typeof vi.fn>) = mockSignUp;
 
@@ -147,7 +151,12 @@ describe("useAuth", () => {
 
     const { result } = renderHook(() => useAuth(), { wrapper });
 
-    await result.current.signUp("test@example.com", "password123", "John", "Doe");
+    await result.current.signUp(
+      "test@example.com",
+      "password123",
+      "John",
+      "Doe",
+    );
 
     expect(mockSignUp).toHaveBeenCalledWith({
       email: "test@example.com",
@@ -167,7 +176,7 @@ describe("useAuth", () => {
       Promise.resolve({
         data: { user: null, session: null },
         error: null,
-      })
+      }),
     );
     (supabase.auth.signUp as ReturnType<typeof vi.fn>) = mockSignUp;
 
@@ -214,7 +223,7 @@ describe("useAuth", () => {
       Promise.resolve({
         data: null,
         error: mockError,
-      })
+      }),
     );
     (supabase.auth.signUp as ReturnType<typeof vi.fn>) = mockSignUp;
 
@@ -224,7 +233,10 @@ describe("useAuth", () => {
 
     const { result } = renderHook(() => useAuth(), { wrapper });
 
-    const response = await result.current.signUp("test@example.com", "password123");
+    const response = await result.current.signUp(
+      "test@example.com",
+      "password123",
+    );
 
     expect(response.error).toBe(mockError);
   });
@@ -237,7 +249,7 @@ describe("useAuth", () => {
     };
 
     const mockGetUser = vi.fn(() =>
-      Promise.resolve({ data: { user: mockUser }, error: null })
+      Promise.resolve({ data: { user: mockUser }, error: null }),
     );
     (supabase.auth.getUser as ReturnType<typeof vi.fn>) = mockGetUser;
 
@@ -256,7 +268,7 @@ describe("useAuth", () => {
               return {
                 eq: vi.fn(() => ({
                   maybeSingle: vi.fn(() =>
-                    Promise.resolve({ data: null, error: null })
+                    Promise.resolve({ data: null, error: null }),
                   ),
                 })),
               };
@@ -264,7 +276,7 @@ describe("useAuth", () => {
               // select() called without arguments (after insert) - returns object with single() method
               return {
                 single: vi.fn(() =>
-                  Promise.resolve({ data: { id: "profile-1" }, error: null })
+                  Promise.resolve({ data: { id: "profile-1" }, error: null }),
                 ),
               };
             }
@@ -275,7 +287,7 @@ describe("useAuth", () => {
             return {
               select: vi.fn(() => ({
                 single: vi.fn(() =>
-                  Promise.resolve({ data: { id: "profile-1" }, error: null })
+                  Promise.resolve({ data: { id: "profile-1" }, error: null }),
                 ),
               })),
             };
@@ -287,7 +299,7 @@ describe("useAuth", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(() =>
-                Promise.resolve({ data: { role: "agent" }, error: null })
+                Promise.resolve({ data: { role: "agent" }, error: null }),
               ),
             })),
           })),
@@ -296,7 +308,7 @@ describe("useAuth", () => {
             return {
               select: vi.fn(() => ({
                 single: vi.fn(() =>
-                  Promise.resolve({ data: { role: "agent" }, error: null })
+                  Promise.resolve({ data: { role: "agent" }, error: null }),
                 ),
               })),
             };
@@ -306,7 +318,9 @@ describe("useAuth", () => {
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
+            maybeSingle: vi.fn(() =>
+              Promise.resolve({ data: null, error: null }),
+            ),
           })),
         })),
       };
@@ -322,10 +336,12 @@ describe("useAuth", () => {
     };
 
     (supabase.auth.getSession as ReturnType<typeof vi.fn>) = vi.fn(() =>
-      Promise.resolve({ data: { session: mockSession }, error: null })
+      Promise.resolve({ data: { session: mockSession }, error: null }),
     );
 
-    let authStateCallback: ((event: string, session: any) => void) | null = null;
+    let authStateCallback:
+      | ((event: string, session: { user: { id: string } } | null) => void)
+      | null = null;
     const onAuthStateChangeCallback = vi.fn((callback) => {
       authStateCallback = callback;
       // Simulate auth state change - trigger immediately in next tick
@@ -339,7 +355,8 @@ describe("useAuth", () => {
         data: { subscription: { unsubscribe: vi.fn() } },
       };
     });
-    (supabase.auth.onAuthStateChange as ReturnType<typeof vi.fn>) = onAuthStateChangeCallback;
+    (supabase.auth.onAuthStateChange as ReturnType<typeof vi.fn>) =
+      onAuthStateChangeCallback;
 
     const wrapper = ({ children }: { children: ReactNode }) => (
       <AuthProvider>{children}</AuthProvider>
@@ -356,13 +373,13 @@ describe("useAuth", () => {
     // 5. fetchUserRole calls insert() to create role
     // We need to wait for all these async operations including setTimeout
     // Give time for Promise.resolve, setTimeout, and all async operations
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     await waitFor(
       () => {
         expect(profileInsertCalled || roleInsertCalled).toBe(true);
       },
-      { timeout: 5000, interval: 100 }
+      { timeout: 5000, interval: 100 },
     );
   });
 
@@ -373,7 +390,7 @@ describe("useAuth", () => {
     };
 
     const mockGetUser = vi.fn(() =>
-      Promise.resolve({ data: { user: mockUser }, error: null })
+      Promise.resolve({ data: { user: mockUser }, error: null }),
     );
     (supabase.auth.getUser as ReturnType<typeof vi.fn>) = mockGetUser;
 
@@ -383,7 +400,7 @@ describe("useAuth", () => {
           select: vi.fn(() => ({
             eq: vi.fn(() => ({
               maybeSingle: vi.fn(() =>
-                Promise.resolve({ data: null, error: null })
+                Promise.resolve({ data: null, error: null }),
               ),
             })),
           })),
@@ -393,7 +410,7 @@ describe("useAuth", () => {
                 Promise.resolve({
                   data: null,
                   error: new Error("Insert failed"),
-                })
+                }),
               ),
             })),
           })),
@@ -402,7 +419,9 @@ describe("useAuth", () => {
       return {
         select: vi.fn(() => ({
           eq: vi.fn(() => ({
-            maybeSingle: vi.fn(() => Promise.resolve({ data: null, error: null })),
+            maybeSingle: vi.fn(() =>
+              Promise.resolve({ data: null, error: null }),
+            ),
           })),
         })),
       };
@@ -418,7 +437,7 @@ describe("useAuth", () => {
     };
 
     (supabase.auth.getSession as ReturnType<typeof vi.fn>) = vi.fn(() =>
-      Promise.resolve({ data: { session: mockSession }, error: null })
+      Promise.resolve({ data: { session: mockSession }, error: null }),
     );
 
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -448,17 +467,21 @@ describe("useAuth", () => {
       token_type: "bearer",
     };
 
-    let authStateCallback: ((event: string, session: typeof mockSession | null) => void) | null = null;
+    let authStateCallback:
+      | ((event: string, session: typeof mockSession | null) => void)
+      | null = null;
 
-    (supabase.auth.onAuthStateChange as ReturnType<typeof vi.fn>) = vi.fn((callback) => {
-      authStateCallback = callback;
-      return {
-        data: { subscription: { unsubscribe: vi.fn() } },
-      };
-    });
+    (supabase.auth.onAuthStateChange as ReturnType<typeof vi.fn>) = vi.fn(
+      (callback) => {
+        authStateCallback = callback;
+        return {
+          data: { subscription: { unsubscribe: vi.fn() } },
+        };
+      },
+    );
 
     (supabase.auth.getSession as ReturnType<typeof vi.fn>) = vi.fn(() =>
-      Promise.resolve({ data: { session: null }, error: null })
+      Promise.resolve({ data: { session: null }, error: null }),
     );
 
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -497,17 +520,21 @@ describe("useAuth", () => {
       token_type: "bearer",
     };
 
-    let authStateCallback: ((event: string, session: typeof mockSession | null) => void) | null = null;
+    let authStateCallback:
+      | ((event: string, session: typeof mockSession | null) => void)
+      | null = null;
 
-    (supabase.auth.onAuthStateChange as ReturnType<typeof vi.fn>) = vi.fn((callback) => {
-      authStateCallback = callback;
-      return {
-        data: { subscription: { unsubscribe: vi.fn() } },
-      };
-    });
+    (supabase.auth.onAuthStateChange as ReturnType<typeof vi.fn>) = vi.fn(
+      (callback) => {
+        authStateCallback = callback;
+        return {
+          data: { subscription: { unsubscribe: vi.fn() } },
+        };
+      },
+    );
 
     (supabase.auth.getSession as ReturnType<typeof vi.fn>) = vi.fn(() =>
-      Promise.resolve({ data: { session: mockSession }, error: null })
+      Promise.resolve({ data: { session: mockSession }, error: null }),
     );
 
     const mockSignOut = vi.fn(() => Promise.resolve({ error: null }));
@@ -550,7 +577,7 @@ describe("useAuth", () => {
           setTimeout(() => {
             resolve({ data: { session: null }, error: null });
           }, 100);
-        })
+        }),
     );
 
     const wrapper = ({ children }: { children: ReactNode }) => (
@@ -567,4 +594,3 @@ describe("useAuth", () => {
     });
   });
 });
-

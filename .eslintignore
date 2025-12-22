@@ -1,0 +1,12 @@
+# Coverage files
+coverage/
+*.lcov
+
+# Build outputs
+dist/
+node_modules/
+
+# Test files (optional - you may want to lint them)
+# **/*.test.ts
+# **/*.test.tsx
+
