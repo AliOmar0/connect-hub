@@ -55,9 +55,10 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
+        continue-on-error: true
         with:
           files: ./coverage/coverage-final.json
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
           flags: unittests
           name: codecov-umbrella
@@ -96,4 +97,3 @@ jobs:
             echo "Build failed: dist directory not found"
             exit 1
           fi
-
