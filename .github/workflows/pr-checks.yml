@@ -93,10 +93,18 @@ jobs:
             "BEGIN PRIVATE KEY"
           )
 
+          # Get list of changed files, excluding .github directory
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -v "^\.github/" || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "✅ No files to scan (only .github changes)"
+            exit 0
+          fi
+
           FOUND_SENSITIVE=false
           for pattern in "${SENSITIVE_PATTERNS[@]}"; do
-            # Exclude .github directory and workflow files from scan
-            if git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -vE "^(\+\+\+|---|@@|index|diff)" | grep -vE "\.github/" | grep -iE "$pattern" | grep -vE "test|example|mock|sample|dummy|workflow" > /dev/null; then
+            # Check only non-.github files
+            if echo "$CHANGED_FILES" | xargs git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} -- | grep -vE "^(---|\+\+\+|@@|index|diff)" | grep -iE "$pattern" | grep -vE "test|example|mock|sample|dummy" > /dev/null; then
               echo "⚠️  Potential sensitive data detected matching pattern: $pattern"
               FOUND_SENSITIVE=true
             fi
