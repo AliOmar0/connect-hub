@@ -28,7 +28,7 @@ describe("RoleBasedRedirect", () => {
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
   });
 
-  it("redirects agent to /messages", () => {
+  it("redirects agent to /sessions", () => {
     (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
       userRole: "agent",
       loading: false,
@@ -40,7 +40,7 @@ describe("RoleBasedRedirect", () => {
       </MemoryRouter>
     );
 
-    // Should redirect to messages (Navigate component behavior)
+    // Should redirect to sessions (Navigate component behavior)
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
   });
 
@@ -104,4 +104,5 @@ describe("RoleBasedRedirect", () => {
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
   });
 });
+
 

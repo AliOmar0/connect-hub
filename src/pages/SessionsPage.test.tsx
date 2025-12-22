@@ -65,6 +65,11 @@ describe("SessionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryClient);
+    (useQuery as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      data: [],
+      isLoading: false,
+      refetch: vi.fn(),
+    }));
   });
 
   it("renders sessions page title", () => {
@@ -72,11 +77,6 @@ describe("SessionsPage", () => {
       userRole: "admin",
       user: { id: "123" },
     });
-
-    (useQuery as ReturnType<typeof vi.fn>).mockImplementation(() => ({
-      data: [],
-      isLoading: false,
-    }));
 
     (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: vi.fn(),
@@ -102,11 +102,6 @@ describe("SessionsPage", () => {
       user: { id: "123" },
     });
 
-    (useQuery as ReturnType<typeof vi.fn>).mockImplementation(() => ({
-      data: [],
-      isLoading: false,
-    }));
-
     (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: vi.fn(),
       mutateAsync: vi.fn(),
@@ -130,11 +125,6 @@ describe("SessionsPage", () => {
       userRole: "admin",
       user: { id: "123" },
     });
-
-    (useQuery as ReturnType<typeof vi.fn>).mockImplementation(() => ({
-      data: [],
-      isLoading: false,
-    }));
 
     (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: vi.fn(),
@@ -163,11 +153,6 @@ describe("SessionsPage", () => {
       user: { id: "123" },
     });
 
-    (useQuery as ReturnType<typeof vi.fn>).mockImplementation(() => ({
-      data: [],
-      isLoading: false,
-    }));
-
     (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: vi.fn(),
       mutateAsync: vi.fn(),
@@ -184,6 +169,30 @@ describe("SessionsPage", () => {
     );
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
+  });
+
+  it("shows conversation placeholder when no session is selected", () => {
+    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+      userRole: "admin",
+      user: { id: "123" },
+    });
+
+    (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
+      mutate: vi.fn(),
+      mutateAsync: vi.fn(),
+    });
+
+    const queryClient = createTestQueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <SessionsPage />
+        </BrowserRouter>
+      </QueryClientProvider>
+    );
+
+    expect(screen.getByText("No conversation selected")).toBeInTheDocument();
   });
 });
 

@@ -8,8 +8,6 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleBasedRedirect from "@/components/RoleBasedRedirect";
 import Index from "./pages/Index";
 import AuthPage from "./pages/AuthPage";
-import MessagesPage from "./pages/MessagesPage";
-import CallsPage from "./pages/CallsPage";
 import SessionsPage from "./pages/SessionsPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
@@ -45,23 +43,15 @@ const App = () => (
               }
             />
             <Route
-              path="/messages"
-              element={
-                <ProtectedRoute>
-                  <MessagesPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/calls"
-              element={
-                <ProtectedRoute>
-                  <CallsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
               path="/sessions"
+              element={
+                <ProtectedRoute>
+                  <SessionsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sessions/:id"
               element={
                 <ProtectedRoute>
                   <SessionsPage />

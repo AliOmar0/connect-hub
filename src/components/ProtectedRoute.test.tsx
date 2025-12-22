@@ -103,7 +103,7 @@ describe("ProtectedRoute", () => {
     expect(screen.queryByText("Admin Content")).not.toBeInTheDocument();
   });
 
-  it("redirects agent to /messages when accessing restricted page", () => {
+  it("redirects agent to /sessions when accessing restricted page", () => {
     (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
       user: { id: "123", email: "test@example.com" },
       userRole: "agent",

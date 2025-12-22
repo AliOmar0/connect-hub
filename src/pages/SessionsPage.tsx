@@ -3,9 +3,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import SessionsTable from "@/components/sessions/SessionsTable";
 import { supabase } from "@/integrations/supabase/client";
-import { Session, Customer, Employee, Profile } from "@/types/database";
+import { Session, Customer, Employee, Profile, Message, Call } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -24,12 +25,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Search, Filter, Download } from "lucide-react";
 import { subDays } from "date-fns";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import ChatView from "@/components/messages/ChatView";
 
 export default function SessionsPage() {
   const navigate = useNavigate();
+  const { id: sessionIdParam } = useParams<{ id?: string }>();
   const { userRole } = useAuth();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
@@ -86,6 +89,23 @@ export default function SessionsPage() {
     },
   });
 
+  // Sync selected session with route param or default to first
+  useEffect(() => {
+    if (!sessions || sessions.length === 0) return;
+
+    if (sessionIdParam) {
+      const matched = sessions.find((s) => s.id === sessionIdParam);
+      if (matched && matched.id !== selectedSession?.id) {
+        setSelectedSession(matched);
+        return;
+      }
+    }
+
+    if (!selectedSession) {
+      setSelectedSession(sessions[0]);
+    }
+  }, [sessions, sessionIdParam, selectedSession]);
+
   // Real-time subscription for active sessions
   useEffect(() => {
     const channel = supabase
@@ -122,6 +142,91 @@ export default function SessionsPage() {
     enabled: canAssign,
   });
 
+  const {
+    data: sessionMessages,
+    isLoading: messagesLoading,
+    refetch: refetchMessages,
+  } = useQuery({
+    queryKey: ["session-messages", selectedSession?.id],
+    queryFn: async () => {
+      if (!selectedSession?.id) return [];
+      const { data, error } = await supabase
+        .from("messages")
+        .select("*")
+        .eq("session_id", selectedSession.id)
+        .order("sent_at", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching messages:", error);
+        return [];
+      }
+
+      return (data || []) as Message[];
+    },
+    enabled: !!selectedSession?.id,
+  });
+
+  const {
+    data: sessionCalls,
+    isLoading: callsLoading,
+    refetch: refetchCalls,
+  } = useQuery({
+    queryKey: ["session-calls", selectedSession?.id],
+    queryFn: async () => {
+      if (!selectedSession?.id) return [];
+      const { data, error } = await supabase
+        .from("calls")
+        .select("*")
+        .eq("session_id", selectedSession.id)
+        .order("started_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching calls:", error);
+        return [];
+      }
+
+      return (data || []) as Call[];
+    },
+    enabled: !!selectedSession?.id,
+  });
+
+  // Realtime updates for the selected session (messages + calls)
+  useEffect(() => {
+    if (!selectedSession?.id) return;
+
+    const channel = supabase
+      .channel(`session-${selectedSession.id}-stream`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "messages",
+          filter: `session_id=eq.${selectedSession.id}`,
+        },
+        () => {
+          refetchMessages();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "calls",
+          filter: `session_id=eq.${selectedSession.id}`,
+        },
+        () => {
+          refetchCalls();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedSession?.id, refetchMessages, refetchCalls]);
+
   const assignMutation = useMutation({
     mutationFn: async ({ sessionId, employeeId }: { sessionId: string; employeeId: string }) => {
       // Get employee profile to find user_id
@@ -151,7 +256,7 @@ export default function SessionsPage() {
           title: "New Session Assigned",
           message: `You have been assigned to a ${session?.channel || "new"} session${session?.customer?.name ? ` with ${session.customer.name}` : ""}`,
           type: "info",
-          action_url: `/messages?session=${sessionId}`,
+          action_url: `/sessions/${sessionId}`,
         });
       }
 
@@ -171,7 +276,8 @@ export default function SessionsPage() {
   });
 
   const handleViewSession = (session: Session) => {
-    navigate(`/messages?session=${session.id}`);
+    setSelectedSession(session);
+    navigate(`/sessions/${session.id}`);
   };
 
   const handleAssignAgent = (session: Session) => {
@@ -189,6 +295,24 @@ export default function SessionsPage() {
       sessionId: selectedSession.id,
       employeeId: selectedEmployeeId,
     });
+  };
+
+  const handleSendMessage = async (content: string) => {
+    if (!selectedSession) return;
+
+    const { error } = await supabase.from("messages").insert({
+      session_id: selectedSession.id,
+      direction: "outbound",
+      content,
+      channel: selectedSession.channel,
+    });
+
+    if (error) {
+      toast.error("Failed to send message");
+      return;
+    }
+
+    refetchMessages();
   };
 
   return (
@@ -271,6 +395,73 @@ export default function SessionsPage() {
           onViewSession={handleViewSession}
           onAssignAgent={canAssign ? handleAssignAgent : undefined}
         />
+
+        {/* Session Detail: Messages & Call timeline */}
+        <div className="grid lg:grid-cols-3 gap-4">
+          <Card className="lg:col-span-2 h-[650px] flex flex-col">
+            <CardContent className="p-0 flex-1 flex flex-col">
+              <ChatView
+                session={selectedSession}
+                messages={sessionMessages || []}
+                onSendMessage={handleSendMessage}
+                loading={messagesLoading}
+              />
+            </CardContent>
+          </Card>
+
+          <Card className="h-[650px] flex flex-col">
+            <CardContent className="p-4 flex-1 overflow-hidden">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold">Session Activity</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Latest calls & status updates
+                  </p>
+                </div>
+                {selectedSession && (
+                  <Badge variant="outline" className="capitalize">
+                    {selectedSession.status}
+                  </Badge>
+                )}
+              </div>
+
+              <div className="space-y-3 overflow-y-auto h-full pr-1">
+                {callsLoading ? (
+                  [...Array(4)].map((_, idx) => (
+                    <div key={idx} className="h-16 rounded-lg bg-muted animate-pulse" />
+                  ))
+                ) : sessionCalls && sessionCalls.length > 0 ? (
+                  sessionCalls.map((call) => (
+                    <div
+                      key={call.id}
+                      className="rounded-lg border border-border p-3 bg-muted/30 space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium capitalize">
+                          {call.direction} call
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(call.started_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Status: {call.status}</span>
+                        <span>Duration: {call.duration_seconds ? `${call.duration_seconds}s` : "-"}</span>
+                      </div>
+                      {call.phone_number && (
+                        <p className="text-xs text-muted-foreground">Phone: {call.phone_number}</p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-muted-foreground text-center py-10">
+                    No call activity yet for this session.
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Assign Agent Dialog */}
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>

@@ -3,8 +3,6 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   LayoutDashboard,
-  MessageSquare,
-  Phone,
   Users,
   Settings,
   ChevronLeft,
@@ -31,7 +29,8 @@ interface NavItemProps {
 
 const NavItem = ({ to, icon: Icon, label, collapsed, badge }: NavItemProps) => {
   const location = useLocation();
-  const isActive = location.pathname === to;
+  const isActive =
+    location.pathname === to || location.pathname.startsWith(`${to}/`);
 
   const content = (
     <NavLink
@@ -112,22 +111,7 @@ export default function DashboardSidebar() {
     enabled: !!user?.id,
   });
 
-  // Fetch real counts for messages, calls, sessions
-  const { data: messageCount } = useQuery({
-    queryKey: ["unread-messages-count", user?.id],
-    queryFn: async () => {
-      if (!user?.id) return 0;
-      // Count unread messages in active sessions
-      const { count } = await supabase
-        .from("messages")
-        .select("*", { count: "exact", head: true })
-        .is("read_at", null)
-        .eq("direction", "inbound");
-      return count || 0;
-    },
-    enabled: !!user?.id,
-  });
-
+  // Fetch real count for active sessions
   const { data: activeSessionsCount } = useQuery({
     queryKey: ["active-sessions-count"],
     queryFn: async () => {
@@ -178,8 +162,6 @@ export default function DashboardSidebar() {
   // Define all navigation items with real badge counts
   const allMainNavItems = [
     { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "supervisor", "manager", "viewer"] },
-    { to: "/messages", icon: MessageSquare, label: "Messages", badge: messageCount || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
-    { to: "/calls", icon: Phone, label: "Calls", roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
     { to: "/sessions", icon: Headphones, label: "Active AI Sessions", badge: activeSessionsCount || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
     { to: "/employees", icon: Users, label: "Employees", roles: ["admin", "supervisor", "manager"] },
     { to: "/analytics", icon: BarChart3, label: "Analytics", roles: ["admin", "supervisor", "manager"] },

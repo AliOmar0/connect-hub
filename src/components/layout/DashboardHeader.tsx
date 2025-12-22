@@ -1,4 +1,4 @@
-import { Bell, Search, MessageSquare } from "lucide-react";
+import { Bell, Search, Headphones } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -38,21 +38,6 @@ export default function DashboardHeader() {
     enabled: !!user?.id,
   });
 
-  // Fetch unread messages count
-  const { data: unreadMessages } = useQuery({
-    queryKey: ["header-unread-messages", user?.id],
-    queryFn: async () => {
-      if (!user?.id) return 0;
-      const { count } = await supabase
-        .from("messages")
-        .select("*", { count: "exact", head: true })
-        .is("read_at", null)
-        .eq("direction", "inbound");
-      return count || 0;
-    },
-    enabled: !!user?.id,
-  });
-
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between gap-4">
       {/* Search */}
@@ -82,19 +67,14 @@ export default function DashboardHeader() {
           </div>
         </div>
 
-        {/* Quick Actions */}
+        {/* Quick Action: Jump to Active AI Sessions */}
         <Button 
           variant="outline" 
           size="icon" 
           className="relative"
-          onClick={() => navigate("/messages")}
+          onClick={() => navigate("/sessions")}
         >
-          <MessageSquare className="h-4 w-4" />
-          {unreadMessages && unreadMessages > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 bg-gold text-navy-dark text-[10px] font-bold rounded-full flex items-center justify-center">
-              {unreadMessages > 99 ? "99+" : unreadMessages}
-            </span>
-          )}
+          <Headphones className="h-4 w-4" />
         </Button>
 
         {/* Notifications */}
