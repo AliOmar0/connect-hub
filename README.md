@@ -71,3 +71,22 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## Branch Protection
+
+This repository uses branch protection rules to ensure code quality and prevent accidental force pushes or direct merges to the `main` branch.
+
+### Requirements for PRs
+
+- ✅ All tests must pass (38+ tests)
+- ✅ Code must pass linting
+- ✅ Project must build successfully
+- ✅ Minimum 1 approval required
+- ✅ PR title must follow conventional commits format
+- ✅ All commit messages must follow conventional format
+
+### Setting Up Branch Protection
+
+See [`.github/BRANCH_PROTECTION_SETUP.md`](.github/BRANCH_PROTECTION_SETUP.md) for quick setup instructions.
+
+For detailed documentation, see [`.github/BRANCH_PROTECTION.md`](.github/BRANCH_PROTECTION.md).
