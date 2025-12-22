@@ -33,6 +33,14 @@ global.IntersectionObserver = class IntersectionObserver {
   unobserve() {}
 } as IntersectionObserver;
 
+// Mock ResizeObserver (needed for Recharts)
+global.ResizeObserver = class ResizeObserver {
+  constructor() {}
+  disconnect() {}
+  observe() {}
+  unobserve() {}
+} as ResizeObserver;
+
 // Setup QueryClientProvider for tests
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi } from "vitest";

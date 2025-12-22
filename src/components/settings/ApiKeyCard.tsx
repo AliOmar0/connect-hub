@@ -123,6 +123,9 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
         is_active: true,
       });
       setIsEditing(false);
+    } catch (error) {
+      // Error is handled by parent component
+      // We catch it here to prevent unhandled rejection
     } finally {
       setIsSaving(false);
     }
