@@ -18,15 +18,18 @@ jobs:
       - name: Check PR title format
         run: |
           PR_TITLE="${{ github.event.pull_request.title }}"
-          if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+ ]]; then
+          # Pattern: type(optional-scope): description
+          # Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+          if [[ ! "$PR_TITLE" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([^)]+\))?:[[:space:]].+ ]]; then
             echo "❌ PR title must follow conventional commits format:"
             echo "   Format: type(scope): description"
             echo "   Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
             echo "   Example: feat(auth): add login functionality"
-            echo "   Current title: $PR_TITLE"
+            echo "   Example: docs: update README"
+            echo "   Current title: '$PR_TITLE'"
             exit 1
           fi
-          echo "✅ PR title format is valid"
+          echo "✅ PR title format is valid: '$PR_TITLE'"
 
       - name: Check for force push
         run: |
