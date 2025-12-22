@@ -45,7 +45,7 @@ export default function ProtectedRoute({
     if (userLevel < requiredLevel) {
       // Redirect agents to messages page if they try to access restricted pages
       if (userRole === "agent") {
-        return <Navigate to="/messages" replace />;
+        return <Navigate to="/sessions" replace />;
       }
       return (
         <div className="min-h-screen flex items-center justify-center">
@@ -63,7 +63,7 @@ export default function ProtectedRoute({
   // Check if user role is in allowed roles list
   if (allowedRoles && !allowedRoles.includes(userRole || "viewer")) {
     if (userRole === "agent") {
-      return <Navigate to="/messages" replace />;
+      return <Navigate to="/sessions" replace />;
     }
     return (
       <div className="min-h-screen flex items-center justify-center">

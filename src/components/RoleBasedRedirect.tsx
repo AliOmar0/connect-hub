@@ -13,9 +13,9 @@ export default function RoleBasedRedirect() {
     );
   }
 
-  // Redirect agents to messages page
+  // Redirect agents to Active AI Sessions page
   if (userRole === "agent") {
-    return <Navigate to="/messages" replace />;
+    return <Navigate to="/sessions" replace />;
   }
 
   // For other roles (admin, supervisor, manager, viewer), redirect to dashboard
