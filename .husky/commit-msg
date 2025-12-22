@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Validate commit message format (conventional commits)
+commit_msg=$(cat "$1")
+
+if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"; then
+  echo "❌ Commit message does not follow conventional commits format"
+  echo "   Format: type(scope): description"
+  echo "   Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+  echo "   Example: feat(auth): add login functionality"
+  echo "   Your message: $commit_msg"
+  exit 1
+fi
+

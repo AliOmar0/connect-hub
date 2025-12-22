@@ -19,6 +19,14 @@ Runs on PRs to validate:
 - Commit messages follow conventional format
 - No large files (>5MB)
 - No sensitive data (API keys, passwords, etc.)
+- Test coverage meets 95% threshold
+- Bundle size check
+
+### `security.yml` - Security Scanning
+Runs on PRs, pushes, and weekly schedule:
+- CodeQL analysis for JavaScript/TypeScript
+- Dependency vulnerability scanning (npm audit)
+- Secret scanning (Gitleaks)
 
 ### `test.yml` - Legacy Test Workflow
 Kept for backward compatibility. Use `ci.yml` instead.
@@ -36,8 +44,19 @@ See [BRANCH_PROTECTION.md](./BRANCH_PROTECTION.md) for detailed documentation.
 
 For PRs to be merged, these checks must pass:
 - `lint` - Code linting and type checking
-- `test` - All tests pass
+- `test` - All tests pass with 95% coverage
 - `build` - Project builds successfully
+- `validate-pr` - PR validation checks
+
+## Testing
+
+We maintain **95% test coverage** across all metrics. See [docs/TESTING.md](../docs/TESTING.md) for testing guidelines.
+
+## CI/CD Documentation
+
+For detailed information about workflows and troubleshooting, see:
+- [Testing Guide](../docs/TESTING.md)
+- [CI/CD Documentation](../docs/CI_CD.md)
 
 ## Files
 
@@ -46,4 +65,6 @@ For PRs to be merged, these checks must pass:
 - `test.yml` - Legacy test workflow
 - `BRANCH_PROTECTION.md` - Detailed protection rules documentation
 - `BRANCH_PROTECTION_SETUP.md` - Quick setup guide
+
+
 

@@ -5,6 +5,7 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   lint:
@@ -50,16 +51,24 @@ jobs:
         run: npm ci
 
       - name: Run tests with coverage
-        run: npm run test:run
-
-      - name: Generate coverage report
-        run: npm run test:coverage || true
+        run: npm run test:coverage:ci
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:
           files: ./coverage/coverage-final.json
-          fail_ci_if_error: false
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: unittests
+          name: codecov-umbrella
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 30
 
   build:
     name: build

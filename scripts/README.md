@@ -27,3 +27,5 @@ Sets up comprehensive branch protection rules for the `main` branch using GitHub
 ### Manual Alternative
 See [BRANCH_PROTECTION.md](../.github/BRANCH_PROTECTION.md) for manual setup instructions via GitHub UI.
 
+
+
