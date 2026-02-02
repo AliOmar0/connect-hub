@@ -3,7 +3,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import SessionsTable from "@/components/sessions/SessionsTable";
 import { supabase } from "@/integrations/supabase/client";
-import { Session, Customer, Employee, Profile, Message, Call } from "@/types/database";
+import {
+  Session,
+  Customer,
+  Employee,
+  Profile,
+  Message,
+  Call,
+} from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -43,14 +50,21 @@ export default function SessionsPage() {
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
 
-  const canAssign = userRole === "admin" || userRole === "supervisor" || userRole === "manager";
+  const canAssign =
+    userRole === "admin" || userRole === "supervisor" || userRole === "manager";
 
-  const { data: sessions, isLoading, refetch } = useQuery({
+  const {
+    data: sessions,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ["sessions", statusFilter, channelFilter, dateRange, searchTerm],
     queryFn: async () => {
       let query = supabase
         .from("sessions")
-        .select("*, customer:customers(*), employee:employees(*, profile:profiles(*))")
+        .select(
+          "*, customer:customers(*), employee:employees(*, profile:profiles(*))",
+        )
         .order("started_at", { ascending: false });
 
       if (statusFilter !== "all") {
@@ -72,7 +86,12 @@ export default function SessionsPage() {
       }
 
       // Client-side search filtering
-      let filtered = (data || []) as Array<Session & { customer?: Customer; employee?: Employee & { profile?: Profile } }>;
+      let filtered = (data || []) as Array<
+        Session & {
+          customer?: Customer;
+          employee?: Employee & { profile?: Profile };
+        }
+      >;
       if (searchTerm) {
         const term = searchTerm.toLowerCase();
         filtered = filtered.filter(
@@ -80,8 +99,10 @@ export default function SessionsPage() {
             session.customer?.name?.toLowerCase().includes(term) ||
             session.customer?.phone?.toLowerCase().includes(term) ||
             session.customer?.email?.toLowerCase().includes(term) ||
-            session.employee?.profile?.first_name?.toLowerCase().includes(term) ||
-            session.employee?.profile?.last_name?.toLowerCase().includes(term)
+            session.employee?.profile?.first_name
+              ?.toLowerCase()
+              .includes(term) ||
+            session.employee?.profile?.last_name?.toLowerCase().includes(term),
         );
       }
 
@@ -119,7 +140,7 @@ export default function SessionsPage() {
         },
         () => {
           refetch();
-        }
+        },
       )
       .subscribe();
 
@@ -206,7 +227,7 @@ export default function SessionsPage() {
         },
         () => {
           refetchMessages();
-        }
+        },
       )
       .on(
         "postgres_changes",
@@ -218,7 +239,7 @@ export default function SessionsPage() {
         },
         () => {
           refetchCalls();
-        }
+        },
       )
       .subscribe();
 
@@ -228,7 +249,13 @@ export default function SessionsPage() {
   }, [selectedSession?.id, refetchMessages, refetchCalls]);
 
   const assignMutation = useMutation({
-    mutationFn: async ({ sessionId, employeeId }: { sessionId: string; employeeId: string }) => {
+    mutationFn: async ({
+      sessionId,
+      employeeId,
+    }: {
+      sessionId: string;
+      employeeId: string;
+    }) => {
       // Get employee profile to find user_id
       let userId: string | null = null;
       if (employeeId) {
@@ -237,7 +264,9 @@ export default function SessionsPage() {
           .select("profile:profiles(user_id)")
           .eq("id", employeeId)
           .single();
-        userId = (employee as { profile?: { user_id?: string } })?.profile?.user_id || null;
+        userId =
+          (employee as { profile?: { user_id?: string } })?.profile?.user_id ||
+          null;
       }
 
       // Update session
@@ -265,7 +294,11 @@ export default function SessionsPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      toast.success(data.employeeId ? "Session assigned successfully" : "Session unassigned");
+      toast.success(
+        data.employeeId
+          ? "Session assigned successfully"
+          : "Session unassigned",
+      );
       setAssignDialogOpen(false);
       setSelectedSession(null);
       setSelectedEmployeeId("");
@@ -300,6 +333,7 @@ export default function SessionsPage() {
   const handleSendMessage = async (content: string) => {
     if (!selectedSession) return;
 
+    // 1. Insert local message for immediate feedback
     const { error } = await supabase.from("messages").insert({
       session_id: selectedSession.id,
       direction: "outbound",
@@ -308,8 +342,31 @@ export default function SessionsPage() {
     });
 
     if (error) {
-      toast.error("Failed to send message");
+      toast.error("Failed to save message");
       return;
+    }
+
+    // 2. If it's a WhatsApp message, trigger the Edge Function to send it via API
+    if (selectedSession.channel === "whatsapp") {
+      try {
+        const { error: funcError } = await supabase.functions.invoke(
+          "whatsapp",
+          {
+            body: {
+              action: "send_message",
+              sessionId: selectedSession.id,
+              content: content,
+            },
+          },
+        );
+
+        if (funcError) {
+          console.error("WhatsApp delivery error:", funcError);
+          toast.error("Message saved but failed to deliver to WhatsApp");
+        }
+      } catch (err) {
+        console.error("Edge function call failed:", err);
+      }
     }
 
     refetchMessages();
@@ -428,7 +485,10 @@ export default function SessionsPage() {
               <div className="space-y-3 overflow-y-auto h-full pr-1">
                 {callsLoading ? (
                   [...Array(4)].map((_, idx) => (
-                    <div key={idx} className="h-16 rounded-lg bg-muted animate-pulse" />
+                    <div
+                      key={idx}
+                      className="h-16 rounded-lg bg-muted animate-pulse"
+                    />
                   ))
                 ) : sessionCalls && sessionCalls.length > 0 ? (
                   sessionCalls.map((call) => (
@@ -446,10 +506,17 @@ export default function SessionsPage() {
                       </div>
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Status: {call.status}</span>
-                        <span>Duration: {call.duration_seconds ? `${call.duration_seconds}s` : "-"}</span>
+                        <span>
+                          Duration:{" "}
+                          {call.duration_seconds
+                            ? `${call.duration_seconds}s`
+                            : "-"}
+                        </span>
                       </div>
                       {call.phone_number && (
-                        <p className="text-xs text-muted-foreground">Phone: {call.phone_number}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Phone: {call.phone_number}
+                        </p>
                       )}
                     </div>
                   ))
@@ -481,7 +548,8 @@ export default function SessionsPage() {
                       {selectedSession.customer?.name || "Unknown Customer"}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Channel: {selectedSession.channel} • Status: {selectedSession.status}
+                      Channel: {selectedSession.channel} • Status:{" "}
+                      {selectedSession.status}
                     </p>
                   </div>
                 </div>
