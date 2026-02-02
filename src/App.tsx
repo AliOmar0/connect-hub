@@ -13,6 +13,7 @@ import EmployeesPage from "./pages/EmployeesPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotificationsPage from "./pages/NotificationsPage";
+import TwilioDemo from "./pages/TwilioDemo";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -87,6 +88,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <NotificationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/twilio"
+              element={
+                <ProtectedRoute allowedRoles={["supervisor", "manager", "admin"]}>
+                  <TwilioDemo />
                 </ProtectedRoute>
               }
             />
