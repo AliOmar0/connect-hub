@@ -18,10 +18,18 @@ class MessageResponse(BaseModel):
 
 class SessionResponse(BaseModel):
     id: UUID
+    channel: str
     customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    customer_email: Optional[str] = None
+    employee_id: Optional[UUID] = None
+    employee_name: Optional[str] = None
     last_message: Optional[str] = None
     status: SessionStatus
     started_at: datetime
-    
+    wait_time_seconds: Optional[int] = None
+    duration_seconds: Optional[int] = None
+    satisfaction_score: Optional[int] = None
+
     class Config:
         from_attributes = True

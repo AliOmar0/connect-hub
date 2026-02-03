@@ -15,26 +15,57 @@ logger = logging.getLogger(__name__)
 
 @router.get("/sessions", response_model=List[SessionResponse])
 async def list_sessions(db: Any = Depends(get_session)):
-    sessions = await crud.get_active_sessions(db)
-    response = []
-    for s in sessions:
+    # Helper to clean Supabase response into Pydantic models/dicts
+    response = supabase.table("sessions")\
+        .select("*, customer:customers(*), employee:employees!sessions_employee_id_fkey(*, profile:profiles(*)), messages(*)")\
+        .neq("status", "completed")\
+        .order("updated_at", desc=True)\
+        .execute()
+    
+    sessions_data = response.data
+    
+    result = []
+    for s in sessions_data:
+        # Extract messages for last_message
         last_msg = ""
-        if s.messages:
+        msgs = s.get("messages", [])
+        if msgs:
             # Sort by sent_at or created_at
-            sorted_msgs = sorted(s.messages, key=lambda m: m.sent_at or m.created_at, reverse=True)
+            sorted_msgs = sorted(msgs, key=lambda m: m.get("sent_at") or m.get("created_at"), reverse=True)
             if sorted_msgs:
-                last_msg = sorted_msgs[0].content or ""
+                last_msg = sorted_msgs[0].get("content") or ""
         
-        c_name = s.customer.name if s.customer else "Unknown"
+        # Extract customer info
+        cust = s.get("customer") or {}
+        c_name = cust.get("name") or "Unknown"
+        c_phone = cust.get("phone")
+        c_email = cust.get("email")
+
+        # Extract employee info
+        emp = s.get("employee") or {}
+        emp_profile = emp.get("profile") or {}
+        emp_name = None
+        if emp_profile:
+             f_name = emp_profile.get("first_name") or ""
+             l_name = emp_profile.get("last_name") or ""
+             emp_name = f"{f_name} {l_name}".strip()
         
-        response.append(SessionResponse(
-            id=s.id,
+        result.append(SessionResponse(
+            id=s["id"],
+            channel=s.get("channel", "whatsapp"),
             customer_name=c_name,
+            customer_phone=c_phone,
+            customer_email=c_email,
+            employee_id=s.get("employee_id"),
+            employee_name=emp_name,
             last_message=last_msg,
-            status=s.status,
-            started_at=s.started_at
+            status=s["status"],
+            started_at=s["started_at"],
+            wait_time_seconds=s.get("wait_time_seconds"),
+            duration_seconds=s.get("duration_seconds"),
+            satisfaction_score=s.get("satisfaction_score")
         ))
-    return response
+    return result
 
 @router.get("/sessions/{session_id}/messages", response_model=List[MessageResponse])
 async def get_session_messages(session_id: UUID, db: Any = Depends(get_session)):

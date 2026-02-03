@@ -1,4 +1,4 @@
-import { Session, Customer, Employee, ChannelType } from '@/types/database';
+import { Session, Customer, Employee, ChannelType } from "@/types/database";
 import {
   Table,
   TableBody,
@@ -6,30 +6,35 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
-import { 
-  MessageCircle, 
-  MessageSquare, 
-  Phone, 
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Progress } from "@/components/ui/progress";
+import {
+  MessageCircle,
+  MessageSquare,
+  Phone,
   Mail,
   Star,
   MoreVertical,
   Clock,
   ArrowUpRight,
-  Users
-} from 'lucide-react';
-import { format, formatDistanceToNow, intervalToDuration, formatDuration } from 'date-fns';
+  Users,
+} from "lucide-react";
+import {
+  format,
+  formatDistanceToNow,
+  intervalToDuration,
+  formatDuration,
+} from "date-fns";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 interface SessionsTableProps {
   sessions: (Session & { customer?: Customer; employee?: Employee })[];
@@ -47,22 +52,29 @@ const channelIcons: Record<ChannelType, React.ElementType> = {
 };
 
 const statusStyles: Record<string, { bg: string; text: string }> = {
-  active: { bg: 'bg-green-500/10', text: 'text-green-600' },
-  waiting: { bg: 'bg-yellow-500/10', text: 'text-yellow-600' },
-  completed: { bg: 'bg-blue-500/10', text: 'text-blue-600' },
-  escalated: { bg: 'bg-orange-500/10', text: 'text-orange-600' },
-  missed: { bg: 'bg-red-500/10', text: 'text-red-600' },
+  active: { bg: "bg-green-500/10", text: "text-green-600" },
+  waiting: { bg: "bg-yellow-500/10", text: "text-yellow-600" },
+  completed: { bg: "bg-blue-500/10", text: "text-blue-600" },
+  escalated: { bg: "bg-orange-500/10", text: "text-orange-600" },
+  missed: { bg: "bg-red-500/10", text: "text-red-600" },
 };
 
 function formatSessionDuration(seconds: number | null): string {
-  if (!seconds) return '-';
+  if (!seconds) return "-";
   const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
-  return formatDuration(duration, { format: ['hours', 'minutes'], delimiter: ' ' })
-    .replace(/ hours?/, 'h')
-    .replace(/ minutes?/, 'm') || '< 1m';
+  return (
+    formatDuration(duration, { format: ["hours", "minutes"], delimiter: " " })
+      .replace(/ hours?/, "h")
+      .replace(/ minutes?/, "m") || "< 1m"
+  );
 }
 
-export default function SessionsTable({ sessions, loading, onViewSession, onAssignAgent }: SessionsTableProps) {
+export default function SessionsTable({
+  sessions,
+  loading,
+  onViewSession,
+  onAssignAgent,
+}: SessionsTableProps) {
   if (loading) {
     return (
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -115,56 +127,74 @@ export default function SessionsTable({ sessions, loading, onViewSession, onAssi
         <TableBody>
           {sessions.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
+              <TableCell
+                colSpan={9}
+                className="h-32 text-center text-muted-foreground"
+              >
                 No sessions found
               </TableCell>
             </TableRow>
           ) : (
             sessions.map((session) => {
-              const ChannelIcon = channelIcons[session.channel];
-              const style = statusStyles[session.status] || statusStyles.waiting;
-              
+              const ChannelIcon =
+                channelIcons[session.channel] || MessageSquare;
+              if (!channelIcons[session.channel]) {
+                console.warn(
+                  `Unknown channel type: ${session.channel}`,
+                  session,
+                );
+              }
+              const style =
+                statusStyles[session.status] || statusStyles.waiting;
+
               return (
-                <TableRow 
-                  key={session.id} 
+                <TableRow
+                  key={session.id}
                   className="hover:bg-muted/30 transition-colors cursor-pointer"
                   onClick={() => onViewSession?.(session)}
                 >
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className={cn(
-                        "p-1.5 rounded-lg",
-                        session.channel === 'whatsapp' && 'bg-green-500/10',
-                        session.channel === 'messenger' && 'bg-blue-500/10',
-                        session.channel === 'sms' && 'bg-purple-500/10',
-                        session.channel === 'voice' && 'bg-orange-500/10',
-                        session.channel === 'email' && 'bg-red-500/10',
-                      )}>
-                        <ChannelIcon className={cn(
-                          "h-4 w-4",
-                          session.channel === 'whatsapp' && 'text-green-600',
-                          session.channel === 'messenger' && 'text-blue-600',
-                          session.channel === 'sms' && 'text-purple-600',
-                          session.channel === 'voice' && 'text-orange-600',
-                          session.channel === 'email' && 'text-red-600',
-                        )} />
+                      <div
+                        className={cn(
+                          "p-1.5 rounded-lg",
+                          session.channel === "whatsapp" && "bg-green-500/10",
+                          session.channel === "messenger" && "bg-blue-500/10",
+                          session.channel === "sms" && "bg-purple-500/10",
+                          session.channel === "voice" && "bg-orange-500/10",
+                          session.channel === "email" && "bg-red-500/10",
+                          !channelIcons[session.channel] && "bg-gray-500/10",
+                        )}
+                      >
+                        <ChannelIcon
+                          className={cn(
+                            "h-4 w-4",
+                            session.channel === "whatsapp" && "text-green-600",
+                            session.channel === "messenger" && "text-blue-600",
+                            session.channel === "sms" && "text-purple-600",
+                            session.channel === "voice" && "text-orange-600",
+                            session.channel === "email" && "text-red-600",
+                          )}
+                        />
                       </div>
-                      <span className="text-sm capitalize">{session.channel}</span>
+                      <span className="text-sm capitalize">
+                        {session.channel}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Avatar className="h-8 w-8">
                         <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                          {session.customer?.name?.charAt(0) || '?'}
+                          {session.customer?.name?.charAt(0) || "?"}
                         </AvatarFallback>
                       </Avatar>
                       <div className="flex flex-col">
                         <span className="font-medium text-sm">
-                          {session.customer?.name || 'Unknown'}
+                          {session.customer?.name || "Unknown"}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {session.customer?.phone || '-'}
+                          {session.customer?.phone || "-"}
                         </span>
                       </div>
                     </div>
@@ -183,13 +213,15 @@ export default function SessionsTable({ sessions, loading, onViewSession, onAssi
                         </span>
                       </div>
                     ) : (
-                      <span className="text-sm text-muted-foreground">Unassigned</span>
+                      <span className="text-sm text-muted-foreground">
+                        Unassigned
+                      </span>
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge 
+                    <Badge
                       variant="outline"
-                      className={cn(style.bg, style.text, 'border-transparent')}
+                      className={cn(style.bg, style.text, "border-transparent")}
                     >
                       {session.status}
                     </Badge>
@@ -213,13 +245,13 @@ export default function SessionsTable({ sessions, loading, onViewSession, onAssi
                     {session.satisfaction_score ? (
                       <div className="flex items-center gap-1">
                         {[...Array(5)].map((_, i) => (
-                          <Star 
+                          <Star
                             key={i}
                             className={cn(
                               "h-3.5 w-3.5",
                               i < session.satisfaction_score!
                                 ? "text-accent fill-accent"
-                                : "text-muted-foreground/30"
+                                : "text-muted-foreground/30",
                             )}
                           />
                         ))}
@@ -229,7 +261,9 @@ export default function SessionsTable({ sessions, loading, onViewSession, onAssi
                     )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {formatDistanceToNow(new Date(session.started_at), { addSuffix: true })}
+                    {formatDistanceToNow(new Date(session.started_at), {
+                      addSuffix: true,
+                    })}
                   </TableCell>
                   <TableCell>
                     <DropdownMenu>
@@ -239,12 +273,16 @@ export default function SessionsTable({ sessions, loading, onViewSession, onAssi
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => onViewSession?.(session)}>
+                        <DropdownMenuItem
+                          onClick={() => onViewSession?.(session)}
+                        >
                           <ArrowUpRight className="h-4 w-4 mr-2" />
                           View Details
                         </DropdownMenuItem>
                         {onAssignAgent && (
-                          <DropdownMenuItem onClick={() => onAssignAgent(session)}>
+                          <DropdownMenuItem
+                            onClick={() => onAssignAgent(session)}
+                          >
                             <Users className="h-4 w-4 mr-2" />
                             Assign Agent
                           </DropdownMenuItem>

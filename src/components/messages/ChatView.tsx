@@ -86,7 +86,13 @@ export default function ChatView({
     );
   }
 
-  const ChannelIcon = channelIcons[session.channel];
+  const ChannelIcon = channelIcons[session.channel] || MessageSquare;
+  if (!channelIcons[session.channel]) {
+    console.warn(
+      `ChatView: Unknown channel type for session ${session.id}:`,
+      session.channel,
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col bg-background">
@@ -104,7 +110,9 @@ export default function ChatView({
             </h3>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <ChannelIcon className="h-3 w-3" />
-              <span>{channelLabels[session.channel]}</span>
+              <span>
+                {channelLabels[session.channel] || session.channel || "Unknown"}
+              </span>
               <span>•</span>
               <span>{session.customer?.phone || "No phone"}</span>
             </div>

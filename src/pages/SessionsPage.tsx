@@ -37,6 +37,22 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import ChatView from "@/components/messages/ChatView";
 
+interface BackendSession {
+  id: string;
+  channel: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  employee_id: string | null;
+  employee_name: string | null;
+  last_message: string;
+  status: string;
+  started_at: string;
+  wait_time_seconds: number | null;
+  duration_seconds: number | null;
+  satisfaction_score: number | null;
+}
+
 export default function SessionsPage() {
   const navigate = useNavigate();
   const { id: sessionIdParam } = useParams<{ id?: string }>();
@@ -60,53 +76,75 @@ export default function SessionsPage() {
   } = useQuery({
     queryKey: ["sessions", statusFilter, channelFilter, dateRange, searchTerm],
     queryFn: async () => {
-      let query = supabase
-        .from("sessions")
-        .select(
-          "*, customer:customers(*), employee:employees(*, profile:profiles(*))",
-        )
-        .order("started_at", { ascending: false });
+      // Fetch from Python Backend
+      try {
+        const response = await fetch("http://localhost:5000/api/v1/sessions");
+        if (!response.ok) {
+          throw new Error("Failed to fetch sessions from backend");
+        }
+        const data = await response.json();
 
-      if (statusFilter !== "all") {
-        query = query.eq("status", statusFilter);
-      }
+        // Map backend response to frontend structure
+        let mappedSessions = data.map((s: BackendSession) => ({
+          ...s,
+          customer: {
+            name: s.customer_name,
+            phone: s.customer_phone,
+            email: s.customer_email,
+          },
+          employee: s.employee_id
+            ? {
+                id: s.employee_id,
+                profile: {
+                  first_name: s.employee_name?.split(" ")[0] || "",
+                  last_name:
+                    s.employee_name?.split(" ").slice(1).join(" ") || "",
+                },
+              }
+            : undefined,
+        }));
 
-      if (channelFilter !== "all") {
-        query = query.eq("channel", channelFilter);
-      }
+        // Client-side filtering (since backend implementation of filtering is partial/missing)
+        if (statusFilter !== "all") {
+          mappedSessions = mappedSessions.filter(
+            (s) => s.status === statusFilter,
+          );
+        }
 
-      const dateThreshold = subDays(new Date(), dateRange);
-      query = query.gte("started_at", dateThreshold.toISOString());
+        if (channelFilter !== "all") {
+          mappedSessions = mappedSessions.filter(
+            (s) => s.channel === channelFilter,
+          );
+        }
 
-      const { data, error } = await query;
+        const dateThreshold = subDays(new Date(), dateRange);
+        mappedSessions = mappedSessions.filter(
+          (s) => new Date(s.started_at) >= dateThreshold,
+        );
 
-      if (error) {
-        console.error("Error fetching sessions:", error);
+        if (searchTerm) {
+          const term = searchTerm.toLowerCase();
+          mappedSessions = mappedSessions.filter(
+            (session) =>
+              session.customer?.name?.toLowerCase().includes(term) ||
+              session.customer?.phone?.toLowerCase().includes(term) ||
+              session.customer?.email?.toLowerCase().includes(term) ||
+              (session.employee_name &&
+                session.employee_name.toLowerCase().includes(term)),
+          );
+        }
+
+        return mappedSessions as Array<
+          Session & {
+            customer?: Customer;
+            employee?: Employee & { profile?: Profile };
+          }
+        >;
+      } catch (error) {
+        console.error("Error fetching sessions from backend:", error);
+        // Fallback to empty or handle error
         return [];
       }
-
-      // Client-side search filtering
-      let filtered = (data || []) as Array<
-        Session & {
-          customer?: Customer;
-          employee?: Employee & { profile?: Profile };
-        }
-      >;
-      if (searchTerm) {
-        const term = searchTerm.toLowerCase();
-        filtered = filtered.filter(
-          (session) =>
-            session.customer?.name?.toLowerCase().includes(term) ||
-            session.customer?.phone?.toLowerCase().includes(term) ||
-            session.customer?.email?.toLowerCase().includes(term) ||
-            session.employee?.profile?.first_name
-              ?.toLowerCase()
-              .includes(term) ||
-            session.employee?.profile?.last_name?.toLowerCase().includes(term),
-        );
-      }
-
-      return filtered;
     },
   });
 
@@ -171,18 +209,22 @@ export default function SessionsPage() {
     queryKey: ["session-messages", selectedSession?.id],
     queryFn: async () => {
       if (!selectedSession?.id) return [];
-      const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .eq("session_id", selectedSession.id)
-        .order("sent_at", { ascending: true });
 
-      if (error) {
-        console.error("Error fetching messages:", error);
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/v1/sessions/${selectedSession.id}/messages`,
+        );
+        if (!response.ok) {
+          // Fallback to Supabase if backend fails or route 404s?
+          // But we want to use backend.
+          throw new Error("Failed to fetch messages from backend");
+        }
+        const data = await response.json();
+        return data as Message[];
+      } catch (error) {
+        console.error("Error fetching messages from backend:", error);
         return [];
       }
-
-      return (data || []) as Message[];
     },
     enabled: !!selectedSession?.id,
   });
@@ -333,43 +375,34 @@ export default function SessionsPage() {
   const handleSendMessage = async (content: string) => {
     if (!selectedSession) return;
 
-    // 1. Insert local message for immediate feedback
-    const { error } = await supabase.from("messages").insert({
-      session_id: selectedSession.id,
-      direction: "outbound",
-      content,
-      channel: selectedSession.channel,
-    });
-
-    if (error) {
-      toast.error("Failed to save message");
-      return;
-    }
-
-    // 2. If it's a WhatsApp message, trigger the Edge Function to send it via API
-    if (selectedSession.channel === "whatsapp") {
-      try {
-        const { error: funcError } = await supabase.functions.invoke(
-          "whatsapp",
-          {
-            body: {
-              action: "send_message",
-              sessionId: selectedSession.id,
-              content: content,
-            },
+    try {
+      // Send via Python Backend
+      const response = await fetch(
+        `http://localhost:5000/api/v1/sessions/${selectedSession.id}/send`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-        );
+          body: JSON.stringify({
+            text: content,
+          }),
+        },
+      );
 
-        if (funcError) {
-          console.error("WhatsApp delivery error:", funcError);
-          toast.error("Message saved but failed to deliver to WhatsApp");
-        }
-      } catch (err) {
-        console.error("Edge function call failed:", err);
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Failed to send message via backend");
       }
-    }
 
-    refetchMessages();
+      // Success
+      toast.success("Message sent");
+      refetchMessages();
+    } catch (err) {
+      const error = err as Error;
+      console.error("Error sending message:", error);
+      toast.error(error.message || "Failed to send message");
+    }
   };
 
   return (
