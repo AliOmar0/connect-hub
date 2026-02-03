@@ -55,7 +55,7 @@ serve(async (req) => {
 
       // --- OUTBOUND MESSAGE HANDLING ---
       if (payload.action === "send_message") {
-        const { sessionId, content } = payload;
+        const { sessionId, content, dbMessageId } = payload;
         if (!sessionId || !content)
           throw new Error("sessionId and content required");
 
@@ -113,8 +113,18 @@ serve(async (req) => {
           );
         }
 
+        const wamid = responseData.messages?.[0]?.id;
+
+        // Update the message in our DB with the WhatsApp Message ID
+        if (wamid && dbMessageId) {
+          await supabase
+            .from("messages")
+            .update({ external_message_id: wamid, status: "sent" })
+            .eq("id", dbMessageId);
+        }
+
         return new Response(
-          JSON.stringify({ success: true, daa: responseData }),
+          JSON.stringify({ success: true, data: responseData }),
           {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
             status: 200,
@@ -129,6 +139,7 @@ serve(async (req) => {
         if (changes?.value?.messages?.[0]) {
           const message = changes.value.messages[0];
           const contact = changes.value.contacts?.[0];
+          const metadata = changes.value.metadata;
 
           const from = message.from; // Phone number
           const name = contact?.profile?.name || from;
@@ -140,6 +151,24 @@ serve(async (req) => {
           const messageId = message.id;
 
           console.log(`NEW MESSAGE FROM ${from}: ${text}`);
+
+          // 0. Verify this message is for us (Check metadata.phone_number_id against api_configurations)
+          if (metadata?.phone_number_id) {
+            const { data: config } = await supabase
+              .from("api_configurations")
+              .select("phone_number_id")
+              .eq("channel", "whatsapp")
+              .eq("phone_number_id", metadata.phone_number_id)
+              .maybeSingle();
+
+            // Optional: You could reject here if config is missing, to enforce using the table.
+            // For now we just log it.
+            if (!config) {
+              console.warn(
+                `Received webhook for unknown phone_number_id: ${metadata.phone_number_id}`,
+              );
+            }
+          }
 
           // 1. Find or Create Customer
           const { data: customer, error: customerError } = await supabase
@@ -206,6 +235,54 @@ serve(async (req) => {
           });
 
           if (msgError) throw msgError;
+
+          return new Response(JSON.stringify({ success: true }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+            status: 200,
+          });
+        }
+
+        // 2. Handle Message Status Updates (Delivered, Read, Failed)
+        if (changes?.value?.statuses?.[0]) {
+          const statuses = changes.value.statuses;
+
+          for (const status of statuses) {
+            const messageId = status.id;
+            const statusState = status.status; // sent, delivered, read, failed
+            const timestamp = new Date(
+              Number(status.timestamp) * 1000,
+            ).toISOString();
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const updateData: any = {
+              status: statusState,
+              updated_at: new Date().toISOString(),
+            };
+
+            if (statusState === "delivered") {
+              updateData.delivered_at = timestamp;
+            } else if (statusState === "read") {
+              updateData.read_at = timestamp;
+              updateData.delivered_at = updateData.delivered_at || timestamp; // Ensure delivered is set if read
+            } else if (statusState === "failed") {
+              updateData.failure_reason =
+                status.errors?.[0]?.message || "Unknown error";
+            }
+
+            console.log(`Updating message ${messageId} to ${statusState}`);
+
+            const { error: updateError } = await supabase
+              .from("messages")
+              .update(updateData)
+              .eq("external_message_id", messageId);
+
+            if (updateError) {
+              console.error(
+                `Error updating message status for ${messageId}:`,
+                updateError,
+              );
+            }
+          }
 
           return new Response(JSON.stringify({ success: true }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -15,7 +15,7 @@ dist-ssr
 # Test coverage
 coverage
 *.lcov
-
+__pycache__
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
