@@ -2,11 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, Backgr
 from app.api.v1.deps import get_session
 from app.core.config import settings
 from app.crud import crud
-from app.models.enums import MessageDirection, ChannelType
+from app.models.enums import MessageDirection, ChannelType, SessionStatus
 from app.core.llm import llm_service
 from app.core.stt import stt_service
 from app.core.whatsapp import WhatsAppClient
-from typing import Any
+from app.core.notifications import NotificationService
+from typing import Any, Optional
 import logging
 from uuid import UUID
 
@@ -26,6 +27,10 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
             phone_number_id=config.get("phone_number_id"),
             access_token=config.get("access_token")
         )
+
+        # 1.1 Mark as read & Send typing indicator
+        await client.mark_message_as_read(message_id)
+        await client.send_typing_indicator(sender_phone)
 
         # 2. Get Media URL
         media_url = await client.get_media_url(media_id)
@@ -60,20 +65,38 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
             external_id=message_id
         )
         
-        # 6. Check if human agent is joined
+        # 6. Check if AI should respond
         session = await crud.get_session_by_id(None, db_session_id)
-        if session and session.employee_id is None:
+        if session and session.employee_id is None and session.status != SessionStatus.escalated:
             # 7. Call LLM & Send Response
             await process_ai_response(db_session_id, transcription, sender_phone, config)
+        else:
+            logger.info(f"Skipping AI response for voice message in session {db_session_id}. Status: {session.status if session else 'Unknown'}")
 
     except Exception as e:
         logger.error(f"Error in background voice processing: {e}")
 
-async def process_ai_response(db_session_id: UUID, user_message: str, customer_phone: str, config: dict):
+async def process_ai_response(db_session_id: UUID, user_message: str, customer_phone: str, config: dict, message_id: Optional[str] = None):
     """
     Background task to get AI response and send back to WhatsApp
     """
     try:
+        # 0. Safety Check: Verify session is still eligible for AI response
+        session = await crud.get_session_by_id(None, db_session_id)
+        if not session or session.status == SessionStatus.escalated or session.employee_id is not None:
+            logger.info(f"Aborting AI response for session {db_session_id}. Reason: {'Escalated' if session and session.status == SessionStatus.escalated else 'Agent Assigned' if session else 'Session Not Found'}")
+            return
+        # 3. Send back to WhatsApp
+        client = WhatsAppClient(
+            phone_number_id=config.get("phone_number_id"),
+            access_token=config.get("access_token")
+        )
+
+        # 3.1 Mark as read & Send typing indicator
+        if message_id:
+            await client.mark_message_as_read(message_id)
+        await client.send_typing_indicator(customer_phone)
+
         # 1. Get History (last 5 messages for context)
         msgs = await crud.get_messages_for_session(None, db_session_id)
         history = []
@@ -85,20 +108,69 @@ async def process_ai_response(db_session_id: UUID, user_message: str, customer_p
         # 2. Call LLM
         ai_text = await llm_service.get_ai_response(user_message, history)
         
-        # 3. Send back to WhatsApp
-        client = WhatsAppClient(
-            phone_number_id=config.get("phone_number_id"),
-            access_token=config.get("access_token")
-        )
-        await client.send_text_message(customer_phone, ai_text)
-        
-        # 4. Save Outbound Message
-        await crud.create_message(
-            None,
-            session_id=db_session_id,
-            content=ai_text,
-            direction=MessageDirection.outbound
-        )
+        # 3. Handle Escalation or Send Response
+        if "[ESCALATE]" in ai_text:
+            # Extract clean message
+            clean_text = ai_text.replace("[ESCALATE]:", "").replace("[ESCALATE]", "").strip()
+            
+            # Send the handover message
+            await client.send_text_message(customer_phone, clean_text)
+            
+            # Update session status to escalated
+            # We need a db session here. Since process_ai_response is background task, 
+            # we should best use a fresh session or rely on crud handling it if it accepts None (it does for read, but update might need commit).
+            # Looking at crud.py, update_session_status uses supabase client directly which is global. So None is fine.
+            await crud.update_session_status(None, db_session_id, SessionStatus.escalated)
+
+            # Create Database Notifications for all employees
+            employee_user_ids = await crud.get_active_employee_user_ids(None)
+            
+            # 1. Create a broadcast notification (visible to everyone)
+            try:
+                await crud.create_notification(
+                    None,
+                    user_id=None,
+                    title="⚠️ New Escalation Request (Broadcast)",
+                    message=f"Customer {customer_phone} requires human assistance.",
+                    type="escalation",
+                    action_url=f"/sessions/{db_session_id}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to create broadcast notification: {e}")
+
+            # 2. Create personal notifications for each active employee
+            for user_id in employee_user_ids:
+                try:
+                    await crud.create_notification(
+                        None,
+                        user_id=user_id,
+                        title="⚠️ New Escalation Request",
+                        message=f"Customer {customer_phone} requires human assistance.",
+                        type="escalation",
+                        action_url=f"/sessions/{db_session_id}"
+                    )
+                except Exception as notified_err:
+                    logger.error(f"Failed to create database notification for user {user_id}: {notified_err}")
+            
+            logger.info(f"Session {db_session_id} escalated to human agent. Broadcast and {len(employee_user_ids)} personal notifications created.")
+            
+            # Send Notification
+            await NotificationService.send_escalation_email(
+                str(db_session_id), 
+                customer_phone, 
+                clean_text if clean_text else "AI decided to escalate"
+            )
+        else:
+            # Send normal response
+            await client.send_text_message(customer_phone, ai_text)
+            
+            # 4. Save Outbound Message
+            await crud.create_message(
+                None,
+                session_id=db_session_id,
+                content=ai_text,
+                direction=MessageDirection.outbound
+            )
     except Exception as e:
         logger.error(f"Error in background AI response: {e}")
 
@@ -219,36 +291,30 @@ async def extract_webhook(
                 "access_token": api_config.access_token_encrypted
             }
         
-        # 5. Trigger AI process in background
-        if session.employee_id is None:
-            if msg_type == "text":
+        # 5. Trigger AI process or Voice Transcription in background
+        if msg_type == "text":
+            if session.status != SessionStatus.escalated and session.employee_id is None:
                 background_tasks.add_task(
                     process_ai_response, 
                     session.id, 
                     text_body, 
                     sender_phone,
-                    config_data
+                    config_data,
+                    message_id
                 )
-            elif msg_type == "audio":
-                background_tasks.add_task(
-                    process_voice_message,
-                    session.id,
-                    media_id,
-                    sender_phone,
-                    message_id,
-                    config_data
-                )
-        else:
-            logger.info(f"Human agent {session.employee_id} is assigned. Skipping AI response.")
-            if msg_type == "audio":
-                # Still process voice for the human agent to see text
-                background_tasks.add_task(
-                    process_voice_message,
-                    session.id,
-                    media_id,
-                    sender_phone,
-                    message_id,
-                    config_data
-                )
+            else:
+                reason = "Escalated" if session.status == SessionStatus.escalated else "Agent Assigned"
+                logger.info(f"Skipping AI response for text message in session {session.id}. Reason: {reason}")
+        
+        elif msg_type == "audio":
+            # Always process voice message to ensure transcription is available for agents
+            background_tasks.add_task(
+                process_voice_message,
+                session.id,
+                media_id,
+                sender_phone,
+                message_id,
+                config_data
+            )
         
     return {"status": "received"}

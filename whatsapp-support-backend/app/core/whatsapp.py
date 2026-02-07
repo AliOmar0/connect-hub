@@ -81,5 +81,53 @@ class WhatsAppClient:
                 logger.error(f"WhatsApp Media Download Error: {e}")
                 return None
 
+    async def send_typing_indicator(self, to_phone: str):
+        """
+        Send a typing indicator to the user.
+        """
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": to_phone,
+            "sender_action": "typing_on"
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self._get_api_url(), 
+                    json=payload, 
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as e:
+                # Some accounts might not support this yet, so we log but don't fail
+                logger.warning(f"WhatsApp Typing Indicator Error: {e}")
+                return None
+
+    async def mark_message_as_read(self, message_id: str):
+        """
+        Mark a message as read.
+        """
+        payload = {
+            "messaging_product": "whatsapp",
+            "status": "read",
+            "message_id": message_id
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self._get_api_url(), 
+                    json=payload, 
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as e:
+                logger.warning(f"WhatsApp Mark as Read Error: {e}")
+                return None
+
 # Default client
 whatsapp_client = WhatsAppClient()

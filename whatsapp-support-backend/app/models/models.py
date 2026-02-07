@@ -76,5 +76,15 @@ class ApiConfiguration(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
+class Notification(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    user_id: Optional[UUID] = None
+    title: str
+    message: Optional[str] = None
+    is_read: bool = False
+    type: Optional[str] = None
+    action_url: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
 # Re-resolve forward refs
 Session.model_rebuild()

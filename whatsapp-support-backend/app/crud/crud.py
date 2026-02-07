@@ -1,5 +1,5 @@
 from app.database import supabase
-from app.models.models import Session, Message, Customer, ApiConfiguration
+from app.models.models import Session, Message, Customer, ApiConfiguration, Notification
 from app.models.enums import SessionStatus, ChannelType, MessageDirection
 from typing import Optional, List, Any
 from uuid import UUID
@@ -112,3 +112,58 @@ async def get_api_config(db: Any, channel: ChannelType) -> Optional[ApiConfigura
     if response.data:
         return ApiConfiguration(**response.data[0])
     return None
+
+async def create_notification(
+    db: Any,
+    title: str,
+    message: str,
+    user_id: Optional[UUID] = None,
+    type: str = "escalation",
+    action_url: Optional[str] = None
+) -> Notification:
+    data = {
+        "title": title,
+        "message": message,
+        "user_id": str(user_id) if user_id else None,
+        "type": type,
+        "action_url": action_url,
+        "is_read": False
+    }
+    response = supabase.table("notifications").insert(data).execute()
+    if response.data:
+        return Notification(**response.data[0])
+    raise Exception("Failed to create notification")
+
+async def get_active_employee_user_ids(db: Any) -> List[UUID]:
+    # Fetch ALL user_ids from profiles table to be 100% sure we hit the active user
+    response = supabase.table("profiles")\
+        .select("user_id")\
+        .execute()
+    
+    user_ids = []
+    for item in response.data:
+        if item.get("user_id"):
+            try:
+                user_ids.append(UUID(item["user_id"]))
+            except:
+                continue
+    
+    logger.info(f"Targeting {len(user_ids)} users for notification (all profiles).")
+    return user_ids
+
+async def close_inactive_sessions(db: Any, minutes: int = 30):
+    from datetime import datetime, timedelta, timezone
+    
+    threshold = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    
+    # Get active or waiting sessions that haven't been updated since threshold
+    response = supabase.table("sessions")\
+        .update({"status": SessionStatus.completed.value})\
+        .in_("status", [SessionStatus.active.value, SessionStatus.waiting.value, SessionStatus.escalated.value])\
+        .lt("updated_at", threshold)\
+        .execute()
+    
+    if response.data:
+        logger.info(f"Automatically closed {len(response.data)} inactive sessions.")
+        return len(response.data)
+    return 0
