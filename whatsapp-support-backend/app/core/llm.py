@@ -1,6 +1,7 @@
 import httpx
 import json
 import logging
+import os
 from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)

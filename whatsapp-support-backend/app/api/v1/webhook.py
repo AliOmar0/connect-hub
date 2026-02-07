@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.crud import crud
 from app.models.enums import MessageDirection, ChannelType
 from app.core.llm import llm_service
+from app.core.stt import stt_service
 from app.core.whatsapp import WhatsAppClient
 from typing import Any
 import logging
@@ -13,6 +14,60 @@ router = APIRouter()
 logger = logging.getLogger("webhook")
 # Force INFO level
 logging.getLogger().setLevel(logging.INFO)
+
+
+async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
+    """
+    Background task to download audio, transcribe, and then handle like a text message
+    """
+    try:
+        # 1. Initialize WhatsApp Client
+        client = WhatsAppClient(
+            phone_number_id=config.get("phone_number_id"),
+            access_token=config.get("access_token")
+        )
+
+        # 2. Get Media URL
+        media_url = await client.get_media_url(media_id)
+        if not media_url:
+            logger.error("Failed to get media URL")
+            return
+
+        # 3. Download Audio
+        audio_bytes = await client.download_media(media_url)
+        if not audio_bytes:
+            logger.error("Failed to download audio")
+            return
+
+        # 4. Transcribe Audio
+        transcription = await stt_service.transcribe_audio(audio_bytes)
+        if not transcription:
+            logger.error("Failed to transcribe audio")
+            # Maybe send a message saying we couldn't understand the voice message
+            await client.send_text_message(sender_phone, "نعتذر، لم نتمكن من فهم الرسالة الصوتية. هل يمكنك إرسالها بنص؟")
+            return
+
+        logger.info(f"Transcription: {transcription}")
+
+        # 5. Save Inbound Message (Transcribed)
+        # In background tasks, we don't need to worry about the session dependency
+        # since our CRUD uses the global supabase client.
+        await crud.create_message(
+            None,
+            session_id=db_session_id,
+            content=f"[رسالة صوتية]: {transcription}",
+            direction=MessageDirection.inbound,
+            external_id=message_id
+        )
+        
+        # 6. Check if human agent is joined
+        session = await crud.get_session_by_id(None, db_session_id)
+        if session and session.employee_id is None:
+            # 7. Call LLM & Send Response
+            await process_ai_response(db_session_id, transcription, sender_phone, config)
+
+    except Exception as e:
+        logger.error(f"Error in background voice processing: {e}")
 
 async def process_ai_response(db_session_id: UUID, user_message: str, customer_phone: str, config: dict):
     """
@@ -123,10 +178,16 @@ async def extract_webhook(
         text_body = msg_data.get("text", {}).get("body")
         msg_type = msg_data.get("type")
         
-        if msg_type != "text":
-            return {"status": "ignored", "reason": "non-text message phase 1"}
+        # Audio handling
+        media_id = None
+        if msg_type == "audio":
+            media_id = msg_data.get("audio", {}).get("id")
+            if not media_id:
+                return {"status": "ignored", "reason": "audio message without media id"}
+        elif msg_type != "text":
+            return {"status": "ignored", "reason": f"unsupported message type: {msg_type}"}
             
-        if not sender_phone or not text_body:
+        if not sender_phone or (msg_type == "text" and not text_body):
              return {"status": "ignored", "reason": "incomplete data"}
              
         # 1. Find Customer
@@ -139,14 +200,15 @@ async def extract_webhook(
         if not session:
             session = await crud.create_session(db, customer.id)
             
-        # 3. Save Inbound Message
-        await crud.create_message(
-            db, 
-            session_id=session.id, 
-            content=text_body, 
-            direction=MessageDirection.inbound, 
-            external_id=message_id
-        )
+        # 3. Save Inbound Message (If text)
+        if msg_type == "text":
+            await crud.create_message(
+                db, 
+                session_id=session.id, 
+                content=text_body, 
+                direction=MessageDirection.inbound, 
+                external_id=message_id
+            )
         
         # 4. Fetch dynamic configuration
         api_config = await crud.get_api_config(db, ChannelType.whatsapp)
@@ -157,16 +219,36 @@ async def extract_webhook(
                 "access_token": api_config.access_token_encrypted
             }
         
-        # 5. Trigger AI process in background only if no human agent is joined
+        # 5. Trigger AI process in background
         if session.employee_id is None:
-            background_tasks.add_task(
-                process_ai_response, 
-                session.id, 
-                text_body, 
-                sender_phone,
-                config_data
-            )
+            if msg_type == "text":
+                background_tasks.add_task(
+                    process_ai_response, 
+                    session.id, 
+                    text_body, 
+                    sender_phone,
+                    config_data
+                )
+            elif msg_type == "audio":
+                background_tasks.add_task(
+                    process_voice_message,
+                    session.id,
+                    media_id,
+                    sender_phone,
+                    message_id,
+                    config_data
+                )
         else:
             logger.info(f"Human agent {session.employee_id} is assigned. Skipping AI response.")
+            if msg_type == "audio":
+                # Still process voice for the human agent to see text
+                background_tasks.add_task(
+                    process_voice_message,
+                    session.id,
+                    media_id,
+                    sender_phone,
+                    message_id,
+                    config_data
+                )
         
     return {"status": "received"}

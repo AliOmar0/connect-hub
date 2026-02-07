@@ -8,3 +8,8 @@ python-dotenv>=1.0.1
 flask
 flask-cors
 requests
+torch
+transformers
+accelerate
+librosa
+soundfile

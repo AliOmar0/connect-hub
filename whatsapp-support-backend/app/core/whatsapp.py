@@ -47,5 +47,39 @@ class WhatsAppClient:
                 logger.error(f"Response: {e.response.text if e.response else 'No response'}")
                 raise e
 
+    async def get_media_url(self, media_id: str) -> Optional[str]:
+        """
+        Get the direct URL for a media file using its media_id.
+        """
+        url = f"{self.base_url}/{media_id}"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    url,
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                return response.json().get("url")
+            except httpx.HTTPError as e:
+                logger.error(f"WhatsApp Media URL Error: {e}")
+                return None
+
+    async def download_media(self, media_url: str) -> Optional[bytes]:
+        """
+        Download media content from Meta's servers.
+        """
+        async with httpx.AsyncClient() as client:
+            try:
+                # Media download requires the same access token
+                response = await client.get(
+                    media_url,
+                    headers={"Authorization": f"Bearer {self.access_token}"}
+                )
+                response.raise_for_status()
+                return response.content
+            except httpx.HTTPError as e:
+                logger.error(f"WhatsApp Media Download Error: {e}")
+                return None
+
 # Default client
 whatsapp_client = WhatsAppClient()
