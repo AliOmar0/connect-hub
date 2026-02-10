@@ -151,19 +151,107 @@ async def get_active_employee_user_ids(db: Any) -> List[UUID]:
     logger.info(f"Targeting {len(user_ids)} users for notification (all profiles).")
     return user_ids
 
-async def close_inactive_sessions(db: Any, minutes: int = 30):
+async def get_last_session_by_customer(db: Any, customer_id: UUID) -> Optional[Session]:
+    response = supabase.table("sessions")\
+        .select("*")\
+        .eq("customer_id", str(customer_id))\
+        .order("created_at", desc=True)\
+        .limit(1)\
+        .execute()
+    
+    if response.data:
+        return Session(**response.data[0])
+    return None
+
+async def close_inactive_sessions(db: Any, minutes: int = 10):
     from datetime import datetime, timedelta, timezone
     
+    # 1. Get all candidates (Active/Waiting/Escalated) that haven't been updated recently
+    # We check 'updated_at' first as a rough filter to avoid fetching all sessions
     threshold = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     
-    # Get active or waiting sessions that haven't been updated since threshold
     response = supabase.table("sessions")\
-        .update({"status": SessionStatus.completed.value})\
+        .select("id, status, updated_at")\
         .in_("status", [SessionStatus.active.value, SessionStatus.waiting.value, SessionStatus.escalated.value])\
         .lt("updated_at", threshold)\
         .execute()
     
+    if not response.data:
+        return 0
+        
+    closed_count = 0
+    for item in response.data:
+        session_id = item["id"]
+        
+        # 2. Check the LAST message of this session
+        msg_response = supabase.table("messages")\
+            .select("direction, sent_at")\
+            .eq("session_id", session_id)\
+            .order("sent_at", desc=True)\
+            .limit(1)\
+            .execute()
+            
+        should_close = False
+        if msg_response.data:
+            last_msg = msg_response.data[0]
+            # Key Condition: Last message from Bot/Agent (Outbound)
+            if last_msg["direction"] == MessageDirection.outbound.value:
+                # Double check time on message to be safe regardless of session updated_at trigger
+                # Parse sent_at. Format from supabase is typically ISO 8601 string
+                try:
+                    msg_time_str = last_msg["sent_at"]
+                    # Handle potential 'Z' or offset
+                    if msg_time_str.endswith('Z'):
+                        msg_time_str = msg_time_str.replace('Z', '+00:00')
+                    msg_time = datetime.fromisoformat(msg_time_str)
+                    
+                    if (datetime.now(timezone.utc) - msg_time).total_seconds() > minutes * 60:
+                        should_close = True
+                except Exception as e:
+                    logger.warning(f"Error parsing date for session {session_id}: {e}. Skipping auto-close.")
+                    should_close = False
+        else:
+            # No messages? If it's old and empty, maybe close it?
+            # Let's assume yes to clean up empty sessions
+            should_close = True
+            
+        if should_close:
+            # 3. Close the session
+            update_res = supabase.table("sessions")\
+                .update({"status": SessionStatus.completed.value})\
+                .eq("id", session_id)\
+                .execute()
+            
+            if update_res.data:
+                closed_count += 1
+                logger.info(f"Auto-closing session {session_id} (inactive > {minutes} mins after outbound msg).")
+                
+                # Notify agents of auto-closure
+                try:
+                    await create_notification(
+                        db,
+                        title="Session Completed (Auto)",
+                        message=f"Session {session_id} closed due to inactivity.",
+                        user_id=None, # Broadcast
+                        type="info",
+                        action_url=f"/sessions/{session_id}"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to create auto-close notification: {e}")
+    
+    return closed_count
+
+async def delete_old_notifications(db: Any, hours: int = 24):
+    from datetime import datetime, timedelta, timezone
+    
+    threshold = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    
+    response = supabase.table("notifications")\
+        .delete()\
+        .lt("created_at", threshold)\
+        .execute()
+        
     if response.data:
-        logger.info(f"Automatically closed {len(response.data)} inactive sessions.")
+        logger.info(f"Automatically deleted {len(response.data)} old notifications (> {hours} hours).")
         return len(response.data)
     return 0

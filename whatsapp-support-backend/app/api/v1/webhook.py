@@ -123,14 +123,14 @@ async def process_ai_response(db_session_id: UUID, user_message: str, customer_p
             await crud.update_session_status(None, db_session_id, SessionStatus.escalated)
 
             # Create Database Notifications for all employees
-            employee_user_ids = await crud.get_active_employee_user_ids(None)
+            # We use a single broadcast notification (user_id=None) visible to everyone.
+            # This avoids creating N notifications for N employees (preventing duplicates).
             
-            # 1. Create a broadcast notification (visible to everyone)
             try:
                 await crud.create_notification(
                     None,
                     user_id=None,
-                    title="⚠️ New Escalation Request (Broadcast)",
+                    title="⚠️ New Escalation Request",
                     message=f"Customer {customer_phone} requires human assistance.",
                     type="escalation",
                     action_url=f"/sessions/{db_session_id}"
@@ -138,21 +138,7 @@ async def process_ai_response(db_session_id: UUID, user_message: str, customer_p
             except Exception as e:
                 logger.error(f"Failed to create broadcast notification: {e}")
 
-            # 2. Create personal notifications for each active employee
-            for user_id in employee_user_ids:
-                try:
-                    await crud.create_notification(
-                        None,
-                        user_id=user_id,
-                        title="⚠️ New Escalation Request",
-                        message=f"Customer {customer_phone} requires human assistance.",
-                        type="escalation",
-                        action_url=f"/sessions/{db_session_id}"
-                    )
-                except Exception as notified_err:
-                    logger.error(f"Failed to create database notification for user {user_id}: {notified_err}")
-            
-            logger.info(f"Session {db_session_id} escalated to human agent. Broadcast and {len(employee_user_ids)} personal notifications created.")
+            logger.info(f"Session {db_session_id} escalated to human agent. Broadcast notification created.")
             
             # Send Notification
             await NotificationService.send_escalation_email(
@@ -269,8 +255,46 @@ async def extract_webhook(
             
         # 2. Find/Create Session
         session = await crud.get_active_session_by_customer(db, customer.id)
+        
+        # NEW: Check if there's a recent completed session to reactivate
         if not session:
-            session = await crud.create_session(db, customer.id)
+            last_session = await crud.get_last_session_by_customer(db, customer.id)
+            if last_session and last_session.status == SessionStatus.completed:
+                # Reactivate the completed session
+                logger.info(f"Reactivating completed session {last_session.id} for customer {customer.id}")
+                await crud.update_session_status(db, last_session.id, SessionStatus.active)
+                session = last_session
+                # Update local object status slightly for downstream logic if needed
+                session.status = SessionStatus.active
+                
+                # Notify agents
+                await crud.create_notification(
+                    db,
+                    user_id=None, # Broadcast
+                    title="Session Re-opened",
+                    message=f"Customer {sender_phone} resumed a completed conversation.",
+                    type="info",
+                    action_url=f"/sessions/{session.id}"
+                )
+            else:
+                # Create a fresh session
+                session = await crud.create_session(db, customer.id)
+        
+        # NEW: If session was Escalated, change to Active on user reply
+        if session.status == SessionStatus.escalated:
+            logger.info(f"Session {session.id} status changed Escalated -> Active due to customer response")
+            await crud.update_session_status(db, session.id, SessionStatus.active)
+            session.status = SessionStatus.active
+            
+            # Notify agents
+            await crud.create_notification(
+                db,
+                user_id=None, # Broadcast
+                title="Escalation Update",
+                message=f"Customer {sender_phone} replied to escalated session.",
+                type="info", 
+                action_url=f"/sessions/{session.id}"
+            )
             
         # 3. Save Inbound Message (If text)
         if msg_type == "text":

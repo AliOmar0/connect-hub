@@ -12,7 +12,8 @@ async def session_cleanup_task():
     """Periodic task to close inactive sessions"""
     while True:
         try:
-            await crud.close_inactive_sessions(None, minutes=30)
+            await crud.close_inactive_sessions(None, minutes=10)
+            await crud.delete_old_notifications(None, hours=24)
         except Exception as e:
             print(f"Error in session cleanup task: {e}")
         await asyncio.sleep(300) # Run every 5 minutes

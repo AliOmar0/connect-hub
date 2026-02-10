@@ -106,6 +106,26 @@ export default function NotificationsPage() {
     },
   });
 
+  const deleteAllReadMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) return;
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("is_read", true)
+        .or(`user_id.eq.${user.id},user_id.is.null`);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      toast.success("All read notifications deleted");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to delete read notifications");
+    },
+  });
+
   // Real-time subscription
   useEffect(() => {
     if (!user?.id) return;
@@ -186,6 +206,19 @@ export default function NotificationsPage() {
                 Mark All Read
               </Button>
             )}
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => {
+                if (confirm("Delete all read notifications?")) {
+                  deleteAllReadMutation.mutate();
+                }
+              }}
+              disabled={deleteAllReadMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete All Read
+            </Button>
           </div>
         </div>
 
@@ -266,7 +299,8 @@ export default function NotificationsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          title="Mark as Read"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
                           onClick={(e) => {
                             e.stopPropagation();
                             markAsReadMutation.mutate(notification.id);
@@ -278,7 +312,8 @@ export default function NotificationsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        title="Delete"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (confirm("Delete this notification?")) {
