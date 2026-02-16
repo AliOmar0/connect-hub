@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
 import { supabase } from "@/integrations/supabase/client";
-import { ChannelType, Profile } from "@/types/database";
+import { ChannelType, Profile, SessionMainType } from "@/types/database";
+import { Badge } from "@/components/ui/badge";
 import { Tables } from "@/integrations/supabase/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -34,6 +35,10 @@ import {
   Mail,
   Phone,
   Globe,
+  LayoutList,
+  Loader2,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -58,6 +63,9 @@ export default function SettingsPage() {
     voice: null,
     email: null,
   });
+  const [sessionTypes, setSessionTypes] = useState<SessionMainType[]>([]);
+  const [newSessionType, setNewSessionType] = useState("");
+  const [sessionTypesLoading, setSessionTypesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -107,6 +115,21 @@ export default function SettingsPage() {
     setLoading(false);
   }, []);
 
+  const fetchSessionTypes = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("session_main_types")
+      .select("*")
+      .order("created_at", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching session types:", error);
+      toast.error("Failed to load session types");
+    } else {
+      setSessionTypes((data as unknown as SessionMainType[]) || []);
+    }
+    setSessionTypesLoading(false);
+  }, []);
+
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase
@@ -121,7 +144,8 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchConfigs();
     fetchProfile();
-  }, [user, fetchConfigs, fetchProfile]);
+    fetchSessionTypes();
+  }, [user, fetchConfigs, fetchProfile, fetchSessionTypes]);
 
   const handleSave = async (
     channel: ChannelType,
@@ -217,6 +241,38 @@ export default function SettingsPage() {
     toast.success("Notification preferences saved");
   };
 
+  const handleAddSessionType = async () => {
+    if (!newSessionType.trim()) return;
+
+    const { error } = await supabase
+      .from("session_main_types")
+      .insert([{ name: newSessionType.trim() }]);
+
+    if (error) {
+      console.error("Error adding session type:", error);
+      toast.error("Failed to add session type");
+    } else {
+      toast.success("Session type added successfully");
+      setNewSessionType("");
+      fetchSessionTypes();
+    }
+  };
+
+  const handleDeleteSessionType = async (id: string) => {
+    const { error } = await supabase
+      .from("session_main_types")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error deleting session type:", error);
+      toast.error("Failed to delete session type");
+    } else {
+      toast.success("Session type deleted successfully");
+      fetchSessionTypes();
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -246,6 +302,10 @@ export default function SettingsPage() {
             <TabsTrigger value="general" className="gap-2">
               <Settings className="h-4 w-4" />
               General
+            </TabsTrigger>
+            <TabsTrigger value="session-types" className="gap-2">
+              <LayoutList className="h-4 w-4" />
+              Session Types
             </TabsTrigger>
           </TabsList>
 
@@ -551,6 +611,64 @@ export default function SettingsPage() {
                 ) : (
                   <div className="text-center py-8 text-muted-foreground">
                     Profile not found
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="session-types" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Session Types</CardTitle>
+                <CardDescription>
+                  Manage the main types/categories for sessions.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add new session type (e.g. General Inquiries)"
+                    value={newSessionType}
+                    onChange={(e) => setNewSessionType(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddSessionType();
+                    }}
+                  />
+                  <Button onClick={handleAddSessionType}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
+
+                {sessionTypesLoading ? (
+                  <div className="flex justify-center p-4">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="grid gap-2">
+                    {sessionTypes.length === 0 ? (
+                      <p className="text-center text-muted-foreground py-4">
+                        No session types defined yet.
+                      </p>
+                    ) : (
+                      sessionTypes.map((type) => (
+                        <div
+                          key={type.id}
+                          className="flex items-center justify-between p-3 border rounded-lg bg-muted/50"
+                        >
+                          <span className="font-medium">{type.name}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => handleDeleteSessionType(type.id)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))
+                    )}
                   </div>
                 )}
               </CardContent>

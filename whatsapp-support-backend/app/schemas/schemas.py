@@ -30,6 +30,7 @@ class SessionResponse(BaseModel):
     wait_time_seconds: Optional[int] = None
     duration_seconds: Optional[int] = None
     satisfaction_score: Optional[int] = None
+    main_type_id: Optional[UUID] = None
 
     class Config:
         from_attributes = True

@@ -1,5 +1,5 @@
 from app.database import supabase
-from app.models.models import Session, Message, Customer, ApiConfiguration, Notification
+from app.models.models import Session, Message, Customer, ApiConfiguration, Notification, SessionMainType
 from app.models.enums import SessionStatus, ChannelType, MessageDirection
 from typing import Optional, List, Any
 from uuid import UUID
@@ -75,6 +75,20 @@ async def update_session_status(db: Any, session_id: UUID, status: SessionStatus
         return Session(**response.data[0])
     raise Exception("Failed to update session")
 
+async def get_session_main_types(db: Any) -> List[Any]:
+    response = supabase.table("session_main_types").select("*").execute()
+    return response.data if response.data else []
+
+async def update_session_main_type(db: Any, session_id: UUID, type_id: UUID) -> Session:
+    response = supabase.table("sessions")\
+        .update({"main_type_id": str(type_id)})\
+        .eq("id", str(session_id))\
+        .execute()
+    if response.data:
+        return Session(**response.data[0])
+    raise Exception("Failed to update session type")
+
+
 async def create_message(
     db: Any, 
     session_id: UUID, 
@@ -102,6 +116,16 @@ async def get_messages_for_session(db: Any, session_id: UUID) -> List[Message]:
         .execute()
     
     return [Message(**m) for m in response.data]
+
+async def update_message_classification(db: Any, message_id: UUID, classification: str) -> Message:
+    response = supabase.table("messages")\
+        .update({"classification": classification})\
+        .eq("id", str(message_id))\
+        .execute()
+    if response.data:
+        return Message(**response.data[0])
+    raise Exception("Failed to update message classification")
+
 
 async def get_api_config(db: Any, channel: ChannelType) -> Optional[ApiConfiguration]:
     response = supabase.table("api_configurations")\

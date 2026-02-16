@@ -18,7 +18,6 @@ async def list_sessions(db: Any = Depends(get_session)):
     # Helper to clean Supabase response into Pydantic models/dicts
     response = supabase.table("sessions")\
         .select("*, customer:customers(*), employee:employees!sessions_employee_id_fkey(*, profile:profiles(*)), messages(*)")\
-        .neq("status", "completed")\
         .order("updated_at", desc=True)\
         .execute()
     
@@ -63,7 +62,8 @@ async def list_sessions(db: Any = Depends(get_session)):
             started_at=s["started_at"],
             wait_time_seconds=s.get("wait_time_seconds"),
             duration_seconds=s.get("duration_seconds"),
-            satisfaction_score=s.get("satisfaction_score")
+            satisfaction_score=s.get("satisfaction_score"),
+            main_type_id=s.get("main_type_id")
         ))
     return result
 

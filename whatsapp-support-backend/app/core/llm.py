@@ -2,7 +2,7 @@ import httpx
 import json
 import logging
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -362,5 +362,116 @@ class LLMService:
             except Exception as e:
                 logger.error(f"AI Service Error: {e}")
                 return "نعتذر، يواجه النظام صعوبة في التواصل حالياً."
+
+    @staticmethod
+    async def classify_session(text: str, types: List[Dict[str, Any]]) -> Optional[str]:
+        if not types:
+            return None
+
+        types_str = "\n".join([f"- {t['name']} (ID: {t['id']})" for t in types])
+        
+        prompt = f"""
+        قم بتحليل رسالة المستخدم وتصنيفها إلى أحد الأقسام التالية.
+        
+        الأقسام المتاحة:
+        {types_str}
+        
+        الرسالة:
+        "{text}"
+        
+        المطلوب:
+        أرجع فقط معرف القسم (ID) الذي تنتمي إليه الرسالة. إذا لم تكن الرسالة واضحة أو لا تنتمي لأي قسم، أرجع "None".
+        لا تضف أي نص آخر غير المعرف.
+        """
+
+        messages = [{"role": "user", "content": prompt}]
+        
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": MODEL_NAME,
+            "messages": messages,
+            "temperature": 0.1
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                if response.status_code != 200:
+                    logger.error(f"Classification API Error: {response.text}")
+                    return None
+                    
+                data = response.json()
+                if 'choices' in data and len(data['choices']) > 0:
+                    content = data['choices'][0]['message'].get('content', "").strip()
+                    # Clean up response to get just the UUID if possible
+                    import re
+                    # Look for UUID pattern
+                    match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', content, re.I)
+                    if match:
+                        return match.group(0)
+                    if "None" in content:
+                        return None
+                    return None
+            except Exception as e:
+                logger.error(f"Classification Error: {e}")
+                return None
+
+    @staticmethod
+    async def classify_message(text: str) -> Optional[str]:
+        prompt = f"""
+        قم بتحليل رسالة المستخدم التالية وتصنيفها إلى نوع واحد فقط من الأنواع التالية:
+        - inquiry (استفسار)
+        - complaint (شكوى)
+        - greeting (تحية)
+        - transaction (طلب معاملة)
+        - feedback (ملاحظات)
+        - other (أخرى)
+
+        الرسالة:
+        "{text}"
+
+        المطلوب:
+        أرجع فقط الكلمة الإنجليزية الدالة على التصنيف (inquiry, complaint, greeting, transaction, feedback, other).
+        لا تضف أي نص آخر.
+        """
+        
+        # Reuse existing generic call structure or create new simple one
+        # For simplicity, we can use the same pattern as classify_session
+        messages = [{"role": "user", "content": prompt}]
+        
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": MODEL_NAME,
+            "messages": messages,
+            "temperature": 0.1
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(url, json=payload, headers=headers, timeout=30.0)
+                if response.status_code != 200:
+                    return None
+                    
+                data = response.json()
+                if 'choices' in data and len(data['choices']) > 0:
+                    content = data['choices'][0]['message'].get('content', "").strip().lower()
+                    # Basic cleanup
+                    valid_types = ["inquiry", "complaint", "greeting", "transaction", "feedback", "other"]
+                    for t in valid_types:
+                        if t in content:
+                            return t
+                    return "other"
+            except Exception as e:
+                logger.error(f"Message Classification Error: {e}")
+                return None
+
 
 llm_service = LLMService()

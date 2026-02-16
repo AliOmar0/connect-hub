@@ -1,4 +1,10 @@
-import { Session, Customer, Employee, ChannelType } from "@/types/database";
+import {
+  Session,
+  Customer,
+  Employee,
+  ChannelType,
+  SessionMainType,
+} from "@/types/database";
 import {
   Table,
   TableBody,
@@ -38,6 +44,7 @@ import { cn } from "@/lib/utils";
 
 interface SessionsTableProps {
   sessions: (Session & { customer?: Customer; employee?: Employee })[];
+  sessionTypes?: SessionMainType[];
   loading?: boolean;
   onViewSession?: (session: Session) => void;
   onAssignAgent?: (session: Session) => void;
@@ -71,6 +78,7 @@ function formatSessionDuration(seconds: number | null): string {
 
 export default function SessionsTable({
   sessions,
+  sessionTypes,
   loading,
   onViewSession,
   onAssignAgent,
@@ -84,6 +92,7 @@ export default function SessionsTable({
               <TableHead>Channel</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead>Agent</TableHead>
+              <TableHead>Type</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Wait Time</TableHead>
               <TableHead>Duration</TableHead>
@@ -95,7 +104,7 @@ export default function SessionsTable({
           <TableBody>
             {[...Array(5)].map((_, i) => (
               <TableRow key={i}>
-                {[...Array(9)].map((_, j) => (
+                {[...Array(10)].map((_, j) => (
                   <TableCell key={j}>
                     <div className="h-4 bg-muted animate-pulse rounded" />
                   </TableCell>
@@ -116,6 +125,7 @@ export default function SessionsTable({
             <TableHead className="font-semibold">Channel</TableHead>
             <TableHead className="font-semibold">Customer</TableHead>
             <TableHead className="font-semibold">Agent</TableHead>
+            <TableHead className="font-semibold">Type</TableHead>
             <TableHead className="font-semibold">Status</TableHead>
             <TableHead className="font-semibold">Wait Time</TableHead>
             <TableHead className="font-semibold">Duration</TableHead>
@@ -128,7 +138,7 @@ export default function SessionsTable({
           {sessions.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={9}
+                colSpan={10}
                 className="h-32 text-center text-muted-foreground"
               >
                 No sessions found
@@ -216,6 +226,19 @@ export default function SessionsTable({
                       <span className="text-sm text-muted-foreground">
                         Unassigned
                       </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {session.main_type_id && sessionTypes ? (
+                      <Badge
+                        variant="outline"
+                        className="bg-blue-500/10 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-800"
+                      >
+                        {sessionTypes.find((t) => t.id === session.main_type_id)
+                          ?.name || "Unknown"}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">-</span>
                     )}
                   </TableCell>
                   <TableCell>

@@ -40,6 +40,7 @@ class Session(BaseModel):
     satisfaction_score: Optional[int] = None
     escalated_to: Optional[UUID] = None
     resolution_notes: Optional[str] = None
+    main_type_id: Optional[UUID] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     
@@ -59,6 +60,7 @@ class Message(BaseModel):
     sent_at: datetime = Field(default_factory=datetime.now)
     delivered_at: Optional[datetime] = None
     read_at: Optional[datetime] = None
+    classification: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 class ApiConfiguration(BaseModel):
@@ -84,6 +86,11 @@ class Notification(BaseModel):
     is_read: bool = False
     type: Optional[str] = None
     action_url: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.now)
+
+class SessionMainType(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    name: str
     created_at: datetime = Field(default_factory=datetime.now)
 
 # Re-resolve forward refs

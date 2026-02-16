@@ -10,6 +10,7 @@ import {
   Profile,
   Message,
   Call,
+  SessionMainType,
 } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,7 @@ interface BackendSession {
   wait_time_seconds: number | null;
   duration_seconds: number | null;
   satisfaction_score: number | null;
+  main_type_id: string | null;
 }
 
 export default function SessionsPage() {
@@ -61,6 +63,7 @@ export default function SessionsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<number>(7); // days
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
@@ -69,12 +72,36 @@ export default function SessionsPage() {
   const canAssign =
     userRole === "admin" || userRole === "supervisor" || userRole === "manager";
 
+  // Fetch session types for filtering
+  const { data: sessionTypes } = useQuery({
+    queryKey: ["session-types"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("session_main_types")
+        .select("*")
+        .order("name", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching session types:", error);
+        return [];
+      }
+      return (data as unknown as SessionMainType[]) || [];
+    },
+  });
+
   const {
     data: sessions,
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: ["sessions", statusFilter, channelFilter, dateRange, searchTerm],
+    queryKey: [
+      "sessions",
+      statusFilter,
+      channelFilter,
+      typeFilter,
+      dateRange,
+      searchTerm,
+    ],
     queryFn: async () => {
       // Fetch from Python Backend
       try {
@@ -114,6 +141,12 @@ export default function SessionsPage() {
         if (channelFilter !== "all") {
           mappedSessions = mappedSessions.filter(
             (s) => s.channel === channelFilter,
+          );
+        }
+
+        if (typeFilter !== "all") {
+          mappedSessions = mappedSessions.filter(
+            (s) => s.main_type_id === typeFilter,
           );
         }
 
@@ -457,6 +490,19 @@ export default function SessionsPage() {
                   <SelectItem value="email">Email</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger className="w-full sm:w-[180px]">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {sessionTypes?.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select
                 value={dateRange.toString()}
                 onValueChange={(v) => setDateRange(parseInt(v))}
@@ -481,6 +527,7 @@ export default function SessionsPage() {
         {/* Sessions Table */}
         <SessionsTable
           sessions={sessions || []}
+          sessionTypes={sessionTypes}
           loading={isLoading}
           onViewSession={handleViewSession}
           onAssignAgent={canAssign ? handleAssignAgent : undefined}

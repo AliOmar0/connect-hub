@@ -1,8 +1,13 @@
 // Database types matching Supabase schema
-export type AppRole = 'admin' | 'supervisor' | 'manager' | 'agent' | 'viewer';
-export type ChannelType = 'whatsapp' | 'messenger' | 'sms' | 'voice' | 'email';
-export type SessionStatus = 'active' | 'waiting' | 'completed' | 'escalated' | 'missed';
-export type MessageDirection = 'inbound' | 'outbound';
+export type AppRole = "admin" | "supervisor" | "manager" | "agent" | "viewer";
+export type ChannelType = "whatsapp" | "messenger" | "sms" | "voice" | "email";
+export type SessionStatus =
+  | "active"
+  | "waiting"
+  | "completed"
+  | "escalated"
+  | "missed";
+export type MessageDirection = "inbound" | "outbound";
 
 export interface Profile {
   id: string;
@@ -67,10 +72,12 @@ export interface Session {
   satisfaction_score: number | null;
   escalated_to: string | null;
   resolution_notes: string | null;
+  main_type_id: string | null;
   created_at: string;
   updated_at: string;
   customer?: Customer;
   employee?: Employee;
+  main_type?: SessionMainType;
 }
 
 export interface Message {
@@ -82,6 +89,7 @@ export interface Message {
   media_type: string | null;
   channel: ChannelType;
   external_message_id: string | null;
+  classification: string | null;
   sent_at: string;
   delivered_at: string | null;
   read_at: string | null;
@@ -142,5 +150,11 @@ export interface AnalyticsDaily {
   avg_response_time_seconds: number | null;
   avg_satisfaction_score: number | null;
   escalation_count: number;
+  created_at: string;
+}
+
+export interface SessionMainType {
+  id: string;
+  name: string;
   created_at: string;
 }
