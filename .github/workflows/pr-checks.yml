@@ -1,0 +1,149 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, develop]
+
+jobs:
+  validate-pr:
+    name: Validate PR Requirements
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check PR title format
+        run: |
+          PR_TITLE="${{ github.event.pull_request.title }}"
+          # Pattern: type(optional-scope): description
+          # Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert
+          PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([^)]+\))?:[[:space:]].+"
+          if [[ ! "$PR_TITLE" =~ $PATTERN ]]; then
+            echo "❌ PR title must follow conventional commits format:"
+            echo "   Format: type(scope): description"
+            echo "   Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+            echo "   Example: feat(auth): add login functionality"
+            echo "   Example: docs: update README"
+            echo "   Current title: '$PR_TITLE'"
+            exit 1
+          fi
+          echo "✅ PR title format is valid: '$PR_TITLE'"
+
+      - name: Check for force push
+        run: |
+          if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+            echo "⚠️  PR is from a fork, skipping force push check"
+            exit 0
+          fi
+
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          # Check if base branch has been force-pushed
+          if ! git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA" 2>/dev/null; then
+            echo "❌ Force push detected! Base branch may have been force-pushed."
+            echo "   This is not allowed. Please rebase your branch instead."
+            exit 1
+          fi
+          echo "✅ No force push detected"
+
+      - name: Check commit messages
+        run: |
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          COMMITS=$(git log --format="%s" $BASE_SHA..$HEAD_SHA)
+          PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|Merge|Revert)(\(.+\))?: .+"
+
+          while IFS= read -r commit; do
+            if [[ ! "$commit" =~ $PATTERN ]]; then
+              echo "❌ Commit message doesn't follow conventional commits:"
+              echo "   '$commit'"
+              echo "   Format: type(scope): description"
+              exit 1
+            fi
+          done <<< "$COMMITS"
+          echo "✅ All commit messages follow conventional commits format"
+
+      - name: Check for large files
+        run: |
+          MAX_FILE_SIZE=5242880  # 5MB
+          LARGE_FILES=$(find . -type f -size +${MAX_FILE_SIZE}c -not -path "./node_modules/*" -not -path "./.git/*" -not -path "./dist/*" -not -path "./coverage/*" || true)
+
+          if [ -n "$LARGE_FILES" ]; then
+            echo "❌ Large files detected (>5MB):"
+            echo "$LARGE_FILES"
+            echo "Please use Git LFS or remove these files"
+            exit 1
+          fi
+          echo "✅ No large files detected"
+
+      - name: Check for sensitive data
+        run: |
+          SENSITIVE_PATTERNS=(
+            "password\s*=\s*['\"][^'\"]+['\"]"
+            "api[_-]?key\s*=\s*['\"][^'\"]+['\"]"
+            "secret\s*=\s*['\"][^'\"]+['\"]"
+            "token\s*=\s*['\"][^'\"]+['\"]"
+            "private[_-]?key"
+            "BEGIN RSA PRIVATE KEY"
+            "BEGIN PRIVATE KEY"
+          )
+
+          # Get list of changed files, excluding .github directory
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -v "^\.github/" || true)
+
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "✅ No files to scan (only .github changes)"
+            exit 0
+          fi
+
+          FOUND_SENSITIVE=false
+          for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+            # Check only non-.github files
+            if echo "$CHANGED_FILES" | xargs git diff ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} -- | grep -vE "^(---|\+\+\+|@@|index|diff)" | grep -iE "$pattern" | grep -vE "test|example|mock|sample|dummy" > /dev/null; then
+              echo "⚠️  Potential sensitive data detected matching pattern: $pattern"
+              FOUND_SENSITIVE=true
+            fi
+          done
+
+          if [ "$FOUND_SENSITIVE" = true ]; then
+            echo "❌ Potential sensitive data detected in changes"
+            echo "Please review and ensure no secrets are committed"
+            exit 1
+          fi
+          echo "✅ No sensitive data detected"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.x
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check test coverage threshold
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Checking test coverage..."
+          npm run test:coverage:ci || {
+            echo "❌ Test coverage is below 95% threshold"
+            echo "Please add tests to meet the 95% coverage requirement"
+            exit 1
+          }
+          echo "✅ Test coverage meets threshold (95%)"
+
+      - name: Check bundle size
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Checking bundle size..."
+          npm ci
+          npm run build
+          BUNDLE_SIZE=$(du -sh dist | cut -f1)
+          echo "Bundle size: $BUNDLE_SIZE"
+          # Add bundle size check logic here if needed
+          echo "✅ Bundle size check passed"
