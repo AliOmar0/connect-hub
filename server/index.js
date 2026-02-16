@@ -5,217 +5,183 @@ import { WebSocketServer } from 'ws';
 import twilio from 'twilio';
 import cors from 'cors';
 import axios from 'axios';
-import { createClient } from '@deepgram/sdk';
+import { Buffer } from 'buffer';
+import { createClient } from '@supabase/supabase-js';
 
 const app = express();
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer });
+const wss = new WebSocketServer({ noServer: true });
 
 const port = process.env.PORT || 3001;
 
 // Configuration
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY;
-const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 const OPENROUTER_API_KEY = "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";
 const MODEL_NAME = "arcee-ai/trinity-large-preview:free";
-const VOICE_ID = 'SAz9YHcvj6GT2YYpgXf7'; // Layla (Arabic) - Premium
+const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي يمثل البنك الإسلامي الفلسطيني. تحدث بلهجة فلسطينية مهذبة واختصر قدر الإمكان.`;
+// Using our local Edge TTS server
+const TTS_URL = process.env.PIPER_URL || 'http://localhost:5070/tts';
 
-const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي يمثل البنك الإسلامي الفلسطيني (PIB).
-تحدث بإيجاز شديد (جملة واحدة أو جملتين).
-لغتُك هي العربية الفصحى الحديثة الودودة.
-مهمتك مساعدة العملاء في استفساراتهم العامة عن الحسابات والبطاقات.
-لا تطلب أبداً معلومات سرية.`;
+// Supabase Setup
+const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Twilio Client
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const client = twilio(accountSid, authToken);
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
-// Deepgram Client
-const deepgram = createClient(DEEPGRAM_API_KEY);
-
-// Helper: Get AI Response
-async function getAIResponse(userMessage, history = []) {
-    console.log(`[LLM] Requesting for: "${userMessage}"`);
+async function getAIResponse(userMessage) {
     try {
         const response = await axios.post(
             "https://openrouter.ai/api/v1/chat/completions",
-            {
-                model: MODEL_NAME,
-                messages: [
-                    { role: "system", content: SYSTEM_PROMPT },
-                    ...history.slice(-3),
-                    { role: "user", content: userMessage }
-                ],
-            },
-            {
-                headers: {
-                    "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://connect-hub.ai",
-                    "X-Title": "PIB Voice Assistant"
-                },
-                timeout: 10000
-            }
+            { model: MODEL_NAME, messages: [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: userMessage }] },
+            { headers: { "Authorization": `Bearer ${OPENROUTER_API_KEY}`, "Content-Type": "application/json" }, timeout: 10000 }
         );
-        return response.data?.choices?.[0]?.message?.content || "عذراً، لم أسمعك جيداً.";
+        return response.data?.choices?.[0]?.message?.content || "عذراً، لم أفهم.";
     } catch (error) {
-        console.error("[LLM] Error:", error.message);
-        return "أهلاً بك، كيف يمكنني مساعدتك؟";
+        return "أهلاً بك، كيف بقدر أساعدك؟";
     }
 }
 
-// Helper: TTS (ElevenLabs) 
-async function getElevenLabsAudio(text) {
-    console.log(`[TTS] Generating audio for: "${text.substring(0, 30)}..."`);
+// Log Call to Supabase
+async function saveCallLog(callSid, userText, aiText, audioUrl, ttsProvider) {
     try {
-        const response = await axios.post(
-            `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream?output_format=ulaw_8000`,
+        await supabase.from('call_logs').insert({
+            call_sid: callSid,
+            user_text: userText,
+            ai_text: aiText,
+            ai_audio_url: audioUrl || `tts://${ttsProvider}`
+        });
+    } catch (e) {
+        console.error("Supabase Log Error:", e.message);
+    }
+}
+
+// Edge TTS -> Upload to Supabase -> Return Public URL
+async function getEdgeTTSAudio(text) {
+    try {
+        console.log(`[TTS] Requesting Edge TTS...`);
+
+        const response = await axios.post(TTS_URL,
+            { text: text },
             {
-                text: text,
-                model_id: "eleven_multilingual_v2",
-                voice_settings: {
-                    stability: 0.5,
-                    similarity_boost: 0.75,
-                    style: 0.0,
-                    use_speaker_boost: true
-                }
-            },
-            {
-                headers: {
-                    "xi-api-key": ELEVENLABS_API_KEY,
-                    "Content-Type": "application/json",
-                },
-                responseType: 'arraybuffer'
+                responseType: 'arraybuffer',
+                timeout: 10000
             }
         );
-        return Buffer.from(response.data).toString('base64');
+
+        const buffer = Buffer.from(response.data);
+        const fileName = `edge_${Date.now()}.mp3`;
+
+        // Upload to Supabase Storage
+        const { data, error } = await supabase.storage
+            .from('audio_logs')
+            .upload(fileName, buffer, {
+                contentType: 'audio/mpeg',
+                upsert: false
+            });
+
+        if (error) {
+            console.error("[TTS] Supabase Upload Error:", error.message);
+            return null;
+        }
+
+        const publicUrlData = supabase.storage.from('audio_logs').getPublicUrl(fileName);
+        console.log("[TTS] Edge TTS audio ready");
+        return publicUrlData.data.publicUrl;
+
     } catch (error) {
-        console.error("[TTS] ElevenLabs Error:", error.response?.data?.toString() || error.message);
+        console.error(`[TTS] Edge TTS Failed: ${error.message}`);
         return null;
     }
 }
 
-// REST Routes
-app.get('/', (req, res) => res.send('PIB Voice Gateway Active v2'));
+// --- Routes ---
 
-app.post('/api/chat', async (req, res) => {
-    const response = await getAIResponse(req.body.message, req.body.history || []);
-    res.json({ content: response });
+app.get('/', (req, res) => res.send('Bank AI v31 (Edge TTS - Native Palestinian Voice)'));
+app.get('/voice', (req, res) => res.send("Active at +19166596816"));
+
+app.post('/voice', (req, res) => {
+    console.log("[Twilio] Inbound Call Received");
+    const twiml = new twilio.twiml.VoiceResponse();
+
+    const gather = twiml.gather({
+        input: 'speech',
+        language: 'ar-PS',
+        speechTimeout: 'auto',
+        action: '/handle-speech'
+    });
+
+    // Greeting with native Palestinian voice via Google as fallback or Edge TTS
+    gather.say({ voice: 'Google.ar-XA-Wavenet-A', language: 'ar-XA' }, 'أهلاً بك في البنك الإسلامي الفلسطيني، كيف بقدر أساعدك يا بطل؟');
+
+    twiml.redirect('/voice');
+    res.type('text/xml').send(twiml.toString());
 });
 
-app.post('/api/make-call', async (req, res) => {
-    const { to } = req.body;
-    try {
-        const call = await client.calls.create({
-            url: `${process.env.NGROK_URL}/voice`,
-            to,
-            from: process.env.TWILIO_PHONE_NUMBER,
+app.post('/handle-speech', async (req, res) => {
+    const userSpeech = req.body.SpeechResult;
+    const callSid = req.body.CallSid;
+    console.log(`[STT] User said: ${userSpeech}`);
+    const twiml = new twilio.twiml.VoiceResponse();
+
+    if (userSpeech) {
+        const aiText = await getAIResponse(userSpeech);
+        console.log(`[LLM] Response: ${aiText}`);
+
+        // Use Edge TTS (The realistic one)
+        let audioUrl = await getEdgeTTSAudio(aiText);
+
+        const gather = twiml.gather({
+            input: 'speech',
+            language: 'ar-PS',
+            speechTimeout: 'auto',
+            action: '/handle-speech'
         });
-        res.json({ sid: call.sid });
+
+        if (audioUrl) {
+            console.log("[TTS] Playing Edge TTS Audio");
+            gather.play(audioUrl);
+            saveCallLog(callSid, userSpeech, aiText, audioUrl, 'edge-tts');
+        } else {
+            console.log("[TTS] Fallback to Google Neural");
+            gather.say({ voice: 'Google.ar-XA-Wavenet-A', language: 'ar-XA' }, aiText);
+            saveCallLog(callSid, userSpeech, aiText, null, 'google-neural');
+        }
+
+        twiml.redirect('/voice');
+    } else {
+        twiml.redirect('/voice');
+    }
+    res.type('text/xml').send(twiml.toString());
+});
+
+// Outbound / Mobile SDK Handlers
+app.post('/api/voice-sdk', (req, res) => {
+    const twiml = new twilio.twiml.VoiceResponse();
+    const to = req.body.To;
+    if (!to || to === 'AI' || to === process.env.TWILIO_PHONE_NUMBER) {
+        twiml.redirect(`${process.env.NGROK_URL}/voice`);
+    } else {
+        const dial = twiml.dial({ callerId: process.env.TWILIO_PHONE_NUMBER });
+        dial.number(to);
+    }
+    res.type('text/xml').send(twiml.toString());
+});
+
+app.get('/api/token', (req, res) => {
+    const apiKey = process.env.TWILIO_API_KEY || process.env.TWILIO_ACCOUNT_SID;
+    const apiSecret = process.env.TWILIO_API_SECRET || process.env.TWILIO_AUTH_TOKEN;
+    const { AccessToken } = twilio.jwt;
+    const { VoiceGrant } = AccessToken;
+    const identity = 'pib_agent';
+    try {
+        const accessToken = new AccessToken(process.env.TWILIO_ACCOUNT_SID, apiKey, apiSecret, { identity });
+        accessToken.addGrant(new VoiceGrant({ outgoingApplicationSid: process.env.TWIML_APP_SID, incomingAllow: true }));
+        res.json({ token: accessToken.toJwt(), identity });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// TwiML Outbound Entry
-app.post('/voice', (req, res) => {
-    console.log("[Twilio] Call received, starting stream...");
-    const twiml = new twilio.twiml.VoiceResponse();
-
-    // Start media stream immediately
-    const connect = twiml.connect();
-    connect.stream({
-        url: `wss://${process.env.NGROK_URL.replace('https://', '')}/streams`
-    });
-
-    res.type('text/xml').send(twiml.toString());
-});
-
-// WebSocket Handler
-wss.on('connection', (ws) => {
-    console.log('[WS] Connection Established');
-
-    let streamSid = '';
-    let isSpeaking = false;
-
-    // Deepgram Streaming
-    const dgConnection = deepgram.listen.live({
-        model: "nova-2",
-        language: "ar",
-        smart_format: true,
-        encoding: "mulaw",
-        sample_rate: 8000,
-        interim_results: false
-    });
-
-    dgConnection.on('open', () => {
-        console.log('[STT] Deepgram Connection Open');
-    });
-
-    const speak = async (text) => {
-        if (!text) return;
-        isSpeaking = true;
-        const audio = await getElevenLabsAudio(text);
-        if (audio && streamSid) {
-            ws.send(JSON.stringify({
-                event: 'media',
-                streamSid: streamSid,
-                media: { payload: audio }
-            }));
-        }
-        isSpeaking = false;
-    };
-
-    dgConnection.on('results', async (data) => {
-        const transcript = data.channel.alternatives[0].transcript;
-        if (transcript && data.is_final) {
-            console.log(`[STT] Heard: ${transcript}`);
-            if (isSpeaking) {
-                console.log("[STT] User interrupted, but we'll respond after this thought...");
-            }
-            const aiText = await getAIResponse(transcript);
-            await speak(aiText);
-        }
-    });
-
-    ws.on('message', async (message) => {
-        const msg = JSON.parse(message);
-
-        switch (msg.event) {
-            case 'start':
-                streamSid = msg.start.streamSid;
-                console.log(`[WS] Stream Started: ${streamSid}`);
-                // Send Initial Greeting from ElevenLabs
-                await speak("السلام عليكم ورحمة الله وبركاته، معكم المساعد الذكي للبنك الإسلامي الفلسطيني. كيف بقدر أساعدك اليوم؟");
-                break;
-            case 'media':
-                if (dgConnection.getReadyState() === 1 && !isSpeaking) {
-                    dgConnection.send(Buffer.from(msg.media.payload, 'base64'));
-                }
-                break;
-            case 'stop':
-                console.log('[WS] Stream Stopped');
-                dgConnection.finish();
-                break;
-        }
-    });
-
-    ws.on('close', () => {
-        console.log('[WS] Connection Closed');
-        dgConnection.finish();
-    });
-});
-
-httpServer.listen(port, '0.0.0.0', () => {
-    console.log(`---------------------------------`);
-    console.log(`PREMIUM AI VOICE GATEWAY RUNNING`);
-    console.log(`Voice: ElevenLabs Layla (Premium)`);
-    console.log(`STT: Deepgram Nova-2 (Arabic)`);
-    console.log(`---------------------------------`);
-});
+httpServer.listen(port, '0.0.0.0', () => console.log(`Server v31 (Edge TTS) on ${port}`));
