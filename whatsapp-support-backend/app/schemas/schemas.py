@@ -34,3 +34,8 @@ class SessionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class UpdateSessionRequest(BaseModel):
+    main_type_id: Optional[UUID] = None
+    status: Optional[SessionStatus] = None
+    satisfaction_score: Optional[int] = None

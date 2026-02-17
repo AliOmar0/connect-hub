@@ -10,9 +10,10 @@ from app.crud import crud
 
 async def session_cleanup_task():
     """Periodic task to close inactive sessions"""
+    from app.api.v1.webhook import auto_classify_session
     while True:
         try:
-            await crud.close_inactive_sessions(None, minutes=10)
+            await crud.close_inactive_sessions(None, minutes=10, on_close=auto_classify_session)
             await crud.delete_old_notifications(None, hours=24)
         except Exception as e:
             print(f"Error in session cleanup task: {e}")

@@ -11,6 +11,7 @@ import {
   Message,
   Call,
   SessionMainType,
+  SessionStatus,
 } from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,6 +56,11 @@ interface BackendSession {
   main_type_id: string | null;
 }
 
+type FullSession = Session & {
+  customer?: Customer;
+  employee?: Employee & { profile?: Profile };
+};
+
 export default function SessionsPage() {
   const navigate = useNavigate();
   const { id: sessionIdParam } = useParams<{ id?: string }>();
@@ -67,6 +73,9 @@ export default function SessionsPage() {
   const [dateRange, setDateRange] = useState<number>(7); // days
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [assigningSession, setAssigningSession] = useState<Session | null>(
+    null,
+  );
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
 
   const canAssign =
@@ -167,12 +176,7 @@ export default function SessionsPage() {
           );
         }
 
-        return mappedSessions as Array<
-          Session & {
-            customer?: Customer;
-            employee?: Employee & { profile?: Profile };
-          }
-        >;
+        return mappedSessions as FullSession[];
       } catch (error) {
         console.error("Error fetching sessions from backend:", error);
         // Fallback to empty or handle error
@@ -375,8 +379,8 @@ export default function SessionsPage() {
           : "Session unassigned",
       );
       setAssignDialogOpen(false);
-      setSelectedSession(null);
-      setSelectedEmployeeId("");
+      setAssigningSession(null);
+      setSelectedEmployeeId("unassign");
     },
     onError: (error: Error) => {
       toast.error(error.message || "Failed to assign session");
@@ -386,22 +390,37 @@ export default function SessionsPage() {
   const handleViewSession = (session: Session) => {
     setSelectedSession(session);
     navigate(`/sessions/${session.id}`);
+
+    // Smooth scroll to chat view on mobile
+    if (window.innerWidth < 1024) {
+      setTimeout(() => {
+        const chatElement = document.getElementById("chat-view-container");
+        if (chatElement) {
+          chatElement.scrollIntoView({ behavior: "smooth" });
+        }
+      }, 100);
+    }
   };
 
   const handleAssignAgent = (session: Session) => {
-    setSelectedSession(session);
-    setSelectedEmployeeId(session.employee_id || "");
+    setAssigningSession(session);
+    setSelectedEmployeeId(session.employee_id || "unassign");
     setAssignDialogOpen(true);
   };
 
   const handleAssignSubmit = () => {
-    if (!selectedSession || !selectedEmployeeId) {
-      toast.error("Please select an employee");
+    if (!assigningSession) {
+      toast.error("No session selected");
       return;
     }
+
+    // Allow 'unassign' to clear the employee
+    const employeeId =
+      selectedEmployeeId === "unassign" ? "" : selectedEmployeeId;
+
     assignMutation.mutate({
-      sessionId: selectedSession.id,
-      employeeId: selectedEmployeeId,
+      sessionId: assigningSession.id,
+      employeeId: employeeId || "",
     });
   };
 
@@ -431,11 +450,169 @@ export default function SessionsPage() {
       // Success
       toast.success("Message sent");
       refetchMessages();
+      // Also invalidate sessions to get updated wait_time_seconds
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+
+      // Update the selected session from the freshly fetched list
+      const updatedSessions = queryClient.getQueryData<FullSession[]>([
+        "sessions",
+      ]);
+      if (updatedSessions) {
+        const updated = updatedSessions.find(
+          (s) => s.id === selectedSession.id,
+        );
+        if (updated) setSelectedSession(updated);
+      }
     } catch (err) {
       const error = err as Error;
       console.error("Error sending message:", error);
       toast.error(error.message || "Failed to send message");
     }
+  };
+
+  const handleUpdateSessionType = async (typeId: string) => {
+    if (!selectedSession) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/v1/sessions/${selectedSession.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            main_type_id: typeId || null,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Failed to update session type");
+      }
+
+      toast.success("Session type updated");
+      // Update local state for immediate feedback
+      setSelectedSession({
+        ...selectedSession,
+        main_type_id: typeId || null,
+      });
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    } catch (err) {
+      const error = err as Error;
+      console.error("Error updating session type:", error);
+      toast.error(error.message || "Failed to update session type");
+    }
+  };
+
+  const handleUpdateSessionStatus = async (status: string) => {
+    if (!selectedSession) return;
+
+    try {
+      const response = await fetch(
+        `http://localhost:5000/api/v1/sessions/${selectedSession.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            status: status,
+          }),
+        },
+      );
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.detail || "Failed to update session status");
+      }
+
+      toast.success(`Session marked as ${status}`);
+      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+
+      // Fetch fresh data for duration/wait_time
+      setTimeout(async () => {
+        const response = await fetch("http://localhost:5000/api/v1/sessions");
+        if (response.ok) {
+          const data = (await response.json()) as BackendSession[];
+          const updated = data.find(
+            (s: BackendSession) => s.id === selectedSession.id,
+          );
+          if (updated) {
+            setSelectedSession({
+              ...selectedSession,
+              status: status as SessionStatus,
+              duration_seconds: updated.duration_seconds,
+              wait_time_seconds: updated.wait_time_seconds,
+              satisfaction_score: updated.satisfaction_score,
+            });
+          }
+        }
+      }, 300);
+    } catch (err) {
+      const error = err as Error;
+      console.error("Error updating session status:", error);
+      toast.error(error.message || "Failed to update session status");
+    }
+  };
+
+  const handleDownloadSessions = () => {
+    if (sessions.length === 0) {
+      toast.error("No sessions to download");
+      return;
+    }
+
+    const headers = [
+      "ID",
+      "Customer",
+      "Phone",
+      "Email",
+      "Agent",
+      "Channel",
+      "Status",
+      "Wait Time (s)",
+      "Duration (s)",
+      "Satisfaction",
+      "Started At",
+    ];
+
+    const rows = sessions.map((s) => [
+      s.id,
+      s.customer?.name || "Unknown",
+      s.customer?.phone || "-",
+      s.customer?.email || "-",
+      s.employee?.profile
+        ? `${s.employee.profile.first_name} ${s.employee.profile.last_name}`.trim()
+        : "Unassigned",
+      s.channel,
+      s.status,
+      s.wait_time_seconds || 0,
+      s.duration_seconds || 0,
+      s.satisfaction_score || "-",
+      new Date(s.started_at).toLocaleString(),
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map((row) =>
+        row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","),
+      ),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `sessions_export_${new Date().toISOString().split("T")[0]}.csv`,
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Sessions exported correctly");
   };
 
   return (
@@ -464,7 +641,7 @@ export default function SessionsPage() {
                 />
               </div>
               <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectTrigger className="w-full sm:w-[150px]">
                   <Filter className="h-4 w-4 mr-2" />
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
@@ -517,7 +694,13 @@ export default function SessionsPage() {
                   <SelectItem value="90">Last 90 days</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon">
+              <Button
+                onClick={handleDownloadSessions}
+                variant="outline"
+                size="icon"
+                className="border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all text-primary"
+                title="Export filtered sessions to CSV"
+              >
                 <Download className="h-4 w-4" />
               </Button>
             </div>
@@ -534,13 +717,16 @@ export default function SessionsPage() {
         />
 
         {/* Session Detail: Messages & Call timeline */}
-        <div className="grid lg:grid-cols-3 gap-4">
+        <div className="grid lg:grid-cols-3 gap-4" id="chat-view-container">
           <Card className="lg:col-span-2 h-[650px] flex flex-col">
             <CardContent className="p-0 flex-1 flex flex-col">
               <ChatView
                 session={selectedSession}
                 messages={sessionMessages || []}
                 onSendMessage={handleSendMessage}
+                onUpdateType={handleUpdateSessionType}
+                onUpdateStatus={handleUpdateSessionStatus}
+                sessionTypes={sessionTypes}
                 loading={messagesLoading}
               />
             </CardContent>
@@ -620,16 +806,16 @@ export default function SessionsPage() {
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
-              {selectedSession && (
+              {assigningSession && (
                 <div className="space-y-2">
                   <Label>Session</Label>
                   <div className="p-3 bg-muted rounded-lg">
                     <p className="font-medium">
-                      {selectedSession.customer?.name || "Unknown Customer"}
+                      {assigningSession.customer?.name || "Unknown Customer"}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Channel: {selectedSession.channel} • Status:{" "}
-                      {selectedSession.status}
+                      Channel: {assigningSession.channel} • Status:{" "}
+                      {assigningSession.status}
                     </p>
                   </div>
                 </div>
@@ -644,7 +830,7 @@ export default function SessionsPage() {
                     <SelectValue placeholder="Choose an employee" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">Unassign</SelectItem>
+                    <SelectItem value="unassign">Unassign</SelectItem>
                     {employees?.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id}>
                         {emp.profile
@@ -663,8 +849,8 @@ export default function SessionsPage() {
                   variant="outline"
                   onClick={() => {
                     setAssignDialogOpen(false);
-                    setSelectedSession(null);
-                    setSelectedEmployeeId("");
+                    setAssigningSession(null);
+                    setSelectedEmployeeId("unassign");
                   }}
                 >
                   Cancel

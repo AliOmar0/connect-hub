@@ -1,10 +1,23 @@
 import { useState, useRef, useEffect } from "react";
-import { Message, Session, Customer, ChannelType } from "@/types/database";
+import {
+  Message,
+  Session,
+  Customer,
+  ChannelType,
+  SessionMainType,
+} from "@/types/database";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Send,
   Paperclip,
@@ -13,18 +26,36 @@ import {
   MoreVertical,
   CheckCheck,
   Check,
+  CheckCircle,
   MessageCircle,
   MessageSquare,
   Mail,
+  Tag,
+  Clock,
+  Star,
+  Hourglass,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, intervalToDuration, formatDuration } from "date-fns";
+
+function formatSessionDuration(seconds: number | null): string {
+  if (!seconds) return "-";
+  const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
+  return (
+    formatDuration(duration, { format: ["hours", "minutes"], delimiter: " " })
+      .replace(/ hours?/, "h")
+      .replace(/ minutes?/, "m") || "< 1m"
+  );
+}
 
 interface ChatViewProps {
   session: (Session & { customer?: Customer }) | null;
   messages: Message[];
   onSendMessage: (content: string) => void;
   onJoinSession?: () => void;
+  onUpdateType?: (typeId: string) => void;
+  onUpdateStatus?: (status: string) => void;
+  sessionTypes?: SessionMainType[];
   loading?: boolean;
 }
 
@@ -49,6 +80,9 @@ export default function ChatView({
   messages,
   onSendMessage,
   onJoinSession,
+  onUpdateType,
+  onUpdateStatus,
+  sessionTypes,
   loading,
 }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState("");
@@ -118,7 +152,74 @@ export default function ChatView({
             </div>
           </div>
         </div>
+
+        {/* Actionable Metrics */}
+        <div className="hidden lg:flex items-center gap-6 border-x border-border px-6 mx-6 h-10">
+          <div className="flex flex-col">
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
+              Wait Time
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3 w-3 text-yellow-500" />
+              <span className="text-sm font-medium">
+                {session.wait_time_seconds
+                  ? `${session.wait_time_seconds}s`
+                  : "-"}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
+              Duration
+            </span>
+            <div className="flex items-center gap-1.5">
+              <Hourglass className="h-3 w-3 text-blue-500" />
+              <span className="text-sm font-medium">
+                {formatSessionDuration(session.duration_seconds)}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
+              Satisfaction
+            </span>
+            <div className="flex items-center gap-1.5">
+              {session.satisfaction_score ? (
+                <>
+                  <Star className="h-3 w-3 text-orange-500 fill-orange-500" />
+                  <span className="text-sm font-medium">
+                    {session.satisfaction_score}/5
+                  </span>
+                </>
+              ) : (
+                <span className="text-sm text-muted-foreground">-</span>
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
+          {sessionTypes && onUpdateType && (
+            <div className="flex items-center gap-1.5 mr-2">
+              <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+              <Select
+                value={session.main_type_id || "none"}
+                onValueChange={(val) => onUpdateType(val === "none" ? "" : val)}
+              >
+                <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectValue placeholder="Set Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Type</SelectItem>
+                  {sessionTypes.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {!session.employee_id && onJoinSession && (
             <Button
               variant="outline"
@@ -127,6 +228,17 @@ export default function ChatView({
               className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
             >
               Join Conversation
+            </Button>
+          )}
+          {session.status === "escalated" && onUpdateStatus && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdateStatus("completed")}
+              className="bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border-blue-500/20"
+            >
+              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+              Complete Session
             </Button>
           )}
           <Badge

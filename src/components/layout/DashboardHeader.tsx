@@ -10,9 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { Notification } from "@/types/database";
@@ -37,6 +38,32 @@ export default function DashboardHeader() {
     },
     enabled: !!user?.id,
   });
+
+  const queryClient = useQueryClient();
+
+  // Real-time subscription for notifications
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel("header-notifications-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, queryClient]);
 
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between gap-4">
@@ -124,7 +151,9 @@ export default function DashboardHeader() {
                               ? "bg-yellow-500"
                               : notif.type === "success"
                                 ? "bg-green-500"
-                                : "bg-blue-500"
+                                : notif.type === "escalation"
+                                  ? "bg-orange-500"
+                                  : "bg-blue-500"
                         }`}
                       />
                       <span className="font-medium text-sm">{notif.title}</span>

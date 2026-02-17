@@ -76,6 +76,49 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
     except Exception as e:
         logger.error(f"Error in background voice processing: {e}")
 
+async def auto_classify_session(db_session_id: UUID, user_message: Optional[str] = None):
+    """
+    Background task to classify session type based on history
+    """
+    try:
+        # 1. Fetch types
+        types = await crud.get_session_main_types(None)
+        if not types:
+            return
+
+        # 2. Fetch session
+        session = await crud.get_session_by_id(None, db_session_id)
+        if not session or session.main_type_id:
+            # Already classified or session gone
+            return
+
+        # 3. Get history for context
+        msgs = await crud.get_messages_for_session(None, db_session_id)
+        history = []
+        for m in msgs:
+            role = "user" if m.direction == MessageDirection.inbound else "assistant"
+            history.append({"role": role, "content": m.content})
+        
+        # If user_message not provided, use the last inbound message
+        if not user_message:
+            inbound_msgs = [m for m in msgs if m.direction == MessageDirection.inbound]
+            if inbound_msgs:
+                user_message = inbound_msgs[-1].content
+            else:
+                user_message = ""
+
+        # 4. Call LLM for classification
+        logger.info(f"Triggering auto-classification for session {db_session_id} with message: {user_message[:50]}...")
+        classified_type_id = await llm_service.classify_session(user_message, types, history)
+        
+        if classified_type_id:
+            logger.info(f"Auto-classified session {db_session_id} as {classified_type_id}")
+            await crud.update_session_main_type(None, db_session_id, UUID(classified_type_id))
+        else:
+            logger.info(f"Auto-classification returned no match (None) for session {db_session_id}")
+    except Exception as e:
+        logger.error(f"Error in auto_classify_session background task: {e}")
+
 async def process_ai_response(
     db_session_id: UUID, 
     user_message: str, 
@@ -123,20 +166,18 @@ async def process_ai_response(
             role = "user" if m.direction == MessageDirection.inbound else "assistant"
             history.append({"role": role, "content": m.content})
         
+        # 1.5 Get Session Types for awareness
+        session_types = await crud.get_session_main_types(None)
+
         # 2. Call LLM
-        ai_text = await llm_service.get_ai_response(user_message, history)
+        ai_text = await llm_service.get_ai_response(user_message, history, session_types)
         
-        # 2.5 Classify if not already classified
-        try:
-            # We call this optimistically, only if we have types
-            types = await crud.get_session_main_types(None)
-            if types and session.main_type_id is None:
-                classified_type_id = await llm_service.classify_session(user_message, types)
-                if classified_type_id:
-                     logger.info(f"Classified session {db_session_id} as {classified_type_id}")
-                     await crud.update_session_main_type(None, db_session_id, UUID(classified_type_id))
-        except Exception as e:
-            logger.error(f"Failed to classify session: {e}")
+        # 2.5 Classify session (Understanding Required)
+        # We trigger this in every response attempt if not yet classified
+        if session.main_type_id is None:
+            # We call it as a separate task logic here directly for responsiveness
+            # or we could use another background task
+            await auto_classify_session(db_session_id, user_message)
 
         # 3. Handle Escalation or Send Response
         if "[ESCALATE]" in ai_text:
@@ -151,6 +192,12 @@ async def process_ai_response(
             # we should best use a fresh session or rely on crud handling it if it accepts None (it does for read, but update might need commit).
             # Looking at crud.py, update_session_status uses supabase client directly which is global. So None is fine.
             await crud.update_session_status(None, db_session_id, SessionStatus.escalated)
+
+            # NEW: Classification at Escalation (End of AI conversation)
+            # Fetch fresh session state to be sure
+            session = await crud.get_session_by_id(None, db_session_id)
+            if session and session.main_type_id is None:
+                await auto_classify_session(db_session_id, user_message)
 
             # Create Database Notifications for all employees
             # We use a single broadcast notification (user_id=None) visible to everyone.
@@ -286,69 +333,20 @@ async def extract_webhook(
         # 2. Find/Create Session
         session = await crud.get_active_session_by_customer(db, customer.id)
         
-        # Session Expiry Logic: Create new session if last one expired (>10 mins inactive)
         if not session:
-            from datetime import datetime, timedelta, timezone
+            # Create a fresh session every time if no active/waiting/escalated session exists
+            logger.info(f"No active session found. Creating fresh session for customer {customer.id}")
+            session = await crud.create_session(db, customer.id)
             
-            last_session = await crud.get_last_session_by_customer(db, customer.id)
-            
-            if last_session and last_session.status == SessionStatus.completed:
-                # Check if the completed session is recent (within 10 minutes)
-                session_end_time = last_session.updated_at
-                
-                # Parse the timestamp
-                if isinstance(session_end_time, str):
-                    if session_end_time.endswith('Z'):
-                        session_end_time = session_end_time.replace('Z', '+00:00')
-                    session_end_time = datetime.fromisoformat(session_end_time)
-                
-                # Ensure timezone awareness
-                if session_end_time.tzinfo is None:
-                    session_end_time = session_end_time.replace(tzinfo=timezone.utc)
-                
-                time_since_completion = datetime.now(timezone.utc) - session_end_time
-                
-                # Security Best Practice: Create NEW session if >10 mins have passed
-                if time_since_completion.total_seconds() > 600:  # 10 minutes = 600 seconds
-                    logger.info(
-                        f"Creating NEW session for customer {customer.id}. "
-                        f"Previous session {last_session.id} expired "
-                        f"{int(time_since_completion.total_seconds() / 60)} minutes ago."
-                    )
-                    session = await crud.create_session(db, customer.id)
-                    
-                    # Notify agents of new session after expiry
-                    await crud.create_notification(
-                        db,
-                        user_id=None,  # Broadcast
-                        title="New Session Started",
-                        message=f"Customer {sender_phone} started a new conversation after session expiry.",
-                        type="info",
-                        action_url=f"/sessions/{session.id}"
-                    )
-                else:
-                    # Session is recent (<10 mins), reactivate it
-                    logger.info(
-                        f"Reactivating recent session {last_session.id} for customer {customer.id} "
-                        f"(completed {int(time_since_completion.total_seconds() / 60)} minutes ago)"
-                    )
-                    await crud.update_session_status(db, last_session.id, SessionStatus.active)
-                    session = last_session
-                    session.status = SessionStatus.active
-                    
-                    # Notify agents of session resumption
-                    await crud.create_notification(
-                        db,
-                        user_id=None,  # Broadcast
-                        title="Session Resumed",
-                        message=f"Customer {sender_phone} resumed conversation within activity window.",
-                        type="info",
-                        action_url=f"/sessions/{session.id}"
-                    )
-            else:
-                # No previous session or previous session not completed - create fresh session
-                logger.info(f"Creating fresh session for customer {customer.id}")
-                session = await crud.create_session(db, customer.id)
+            # Notify agents of new session
+            await crud.create_notification(
+                db,
+                user_id=None,  # Broadcast
+                title="New Session Started",
+                message=f"Customer {sender_phone} started a new conversation.",
+                type="info",
+                action_url=f"/sessions/{session.id}"
+            )
         
         # NEW: If session was Escalated, do NOT change to Active automatically. Just notify.
         if session.status == SessionStatus.escalated:
@@ -389,6 +387,10 @@ async def extract_webhook(
         
         # 5. Trigger AI process or Voice Transcription in background
         if msg_type == "text":
+            # ALWAYS try to classify if not yet classified, regardless of AI status
+            if session.main_type_id is None:
+                background_tasks.add_task(auto_classify_session, session.id, text_body)
+
             if session.status != SessionStatus.escalated and session.employee_id is None:
                 background_tasks.add_task(
                     process_ai_response, 

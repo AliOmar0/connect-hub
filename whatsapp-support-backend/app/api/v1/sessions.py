@@ -4,9 +4,11 @@ from uuid import UUID
 
 from app.api.v1.deps import get_session
 from app.crud import crud
-from app.schemas.schemas import SessionResponse, MessageResponse, SendMessageRequest
+from app.api.v1.deps import get_session
+from app.crud import crud
+from app.schemas.schemas import SessionResponse, MessageResponse, SendMessageRequest, UpdateSessionRequest
 from app.core.whatsapp import WhatsAppClient
-from app.models.enums import MessageDirection, ChannelType
+from app.models.enums import MessageDirection, ChannelType, SessionStatus
 from app.database import supabase
 import logging
 
@@ -122,3 +124,25 @@ async def send_message(
     )
     
     return {"status": "sent", "message_id": str(msg.id)}
+
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: UUID, 
+    body: UpdateSessionRequest, 
+    db: Any = Depends(get_session)
+):
+    """
+    Update session details (main_type_id or status)
+    """
+    payload = body.model_dump(exclude_unset=True)
+    
+    if "main_type_id" in payload:
+        await crud.update_session_main_type(db, session_id, body.main_type_id)
+        
+    if "status" in payload:
+        await crud.update_session_status(db, session_id, body.status)
+        
+    if "satisfaction_score" in payload:
+        await crud.update_session_satisfaction(db, session_id, body.satisfaction_score)
+        
+    return {"status": "updated"}

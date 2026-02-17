@@ -83,28 +83,13 @@ class WhatsAppClient:
 
     async def send_typing_indicator(self, to_phone: str):
         """
-        Send a typing indicator to the user.
+        Send a typing indicator - Not supported by WhatsApp Cloud API (Messenger only).
+        We keep the method signature but skip the call to avoid 400 error.
         """
-        payload = {
-            "messaging_product": "whatsapp",
-            "recipient_type": "individual",
-            "to": to_phone,
-            "sender_action": "typing_on"
-        }
-        
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(
-                    self._get_api_url(), 
-                    json=payload, 
-                    headers=self._get_headers()
-                )
-                response.raise_for_status()
-                return response.json()
-            except httpx.HTTPError as e:
-                # Some accounts might not support this yet, so we log but don't fail
-                logger.warning(f"WhatsApp Typing Indicator Error: {e}")
-                return None
+        # WhatsApp Cloud API does not support sender_action="typing_on"
+        # Logging only for awareness without making a network call
+        logger.debug(f"Typing indicator requested for {to_phone} (Skipped: Not supported by WhatsApp API)")
+        return None
 
     async def mark_message_as_read(self, message_id: str):
         """
