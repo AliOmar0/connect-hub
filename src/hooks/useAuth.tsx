@@ -1,52 +1,41 @@
-import {
-  useState,
-  useEffect,
-  createContext,
-  useContext,
-  ReactNode,
-} from "react";
+import { useState, useEffect, useContext, ReactNode } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { AppRole } from "@/types/database";
+import { AuthContext, AuthContextType } from "@/contexts/AuthContext";
 
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  userRole: AppRole | null;
-  loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (
-    email: string,
-    password: string,
-    firstName?: string,
-    lastName?: string,
-  ) => Promise<{
-    data: { user: User | null; session: Session | null } | null;
-    error: Error | null;
-  }>;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [userRole, setUserRole] = useState<AppRole | null>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({
+  children,
+  mockState,
+}: {
+  children: ReactNode;
+  mockState?: AuthContextType;
+}) {
+  const [user, setUser] = useState<User | null>(mockState?.user ?? null);
+  const [session, setSession] = useState<Session | null>(
+    mockState?.session ?? null,
+  );
+  const [userRole, setUserRole] = useState<AppRole | null>(
+    mockState?.userRole ?? null,
+  );
+  const [loading, setLoading] = useState(mockState?.loading ?? true);
 
   useEffect(() => {
+    if (mockState) return;
+    let isMounted = true;
+
     // Set up auth state listener FIRST
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
       setSession(session);
       setUser(session?.user ?? null);
 
       // Defer role fetch with setTimeout
       if (session?.user) {
         setTimeout(() => {
-          fetchUserRole(session.user.id);
+          if (isMounted) fetchUserRole(session.user.id);
         }, 0);
       } else {
         setUserRole(null);
@@ -55,6 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -63,8 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [mockState]);
 
   const fetchUserRole = async (userId: string) => {
     try {

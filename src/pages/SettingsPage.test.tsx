@@ -56,7 +56,9 @@ describe("SettingsPage", () => {
     (supabase.from as ReturnType<typeof vi.fn>).mockReturnValue({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null }),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null }),
       update: vi.fn().mockReturnThis(),
       insert: vi.fn().mockResolvedValue({ data: null, error: null }),
     });

@@ -1,4 +1,6 @@
+/* eslint-disable react-refresh/only-export-components */
 import { ReactElement } from "react";
+import { User } from "@supabase/supabase-js";
 import { render as rtlRender, RenderOptions } from "@testing-library/react";
 import { BrowserRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -6,13 +8,24 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { vi } from "vitest";
 
+// Default mock auth value
+const mockAuthValue = {
+  user: { id: "user-1", email: "test@example.com" } as unknown as User,
+  session: null,
+  userRole: "admin" as const,
+  loading: false,
+  signIn: vi.fn(),
+  signUp: vi.fn(),
+  signOut: vi.fn(),
+};
+
 // Create a test query client with default options
 const createTestQueryClient = () =>
   new QueryClient({
     defaultOptions: {
       queries: {
         retry: false,
-        cacheTime: 0,
+        gcTime: 0,
       },
       mutations: {
         retry: false,
@@ -35,8 +48,10 @@ const AllTheProviders = ({
 
   return (
     <QueryClientProvider client={client}>
-      <BrowserRouter>
-        <AuthProvider>
+      <BrowserRouter
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <AuthProvider mockState={mockAuthValue}>
           <TooltipProvider>{children}</TooltipProvider>
         </AuthProvider>
       </BrowserRouter>

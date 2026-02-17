@@ -61,3 +61,26 @@ export const createTestQueryClient = () =>
 // Make QueryClientProvider available globally for tests
 global.QueryClientProvider = QueryClientProvider;
 global.createTestQueryClient = createTestQueryClient;
+
+import React from "react";
+
+// Mock ResponsiveContainer for Recharts
+vi.mock("recharts", async () => {
+  const actual = await vi.importActual("recharts");
+  return {
+    ...actual,
+    ResponsiveContainer: ({ children }: { children: React.ReactNode }) =>
+      React.createElement(
+        "div",
+        {
+          style: {
+            width: "100%",
+            height: "100%",
+            minWidth: "100px",
+            minHeight: "100px",
+          },
+        },
+        children,
+      ),
+  };
+});

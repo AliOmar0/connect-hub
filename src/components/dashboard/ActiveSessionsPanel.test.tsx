@@ -17,6 +17,20 @@ vi.mock("react-router-dom", async () => {
   };
 });
 
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: vi.fn(() => ({
+    user: { id: "user-1", email: "test@example.com" },
+    userRole: "admin",
+    loading: false,
+    signIn: vi.fn(),
+    signOut: vi.fn(),
+    signUp: vi.fn(),
+  })),
+  AuthProvider: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="auth-provider">{children}</div>
+  ),
+}));
+
 describe("ActiveSessionsPanel", () => {
   const mockNavigate = vi.fn();
 

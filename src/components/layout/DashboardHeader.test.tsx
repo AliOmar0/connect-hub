@@ -30,6 +30,11 @@ vi.mock("@/integrations/supabase/client", () => ({
       order: vi.fn().mockReturnThis(),
       limit: vi.fn().mockResolvedValue({ data: [], count: 0 }),
     })),
+    channel: vi.fn(() => ({
+      on: vi.fn().mockReturnThis(),
+      subscribe: vi.fn().mockReturnThis(),
+    })),
+    removeChannel: vi.fn().mockResolvedValue(null),
     auth: {
       getSession: vi
         .fn()
