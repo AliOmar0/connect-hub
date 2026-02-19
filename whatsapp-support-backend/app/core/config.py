@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_KEY: str
 
+    # OpenRouter
+    OPENROUTER_API_KEY: str
+    OPENROUTER_MODEL: str = "arcee-ai/trinity-large-preview:free"
+
     # WhatsApp Settings (Defaults, but usually pulled from DB)
     WHATSAPP_VERIFY_TOKEN: str = "pib_verify_token_2024"
     
@@ -34,5 +38,7 @@ except Exception as e:
     # Better to have defaults in the class definition if we want it to never fail instantiation.
     settings = Settings(
         SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
-        SUPABASE_KEY=os.getenv("SUPABASE_KEY", "")
+        SUPABASE_KEY=os.getenv("SUPABASE_KEY", ""),
+        OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
+        OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free")
     )

@@ -4,11 +4,13 @@ import logging
 import os
 from typing import List, Dict, Optional, Any
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
-# Reusing the system prompt and configuration from LLM/llm.py
-API_KEY = "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"
-MODEL_NAME = "arcee-ai/trinity-large-preview:free"
+# LLM configurations from settings
+API_KEY = settings.OPENROUTER_API_KEY
+MODEL_NAME = settings.OPENROUTER_MODEL
 
 SYSTEM_PROMPT = r"""أنت مساعد ذكاء اصطناعي يمثل البنك الإسلامي الفلسطيني (PIB) وتعمل كقناة رسمية رقمية لخدمة عملاء البنك. يجب أن تعكس جميع ردودك هوية البنك، ومبادئه الشرعية، وثقافته المؤسسية، ومعاييره المهنية. هدفك هو تقديم معلومات مصرفية إسلامية دقيقة، واضحة، وموثوقة، مع الالتزام التام بأحكام الشريعة الإسلامية والسياسات العامة للبنك.
 
@@ -352,6 +354,8 @@ class LLMService:
         headers = {
             "Authorization": f"Bearer {API_KEY}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/hamarshehmhmd/connect-hub",
+            "X-Title": "Connect Hub",
         }
         payload = {
             "model": MODEL_NAME,
@@ -414,6 +418,8 @@ class LLMService:
         headers = {
             "Authorization": f"Bearer {API_KEY}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/hamarshehmhmd/connect-hub",
+            "X-Title": "Connect Hub",
         }
         payload = {
             "model": MODEL_NAME,
@@ -471,6 +477,8 @@ class LLMService:
         headers = {
             "Authorization": f"Bearer {API_KEY}",
             "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/hamarshehmhmd/connect-hub",
+            "X-Title": "Connect Hub",
         }
         payload = {
             "model": MODEL_NAME,
