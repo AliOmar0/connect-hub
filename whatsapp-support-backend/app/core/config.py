@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     
     # App
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    USE_NGROK: bool = False
 
 # Initialize settings
 try:

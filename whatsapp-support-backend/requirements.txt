@@ -13,3 +13,4 @@ transformers
 accelerate
 librosa
 soundfile
+pyngrok
