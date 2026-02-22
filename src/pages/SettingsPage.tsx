@@ -646,28 +646,59 @@ export default function SettingsPage() {
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                   </div>
                 ) : (
-                  <div className="grid gap-2">
+                  <div className="space-y-4">
                     {sessionTypes.length === 0 ? (
                       <p className="text-center text-muted-foreground py-4">
                         No session types defined yet.
                       </p>
                     ) : (
-                      sessionTypes.map((type) => (
-                        <div
-                          key={type.id}
-                          className="flex items-center justify-between p-3 border rounded-lg bg-muted/50"
-                        >
-                          <span className="font-medium">{type.name}</span>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => handleDeleteSessionType(type.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))
+                      (() => {
+                        // Group by parent_category
+                        const grouped: Record<string, SessionMainType[]> = {};
+                        sessionTypes.forEach((type) => {
+                          const cat = type.parent_category || "أخرى";
+                          if (!grouped[cat]) grouped[cat] = [];
+                          grouped[cat].push(type);
+                        });
+                        return Object.entries(grouped).map(
+                          ([category, types]) => (
+                            <div key={category} className="space-y-2">
+                              <h4 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider border-b pb-1">
+                                {category} ({types.length})
+                              </h4>
+                              <div className="grid gap-1.5">
+                                {types.map((type) => (
+                                  <div
+                                    key={type.id}
+                                    className="flex items-center justify-between p-3 border rounded-lg bg-muted/50 hover:bg-muted/70 transition-colors"
+                                  >
+                                    <div className="flex flex-col gap-0.5">
+                                      <span className="font-medium">
+                                        {type.name}
+                                      </span>
+                                      {type.description && (
+                                        <span className="text-xs text-muted-foreground line-clamp-1">
+                                          {type.description}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                      onClick={() =>
+                                        handleDeleteSessionType(type.id)
+                                      }
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ),
+                        );
+                      })()
                     )}
                   </div>
                 )}

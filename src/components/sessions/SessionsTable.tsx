@@ -230,13 +230,30 @@ export default function SessionsTable({
                   </TableCell>
                   <TableCell>
                     {session.main_type_id && sessionTypes ? (
-                      <Badge
-                        variant="outline"
-                        className="bg-blue-500/10 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-800"
-                      >
-                        {sessionTypes.find((t) => t.id === session.main_type_id)
-                          ?.name || "Unknown"}
-                      </Badge>
+                      (() => {
+                        const matchedType = sessionTypes.find(
+                          (t) => t.id === session.main_type_id,
+                        );
+                        return matchedType ? (
+                          <div className="flex flex-col gap-0.5">
+                            <Badge
+                              variant="outline"
+                              className="bg-blue-500/10 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-800 text-xs"
+                            >
+                              {matchedType.name}
+                            </Badge>
+                            {matchedType.parent_category && (
+                              <span className="text-[10px] text-muted-foreground pl-1">
+                                {matchedType.parent_category}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            -
+                          </span>
+                        );
+                      })()
                     ) : (
                       <span className="text-xs text-muted-foreground">-</span>
                     )}

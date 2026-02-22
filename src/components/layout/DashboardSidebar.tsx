@@ -11,6 +11,7 @@ import {
   BarChart3,
   Bell,
   LogOut,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -206,6 +207,12 @@ export default function DashboardSidebar() {
       label: "Notifications",
       badge: unreadNotifications || 0,
       roles: ["admin", "supervisor", "manager", "agent", "viewer"],
+    },
+    {
+      to: "/shortcuts",
+      icon: Zap,
+      label: "Chat Shortcuts",
+      roles: ["admin", "supervisor", "manager", "agent"],
     },
     {
       to: "/settings",
