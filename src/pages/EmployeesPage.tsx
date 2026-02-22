@@ -37,7 +37,8 @@ export default function EmployeesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
-  const canManage = userRole === "admin" || userRole === "supervisor" || userRole === "manager";
+  const canManage =
+    userRole === "admin" || userRole === "supervisor" || userRole === "manager";
 
   const { data: employees, isLoading } = useQuery({
     queryKey: ["employees"],
@@ -176,7 +177,10 @@ export default function EmployeesPage() {
                     profiles={profiles || []}
                     onSubmit={(data) => {
                       if (editingEmployee) {
-                        updateMutation.mutate({ id: editingEmployee.id, ...data });
+                        updateMutation.mutate({
+                          id: editingEmployee.id,
+                          ...data,
+                        });
                       } else {
                         createMutation.mutate(data);
                       }
@@ -259,7 +263,13 @@ function EmployeeForm({
     is_active: employee?.is_active ?? true,
   });
 
-  const channels: ChannelType[] = ["whatsapp", "messenger", "sms", "voice", "email"];
+  const channels: ChannelType[] = [
+    "whatsapp",
+    "messenger",
+    "sms",
+    "voice",
+    "email",
+  ];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,7 +323,10 @@ function EmployeeForm({
             id="employee_code"
             value={formData.employee_code}
             onChange={(e) =>
-              setFormData((prev) => ({ ...prev, employee_code: e.target.value }))
+              setFormData((prev) => ({
+                ...prev,
+                employee_code: e.target.value,
+              }))
             }
             placeholder="EMP001"
           />
@@ -339,7 +352,10 @@ function EmployeeForm({
               type="time"
               value={formData.shift_start}
               onChange={(e) =>
-                setFormData((prev) => ({ ...prev, shift_start: e.target.value }))
+                setFormData((prev) => ({
+                  ...prev,
+                  shift_start: e.target.value,
+                }))
               }
             />
           </div>
@@ -382,10 +398,16 @@ function EmployeeForm({
             id="is_active"
             checked={formData.is_active}
             onCheckedChange={(checked) =>
-              setFormData((prev) => ({ ...prev, is_active: checked as boolean }))
+              setFormData((prev) => ({
+                ...prev,
+                is_active: checked as boolean,
+              }))
             }
           />
-          <Label htmlFor="is_active" className="text-sm font-normal cursor-pointer">
+          <Label
+            htmlFor="is_active"
+            className="text-sm font-normal cursor-pointer"
+          >
             Active
           </Label>
         </div>
@@ -417,7 +439,13 @@ function CreateUserDialog() {
     department: "",
   });
 
-  const roles: AppRole[] = ["admin", "supervisor", "manager", "agent", "viewer"];
+  const roles: AppRole[] = [
+    "admin",
+    "supervisor",
+    "manager",
+    "agent",
+    "viewer",
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -436,8 +464,10 @@ function CreateUserDialog() {
 
     try {
       // Get the session token
-      const { data: { session } } = await supabase.auth.getSession();
-      
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
       if (!session) {
         toast.error("You must be logged in to create users");
         setIsLoading(false);
@@ -465,7 +495,9 @@ function CreateUserDialog() {
         throw new Error(data.error);
       }
 
-      toast.success(`User ${formData.email} created successfully with role ${formData.role}`);
+      toast.success(
+        `User ${formData.email} created successfully with role ${formData.role}`,
+      );
       setIsOpen(false);
       setFormData({
         email: "",
@@ -477,12 +509,13 @@ function CreateUserDialog() {
         phone: "",
         department: "",
       });
-      
+
       // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: ["profiles"] });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to create user";
+      const errorMessage =
+        error instanceof Error ? error.message : "Failed to create user";
       toast.error(errorMessage);
     } finally {
       setIsLoading(false);
@@ -501,7 +534,8 @@ function CreateUserDialog() {
         <DialogHeader>
           <DialogTitle>Create New User</DialogTitle>
           <DialogDescription>
-            Create a new user account with email, password, and assign their role and permissions.
+            Create a new user account with email, password, and assign their
+            role and permissions.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -512,7 +546,10 @@ function CreateUserDialog() {
                 id="first_name"
                 value={formData.first_name}
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, first_name: e.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    first_name: e.target.value,
+                  }))
                 }
                 placeholder="John"
               />
@@ -523,7 +560,10 @@ function CreateUserDialog() {
                 id="last_name"
                 value={formData.last_name}
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, last_name: e.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    last_name: e.target.value,
+                  }))
                 }
                 placeholder="Doe"
               />
@@ -566,7 +606,10 @@ function CreateUserDialog() {
                 type="password"
                 value={formData.confirmPassword}
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, confirmPassword: e.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    confirmPassword: e.target.value,
+                  }))
                 }
                 placeholder="••••••••"
                 required
@@ -615,7 +658,10 @@ function CreateUserDialog() {
                 id="department"
                 value={formData.department}
                 onChange={(e) =>
-                  setFormData((prev) => ({ ...prev, department: e.target.value }))
+                  setFormData((prev) => ({
+                    ...prev,
+                    department: e.target.value,
+                  }))
                 }
                 placeholder="Support"
               />

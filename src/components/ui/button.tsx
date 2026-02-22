@@ -9,17 +9,24 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft hover:shadow-elevated",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-secondary hover:text-secondary-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        default:
+          "bg-primary text-primary-foreground hover:bg-primary/90 shadow-soft hover:shadow-elevated",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline:
+          "border border-input bg-background hover:bg-secondary hover:text-secondary-foreground",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-secondary hover:text-secondary-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         gold: "bg-gold text-navy-dark font-semibold hover:bg-gold-light shadow-glow hover:shadow-glow-lg",
         navy: "bg-navy text-primary-foreground hover:bg-navy-light shadow-soft",
-        "outline-gold": "border-2 border-gold text-gold hover:bg-gold hover:text-navy-dark",
-        "outline-navy": "border-2 border-navy text-navy hover:bg-navy hover:text-primary-foreground",
-        glass: "bg-background/50 backdrop-blur-sm border border-border/50 hover:bg-background/80",
+        "outline-gold":
+          "border-2 border-gold text-gold hover:bg-gold hover:text-navy-dark",
+        "outline-navy":
+          "border-2 border-navy text-navy hover:bg-navy hover:text-primary-foreground",
+        glass:
+          "bg-background/50 backdrop-blur-sm border border-border/50 hover:bg-background/80",
       },
       size: {
         default: "h-10 px-4 py-2",
@@ -33,11 +40,12 @@ const buttonVariants = cva(
       variant: "default",
       size: "default",
     },
-  }
+  },
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean;
 }
@@ -52,7 +60,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         {...props}
       />
     );
-  }
+  },
 );
 Button.displayName = "Button";
 

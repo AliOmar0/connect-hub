@@ -16,11 +16,14 @@ import NotificationsPage from "./pages/NotificationsPage";
 import TwilioDemo from "./pages/TwilioDemo";
 import NotFound from "./pages/NotFound";
 
+import EscalationListener from "@/components/EscalationListener";
+
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <AuthProvider>
+      <EscalationListener />
       <TooltipProvider>
         <Toaster />
         <Sonner />
@@ -38,7 +41,9 @@ const App = () => (
             <Route
               path="/dashboard"
               element={
-                <ProtectedRoute allowedRoles={["supervisor", "manager", "admin"]}>
+                <ProtectedRoute
+                  allowedRoles={["supervisor", "manager", "admin"]}
+                >
                   <Index />
                 </ProtectedRoute>
               }
@@ -62,7 +67,9 @@ const App = () => (
             <Route
               path="/employees"
               element={
-                <ProtectedRoute allowedRoles={["supervisor", "manager", "admin"]}>
+                <ProtectedRoute
+                  allowedRoles={["supervisor", "manager", "admin"]}
+                >
                   <EmployeesPage />
                 </ProtectedRoute>
               }
@@ -70,7 +77,9 @@ const App = () => (
             <Route
               path="/analytics"
               element={
-                <ProtectedRoute allowedRoles={["supervisor", "manager", "admin"]}>
+                <ProtectedRoute
+                  allowedRoles={["supervisor", "manager", "admin"]}
+                >
                   <AnalyticsPage />
                 </ProtectedRoute>
               }
@@ -78,7 +87,9 @@ const App = () => (
             <Route
               path="/settings"
               element={
-                <ProtectedRoute allowedRoles={["supervisor", "manager", "admin"]}>
+                <ProtectedRoute
+                  allowedRoles={["supervisor", "manager", "admin"]}
+                >
                   <SettingsPage />
                 </ProtectedRoute>
               }
@@ -94,7 +105,9 @@ const App = () => (
             <Route
               path="/twilio"
               element={
-                <ProtectedRoute allowedRoles={["supervisor", "manager", "admin"]}>
+                <ProtectedRoute
+                  allowedRoles={["supervisor", "manager", "admin"]}
+                >
                   <TwilioDemo />
                 </ProtectedRoute>
               }

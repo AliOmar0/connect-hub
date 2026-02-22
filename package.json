@@ -12,7 +12,10 @@
     "test": "vitest",
     "test:ui": "vitest --ui",
     "test:coverage": "vitest --coverage",
+    "test:coverage:ci": "vitest run --coverage --reporter=verbose",
     "test:run": "vitest run",
+    "test:watch": "vitest --watch",
+    "prepare": "husky install || true",
     "server": "nodemon server/index.js"
   },
   "dependencies": {
@@ -97,9 +100,12 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "husky": "^9.1.7",
     "jsdom": "^23.0.1",
+    "lint-staged": "^15.2.11",
     "lovable-tagger": "^1.1.13",
     "postcss": "^8.5.6",
+    "prettier": "^3.7.4",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",

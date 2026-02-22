@@ -26,7 +26,9 @@ const createTestQueryClient = () =>
 // Mock dependencies
 vi.mock("@/hooks/useAuth");
 vi.mock("@/components/layout/DashboardLayout", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual("@tanstack/react-query");
@@ -45,7 +47,9 @@ vi.mock("@/integrations/supabase/client", () => ({
       })),
     })),
     functions: {
-      invoke: vi.fn(() => Promise.resolve({ data: { success: true }, error: null })),
+      invoke: vi.fn(() =>
+        Promise.resolve({ data: { success: true }, error: null }),
+      ),
     },
   },
 }));
@@ -57,7 +61,9 @@ describe("EmployeesPage", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryClient);
+    (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryClient,
+    );
   });
 
   it("renders employees page title", () => {
@@ -66,18 +72,20 @@ describe("EmployeesPage", () => {
       user: { id: "123" },
     });
 
-    (useQuery as ReturnType<typeof vi.fn>).mockImplementation((options: { queryKey: string[] }) => {
-      if (options.queryKey[0] === "employees") {
+    (useQuery as ReturnType<typeof vi.fn>).mockImplementation(
+      (options: { queryKey: string[] }) => {
+        if (options.queryKey[0] === "employees") {
+          return {
+            data: [],
+            isLoading: false,
+          };
+        }
         return {
           data: [],
           isLoading: false,
         };
-      }
-      return {
-        data: [],
-        isLoading: false,
-      };
-    });
+      },
+    );
 
     (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
       mutate: vi.fn(),
@@ -91,7 +99,7 @@ describe("EmployeesPage", () => {
         <BrowserRouter>
           <EmployeesPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Employees")).toBeInTheDocument();
@@ -120,7 +128,7 @@ describe("EmployeesPage", () => {
         <BrowserRouter>
           <EmployeesPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Create User")).toBeInTheDocument();
@@ -149,7 +157,7 @@ describe("EmployeesPage", () => {
         <BrowserRouter>
           <EmployeesPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Create User")).toBeInTheDocument();
@@ -178,7 +186,7 @@ describe("EmployeesPage", () => {
         <BrowserRouter>
           <EmployeesPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.queryByText("Create User")).not.toBeInTheDocument();
@@ -207,11 +215,13 @@ describe("EmployeesPage", () => {
         <BrowserRouter>
           <EmployeesPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(
-      screen.getByPlaceholderText("Search employees by name, code, or department...")
+      screen.getByPlaceholderText(
+        "Search employees by name, code, or department...",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -238,13 +248,14 @@ describe("EmployeesPage", () => {
         <BrowserRouter>
           <EmployeesPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     // Should show loading skeletons (check for search input which should still be visible)
     expect(
-      screen.getByPlaceholderText("Search employees by name, code, or department...")
+      screen.getByPlaceholderText(
+        "Search employees by name, code, or department...",
+      ),
     ).toBeInTheDocument();
   });
 });
-

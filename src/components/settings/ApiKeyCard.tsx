@@ -1,12 +1,18 @@
-import { useState } from 'react';
-import { ChannelType } from '@/types/database';
-import { Tables } from '@/integrations/supabase/types';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
+import { useState } from "react";
+import { ChannelType } from "@/types/database";
+import { Tables } from "@/integrations/supabase/types";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import {
   MessageCircle,
   MessageSquare,
@@ -18,11 +24,11 @@ import {
   X,
   Loader2,
   RefreshCw,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
 
-type ApiConfigRow = Tables<'api_configurations'>;
+type ApiConfigRow = Tables<"api_configurations">;
 
 interface ApiKeyCardProps {
   channel: ChannelType;
@@ -31,72 +37,145 @@ interface ApiKeyCardProps {
   onTest?: () => Promise<boolean>;
 }
 
-const channelInfo: Record<ChannelType, { 
-  name: string; 
-  icon: React.ElementType; 
-  color: string;
-  description: string;
-  fields: { key: string; label: string; placeholder: string; secret?: boolean }[];
-}> = {
+const channelInfo: Record<
+  ChannelType,
+  {
+    name: string;
+    icon: React.ElementType;
+    color: string;
+    description: string;
+    fields: {
+      key: string;
+      label: string;
+      placeholder: string;
+      secret?: boolean;
+    }[];
+  }
+> = {
   whatsapp: {
-    name: 'WhatsApp Business',
+    name: "WhatsApp Business",
     icon: MessageCircle,
-    color: 'text-green-600 bg-green-500/10',
-    description: 'Connect your WhatsApp Business API for messaging',
+    color: "text-green-600 bg-green-500/10",
+    description: "Connect your WhatsApp Business API for messaging",
     fields: [
-      { key: 'phone_number_id', label: 'Phone Number ID', placeholder: 'Enter phone number ID' },
-      { key: 'business_account_id', label: 'Business Account ID', placeholder: 'Enter business account ID' },
-      { key: 'access_token_encrypted', label: 'Access Token', placeholder: 'Enter access token', secret: true },
-    ]
+      {
+        key: "phone_number_id",
+        label: "Phone Number ID",
+        placeholder: "Enter phone number ID",
+      },
+      {
+        key: "business_account_id",
+        label: "Business Account ID",
+        placeholder: "Enter business account ID",
+      },
+      {
+        key: "access_token_encrypted",
+        label: "Access Token",
+        placeholder: "Enter access token",
+        secret: true,
+      },
+    ],
   },
   messenger: {
-    name: 'Facebook Messenger',
+    name: "Facebook Messenger",
     icon: MessageSquare,
-    color: 'text-blue-600 bg-blue-500/10',
-    description: 'Connect your Facebook Page for Messenger integration',
+    color: "text-blue-600 bg-blue-500/10",
+    description: "Connect your Facebook Page for Messenger integration",
     fields: [
-      { key: 'business_account_id', label: 'Page ID', placeholder: 'Enter Facebook Page ID' },
-      { key: 'access_token_encrypted', label: 'Page Access Token', placeholder: 'Enter page access token', secret: true },
-    ]
+      {
+        key: "business_account_id",
+        label: "Page ID",
+        placeholder: "Enter Facebook Page ID",
+      },
+      {
+        key: "access_token_encrypted",
+        label: "Page Access Token",
+        placeholder: "Enter page access token",
+        secret: true,
+      },
+    ],
   },
   sms: {
-    name: 'SMS Gateway',
+    name: "SMS Gateway",
     icon: MessageSquare,
-    color: 'text-purple-600 bg-purple-500/10',
-    description: 'Configure SMS gateway for text messaging',
+    color: "text-purple-600 bg-purple-500/10",
+    description: "Configure SMS gateway for text messaging",
     fields: [
-      { key: 'api_key_encrypted', label: 'API Key', placeholder: 'Enter API key', secret: true },
-      { key: 'api_secret_encrypted', label: 'API Secret', placeholder: 'Enter API secret', secret: true },
-      { key: 'phone_number_id', label: 'Sender ID', placeholder: 'Enter sender ID or number' },
-    ]
+      {
+        key: "api_key_encrypted",
+        label: "API Key",
+        placeholder: "Enter API key",
+        secret: true,
+      },
+      {
+        key: "api_secret_encrypted",
+        label: "API Secret",
+        placeholder: "Enter API secret",
+        secret: true,
+      },
+      {
+        key: "phone_number_id",
+        label: "Sender ID",
+        placeholder: "Enter sender ID or number",
+      },
+    ],
   },
   voice: {
-    name: 'Voice Calls',
+    name: "Voice Calls",
     icon: Phone,
-    color: 'text-orange-600 bg-orange-500/10',
-    description: 'Set up voice calling capabilities',
+    color: "text-orange-600 bg-orange-500/10",
+    description: "Set up voice calling capabilities",
     fields: [
-      { key: 'api_key_encrypted', label: 'API Key', placeholder: 'Enter API key', secret: true },
-      { key: 'api_secret_encrypted', label: 'API Secret', placeholder: 'Enter API secret', secret: true },
-      { key: 'phone_number_id', label: 'Phone Number', placeholder: '+970599000000' },
-    ]
+      {
+        key: "api_key_encrypted",
+        label: "API Key",
+        placeholder: "Enter API key",
+        secret: true,
+      },
+      {
+        key: "api_secret_encrypted",
+        label: "API Secret",
+        placeholder: "Enter API secret",
+        secret: true,
+      },
+      {
+        key: "phone_number_id",
+        label: "Phone Number",
+        placeholder: "+970599000000",
+      },
+    ],
   },
   email: {
-    name: 'Email',
+    name: "Email",
     icon: Mail,
-    color: 'text-red-600 bg-red-500/10',
-    description: 'Configure email integration for support',
+    color: "text-red-600 bg-red-500/10",
+    description: "Configure email integration for support",
     fields: [
-      { key: 'api_key_encrypted', label: 'SMTP Host / API Key', placeholder: 'smtp.example.com or API key', secret: true },
-      { key: 'api_secret_encrypted', label: 'Password / Secret', placeholder: 'Enter password or secret', secret: true },
-    ]
+      {
+        key: "api_key_encrypted",
+        label: "SMTP Host / API Key",
+        placeholder: "smtp.example.com or API key",
+        secret: true,
+      },
+      {
+        key: "api_secret_encrypted",
+        label: "Password / Secret",
+        placeholder: "Enter password or secret",
+        secret: true,
+      },
+    ],
   },
 };
 
-export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCardProps) {
+export default function ApiKeyCard({
+  channel,
+  config,
+  onSave,
+  onTest,
+}: ApiKeyCardProps) {
   const info = channelInfo[channel];
   const Icon = info.icon;
-  
+
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
@@ -105,11 +184,11 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
 
   const handleEdit = () => {
     setFormData({
-      phone_number_id: config?.phone_number_id || '',
-      business_account_id: config?.business_account_id || '',
-      access_token_encrypted: '',
-      api_key_encrypted: '',
-      api_secret_encrypted: '',
+      phone_number_id: config?.phone_number_id || "",
+      business_account_id: config?.business_account_id || "",
+      access_token_encrypted: "",
+      api_key_encrypted: "",
+      api_secret_encrypted: "",
     });
     setIsEditing(true);
   };
@@ -117,12 +196,28 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
   const handleSave = async () => {
     setIsSaving(true);
     try {
+      // Filter out empty secret fields if we are updating (config exists)
+      // to avoid overwriting existing secrets with empty strings
+      const dataToSave = { ...formData };
+
+      if (config) {
+        info.fields.forEach((field) => {
+          if (field.secret && !dataToSave[field.key]) {
+            delete dataToSave[field.key];
+          }
+        });
+      }
+
       await onSave({
         channel,
-        ...formData,
+        ...dataToSave,
         is_active: true,
       });
       setIsEditing(false);
+    } catch (error) {
+      // Error is handled by parent component
+      // We catch it here to prevent unhandled rejection
+      console.error(error);
     } finally {
       setIsSaving(false);
     }
@@ -139,7 +234,7 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
   };
 
   const toggleSecret = (key: string) => {
-    setShowSecrets(prev => ({ ...prev, [key]: !prev[key] }));
+    setShowSecrets((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   return (
@@ -159,12 +254,18 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
           </div>
           <div className="flex items-center gap-2">
             {config?.is_active ? (
-              <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/20">
+              <Badge
+                variant="outline"
+                className="bg-green-500/10 text-green-600 border-green-500/20"
+              >
                 <Check className="h-3 w-3 mr-1" />
                 Connected
               </Badge>
             ) : (
-              <Badge variant="outline" className="bg-muted text-muted-foreground">
+              <Badge
+                variant="outline"
+                className="bg-muted text-muted-foreground"
+              >
                 <X className="h-3 w-3 mr-1" />
                 Not configured
               </Badge>
@@ -172,7 +273,7 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent>
         {isEditing ? (
           <div className="space-y-4">
@@ -182,11 +283,20 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
                 <div className="relative">
                   <Input
                     id={`${channel}-${field.key}`}
-                    type={field.secret && !showSecrets[field.key] ? 'password' : 'text'}
+                    type={
+                      field.secret && !showSecrets[field.key]
+                        ? "password"
+                        : "text"
+                    }
                     placeholder={field.placeholder}
-                    value={formData[field.key] || ''}
-                    onChange={(e) => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-                    className={field.secret ? 'pr-10' : ''}
+                    value={formData[field.key] || ""}
+                    onChange={(e) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        [field.key]: e.target.value,
+                      }))
+                    }
+                    className={field.secret ? "pr-10" : ""}
                   />
                   {field.secret && (
                     <Button
@@ -206,7 +316,7 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
                 </div>
               </div>
             ))}
-            
+
             <div className="flex items-center justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setIsEditing(false)}>
                 Cancel
@@ -218,7 +328,7 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
                     Saving...
                   </>
                 ) : (
-                  'Save Configuration'
+                  "Save Configuration"
                 )}
               </Button>
             </div>
@@ -237,32 +347,44 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
                   {config.business_account_id && (
                     <div>
                       <p className="text-muted-foreground">Account ID</p>
-                      <p className="font-medium">{config.business_account_id}</p>
+                      <p className="font-medium">
+                        {config.business_account_id}
+                      </p>
                     </div>
                   )}
                   {config.last_verified_at && (
                     <div>
                       <p className="text-muted-foreground">Last Verified</p>
                       <p className="font-medium">
-                        {format(new Date(config.last_verified_at), 'MMM d, yyyy HH:mm')}
+                        {format(
+                          new Date(config.last_verified_at),
+                          "MMM d, yyyy HH:mm",
+                        )}
                       </p>
                     </div>
                   )}
                 </div>
-                
+
                 <div className="flex items-center justify-between pt-2 border-t border-border">
                   <div className="flex items-center gap-2">
-                    <Switch 
-                      checked={config.is_active} 
-                      onCheckedChange={(checked) => onSave({ is_active: checked })}
+                    <Switch
+                      checked={config.is_active}
+                      onCheckedChange={(checked) =>
+                        onSave({ is_active: checked })
+                      }
                     />
                     <span className="text-sm text-muted-foreground">
-                      {config.is_active ? 'Active' : 'Disabled'}
+                      {config.is_active ? "Active" : "Disabled"}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
                     {onTest && (
-                      <Button variant="outline" size="sm" onClick={handleTest} disabled={isTesting}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleTest}
+                        disabled={isTesting}
+                      >
                         {isTesting ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
@@ -284,9 +406,7 @@ export default function ApiKeyCard({ channel, config, onSave, onTest }: ApiKeyCa
                 <p className="text-sm text-muted-foreground mb-4">
                   No configuration found. Set up your {info.name} integration.
                 </p>
-                <Button onClick={handleEdit}>
-                  Configure {info.name}
-                </Button>
+                <Button onClick={handleEdit}>Configure {info.name}</Button>
               </div>
             )}
           </div>

@@ -30,7 +30,9 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: entry.color }}
             />
-            <span className="text-muted-foreground capitalize">{entry.name}:</span>
+            <span className="text-muted-foreground capitalize">
+              {entry.name}:
+            </span>
             <span className="font-semibold">{entry.value}</span>
           </div>
         ))}
@@ -40,16 +42,21 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   return null;
 };
 
-export default function ConversationsChart({ data = [] }: ConversationsChartProps) {
-  const chartData = data.length > 0 ? data : [
-    { name: "Mon", messages: 0, calls: 0 },
-    { name: "Tue", messages: 0, calls: 0 },
-    { name: "Wed", messages: 0, calls: 0 },
-    { name: "Thu", messages: 0, calls: 0 },
-    { name: "Fri", messages: 0, calls: 0 },
-    { name: "Sat", messages: 0, calls: 0 },
-    { name: "Sun", messages: 0, calls: 0 },
-  ];
+export default function ConversationsChart({
+  data = [],
+}: ConversationsChartProps) {
+  const chartData =
+    data.length > 0
+      ? data
+      : [
+          { name: "Mon", messages: 0, calls: 0 },
+          { name: "Tue", messages: 0, calls: 0 },
+          { name: "Wed", messages: 0, calls: 0 },
+          { name: "Thu", messages: 0, calls: 0 },
+          { name: "Fri", messages: 0, calls: 0 },
+          { name: "Sat", messages: 0, calls: 0 },
+          { name: "Sun", messages: 0, calls: 0 },
+        ];
 
   return (
     <Card className="col-span-2 shadow-card">
@@ -71,18 +78,47 @@ export default function ConversationsChart({ data = [] }: ConversationsChartProp
       <CardContent className="pt-4">
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart
+              data={chartData}
+              margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
+            >
               <defs>
-                <linearGradient id="messagesGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(220, 55%, 35%)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="hsl(220, 55%, 35%)" stopOpacity={0} />
+                <linearGradient
+                  id="messagesGradient"
+                  x1="0"
+                  y1="0"
+                  x2="0"
+                  y2="1"
+                >
+                  <stop
+                    offset="5%"
+                    stopColor="hsl(220, 55%, 35%)"
+                    stopOpacity={0.4}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor="hsl(220, 55%, 35%)"
+                    stopOpacity={0}
+                  />
                 </linearGradient>
                 <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="hsl(45, 95%, 55%)" stopOpacity={0.4} />
-                  <stop offset="95%" stopColor="hsl(45, 95%, 55%)" stopOpacity={0} />
+                  <stop
+                    offset="5%"
+                    stopColor="hsl(45, 95%, 55%)"
+                    stopOpacity={0.4}
+                  />
+                  <stop
+                    offset="95%"
+                    stopColor="hsl(45, 95%, 55%)"
+                    stopOpacity={0}
+                  />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="hsl(var(--border))"
+              />
               <XAxis
                 dataKey="name"
                 axisLine={false}

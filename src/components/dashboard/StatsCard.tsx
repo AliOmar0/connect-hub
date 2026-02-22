@@ -59,7 +59,7 @@ export default function StatsCard({
       className={cn(
         "relative rounded-xl border border-border p-5 shadow-card transition-all duration-300 hover:shadow-elevated fade-in-up",
         style.card,
-        className
+        className,
       )}
     >
       <div className="flex items-start justify-between">
@@ -75,7 +75,7 @@ export default function StatsCard({
                   "flex items-center gap-0.5 text-xs font-medium px-1.5 py-0.5 rounded",
                   trend.isPositive
                     ? "bg-chart-success/10 text-chart-success"
-                    : "bg-destructive/10 text-destructive"
+                    : "bg-destructive/10 text-destructive",
                 )}
               >
                 {trend.isPositive ? (
@@ -95,7 +95,7 @@ export default function StatsCard({
           className={cn(
             "p-3 rounded-xl transition-all duration-300",
             style.icon,
-            style.iconGlow
+            style.iconGlow,
           )}
         >
           <Icon className="h-5 w-5" />

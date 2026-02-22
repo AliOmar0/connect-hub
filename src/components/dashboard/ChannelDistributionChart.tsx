@@ -33,13 +33,18 @@ const CustomTooltip = ({ active, payload }: TooltipProps) => {
   return null;
 };
 
-export default function ChannelDistributionChart({ data = [] }: ChannelDistributionChartProps) {
-  const chartData = data.length > 0 ? data : [
-    { name: "WhatsApp", value: 0, color: "hsl(142, 70%, 45%)" },
-    { name: "Messenger", value: 0, color: "hsl(220, 90%, 56%)" },
-    { name: "Phone Calls", value: 0, color: "hsl(45, 95%, 50%)" },
-    { name: "Other", value: 0, color: "hsl(220, 20%, 70%)" },
-  ];
+export default function ChannelDistributionChart({
+  data = [],
+}: ChannelDistributionChartProps) {
+  const chartData =
+    data.length > 0
+      ? data
+      : [
+          { name: "WhatsApp", value: 0, color: "hsl(142, 70%, 45%)" },
+          { name: "Messenger", value: 0, color: "hsl(220, 90%, 56%)" },
+          { name: "Phone Calls", value: 0, color: "hsl(45, 95%, 50%)" },
+          { name: "Other", value: 0, color: "hsl(220, 20%, 70%)" },
+        ];
 
   const total = chartData.reduce((sum, item) => sum + item.value, 0);
 
@@ -84,7 +89,7 @@ export default function ChannelDistributionChart({ data = [] }: ChannelDistribut
             </div>
           </div>
         </div>
-        
+
         {/* Legend */}
         <div className="grid grid-cols-2 gap-2 mt-4">
           {chartData.map((item) => (
@@ -94,7 +99,9 @@ export default function ChannelDistributionChart({ data = [] }: ChannelDistribut
                 style={{ backgroundColor: item.color }}
               />
               <span className="text-xs text-muted-foreground">{item.name}</span>
-              <span className="text-xs font-semibold ml-auto">{item.value}%</span>
+              <span className="text-xs font-semibold ml-auto">
+                {item.value}%
+              </span>
             </div>
           ))}
         </div>

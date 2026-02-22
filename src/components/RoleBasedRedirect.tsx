@@ -21,4 +21,3 @@ export default function RoleBasedRedirect() {
   // For other roles (admin, supervisor, manager, viewer), redirect to dashboard
   return <Navigate to="/dashboard" replace />;
 }
-

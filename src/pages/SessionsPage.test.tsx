@@ -26,7 +26,9 @@ const createTestQueryClient = () =>
 // Mock dependencies
 vi.mock("@/hooks/useAuth");
 vi.mock("@/components/layout/DashboardLayout", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 const mockQueryClient = {
   invalidateQueries: vi.fn(),
@@ -64,7 +66,9 @@ vi.mock("@/integrations/supabase/client", () => ({
 describe("SessionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryClient);
+    (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryClient,
+    );
     (useQuery as ReturnType<typeof vi.fn>).mockImplementation(() => ({
       data: [],
       isLoading: false,
@@ -90,7 +94,7 @@ describe("SessionsPage", () => {
         <BrowserRouter>
           <SessionsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
@@ -114,7 +118,7 @@ describe("SessionsPage", () => {
         <BrowserRouter>
           <SessionsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
@@ -138,12 +142,14 @@ describe("SessionsPage", () => {
         <BrowserRouter>
           <SessionsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     // Search input should be present
     expect(
-      screen.getByPlaceholderText("Search by customer, phone, email, or agent...")
+      screen.getByPlaceholderText(
+        "Search by customer, phone, email, or agent...",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -165,7 +171,7 @@ describe("SessionsPage", () => {
         <BrowserRouter>
           <SessionsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
@@ -189,10 +195,9 @@ describe("SessionsPage", () => {
         <BrowserRouter>
           <SessionsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("No conversation selected")).toBeInTheDocument();
   });
 });
-

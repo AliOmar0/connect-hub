@@ -17,7 +17,7 @@ describe("AuthPage", () => {
     render(
       <BrowserRouter>
         <AuthPage />
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.getByText("Sign In")).toBeInTheDocument();
@@ -28,10 +28,11 @@ describe("AuthPage", () => {
     render(
       <BrowserRouter>
         <AuthPage />
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
-    expect(screen.getByText("Need an account? Contact your manager.")).toBeInTheDocument();
+    expect(
+      screen.getByText("Need an account? Contact your manager."),
+    ).toBeInTheDocument();
   });
 });
-

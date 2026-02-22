@@ -30,7 +30,9 @@ const mockQueryClient = {
 };
 
 vi.mock("@/components/layout/DashboardLayout", () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  default: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -69,7 +71,9 @@ vi.mock("@/integrations/supabase/client", () => ({
 describe("NotificationsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(mockQueryClient);
+    (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockQueryClient,
+    );
   });
 
   it("renders notifications page title", () => {
@@ -95,7 +99,7 @@ describe("NotificationsPage", () => {
         <BrowserRouter>
           <NotificationsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Notifications")).toBeInTheDocument();
@@ -124,7 +128,7 @@ describe("NotificationsPage", () => {
         <BrowserRouter>
           <NotificationsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     expect(screen.getByText("Notifications")).toBeInTheDocument();
@@ -153,16 +157,16 @@ describe("NotificationsPage", () => {
         <BrowserRouter>
           <NotificationsPage />
         </BrowserRouter>
-      </QueryClientProvider>
+      </QueryClientProvider>,
     );
 
     // Button should exist (may be disabled if no unread notifications)
     const buttons = screen.queryAllByRole("button");
-    const markAllButton = buttons.find(btn => 
-      btn.textContent?.includes("Mark") || btn.textContent?.includes("Read")
+    const markAllButton = buttons.find(
+      (btn) =>
+        btn.textContent?.includes("Mark") || btn.textContent?.includes("Read"),
     );
     // Just verify the page renders
     expect(screen.getByText("Notifications")).toBeInTheDocument();
   });
 });
-

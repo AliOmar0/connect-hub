@@ -1,46 +1,50 @@
-import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { supabase } from '@/integrations/supabase/client';
-import { AppRole } from '@/types/database';
+import { useState, useEffect, useContext, ReactNode } from "react";
+import { User, Session } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
+import { AppRole } from "@/types/database";
+import { AuthContext, AuthContextType } from "@/contexts/AuthContext";
 
-interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  userRole: AppRole | null;
-  loading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, firstName?: string, lastName?: string) => Promise<{ data: { user: User | null; session: Session | null } | null; error: Error | null }>;
-  signOut: () => Promise<void>;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [userRole, setUserRole] = useState<AppRole | null>(null);
-  const [loading, setLoading] = useState(true);
+export function AuthProvider({
+  children,
+  mockState,
+}: {
+  children: ReactNode;
+  mockState?: AuthContextType;
+}) {
+  const [user, setUser] = useState<User | null>(mockState?.user ?? null);
+  const [session, setSession] = useState<Session | null>(
+    mockState?.session ?? null,
+  );
+  const [userRole, setUserRole] = useState<AppRole | null>(
+    mockState?.userRole ?? null,
+  );
+  const [loading, setLoading] = useState(mockState?.loading ?? true);
 
   useEffect(() => {
+    if (mockState) return;
+    let isMounted = true;
+
     // Set up auth state listener FIRST
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        // Defer role fetch with setTimeout
-        if (session?.user) {
-          setTimeout(() => {
-            fetchUserRole(session.user.id);
-          }, 0);
-        } else {
-          setUserRole(null);
-        }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!isMounted) return;
+      setSession(session);
+      setUser(session?.user ?? null);
+
+      // Defer role fetch with setTimeout
+      if (session?.user) {
+        setTimeout(() => {
+          if (isMounted) fetchUserRole(session.user.id);
+        }, 0);
+      } else {
+        setUserRole(null);
       }
-    );
+    });
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!isMounted) return;
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
@@ -49,16 +53,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, []);
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
+  }, [mockState]);
 
   const fetchUserRole = async (userId: string) => {
     try {
       // First, ensure profile exists (fallback if trigger didn't fire)
       const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('user_id', userId)
+        .from("profiles")
+        .select("id")
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (profileError || !profile) {
@@ -66,28 +73,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const { data: userData } = await supabase.auth.getUser();
         if (userData?.user) {
           const { error: insertError } = await supabase
-            .from('profiles')
+            .from("profiles")
             .insert({
               user_id: userId,
-              email: userData.user.email || '',
-              first_name: userData.user.user_metadata?.first_name || '',
-              last_name: userData.user.user_metadata?.last_name || '',
+              email: userData.user.email || "",
+              first_name: userData.user.user_metadata?.first_name || "",
+              last_name: userData.user.user_metadata?.last_name || "",
             })
             .select()
             .single();
-          
+
           if (insertError) {
-            console.error('Error creating profile:', insertError);
+            console.error("Error creating profile:", insertError);
           } else {
             // Also ensure role exists
             const { error: roleError } = await supabase
-              .from('user_roles')
-              .insert({ user_id: userId, role: 'agent' })
+              .from("user_roles")
+              .insert({ user_id: userId, role: "agent" })
               .select()
               .single();
-            
-            if (roleError && !roleError.message.includes('duplicate')) {
-              console.error('Error creating user role:', roleError);
+
+            if (roleError && !roleError.message.includes("duplicate")) {
+              console.error("Error creating user role:", roleError);
             }
           }
         }
@@ -95,27 +102,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Fetch user role
       const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", userId)
         .maybeSingle();
 
       if (!error && data) {
         setUserRole(data.role as AppRole);
       }
     } catch (err) {
-      console.error('Error fetching user role:', err);
+      console.error("Error fetching user role:", err);
     }
   };
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
     return { error: error as Error | null };
   };
 
-  const signUp = async (email: string, password: string, firstName?: string, lastName?: string) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    firstName?: string,
+    lastName?: string,
+  ) => {
     const redirectUrl = `${window.location.origin}/`;
-    
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -124,12 +139,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         data: {
           first_name: firstName,
           last_name: lastName,
-        }
-      }
+        },
+      },
     });
-    return { 
+    return {
       data: data ? { user: data.user, session: data.session } : null,
-      error: error as Error | null 
+      error: error as Error | null,
     };
   };
 
@@ -141,7 +156,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, userRole, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider
+      value={{ user, session, userRole, loading, signIn, signUp, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   );
@@ -150,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

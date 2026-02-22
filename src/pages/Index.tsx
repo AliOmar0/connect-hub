@@ -90,7 +90,7 @@ export default function Index() {
       const resolutionRate =
         allWeekSessions && allWeekSessions.length > 0
           ? Math.round(
-              ((completedSessions?.length || 0) / allWeekSessions.length) * 100
+              ((completedSessions?.length || 0) / allWeekSessions.length) * 100,
             )
           : 0;
 
@@ -141,7 +141,8 @@ export default function Index() {
             .eq("date", date);
 
           const totalMessages =
-            analytics?.reduce((sum, a) => sum + (a.total_messages || 0), 0) || 0;
+            analytics?.reduce((sum, a) => sum + (a.total_messages || 0), 0) ||
+            0;
           const totalCalls =
             analytics?.reduce((sum, a) => sum + (a.total_calls || 0), 0) || 0;
 
@@ -150,7 +151,7 @@ export default function Index() {
             messages: totalMessages,
             calls: totalCalls,
           };
-        })
+        }),
       );
 
       return data;
@@ -187,10 +188,10 @@ export default function Index() {
             channel === "whatsapp"
               ? "hsl(142, 70%, 45%)"
               : channel === "messenger"
-              ? "hsl(220, 90%, 56%)"
-              : channel === "voice"
-              ? "hsl(45, 95%, 50%)"
-              : "hsl(220, 20%, 70%)",
+                ? "hsl(220, 90%, 56%)"
+                : channel === "voice"
+                  ? "hsl(45, 95%, 50%)"
+                  : "hsl(220, 20%, 70%)",
         };
       });
     },
@@ -202,7 +203,7 @@ export default function Index() {
       const { data } = await supabase
         .from("sessions")
         .select(
-          "*, customer:customers(*), employee:employees(*, profile:profiles(*))"
+          "*, customer:customers(*), employee:employees(*, profile:profiles(*))",
         )
         .eq("status", "active")
         .order("started_at", { ascending: false })
@@ -284,7 +285,9 @@ export default function Index() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <StatsCard
             title="Total Messages"
-            value={statsLoading ? "..." : formatNumber(stats?.messages.count || 0)}
+            value={
+              statsLoading ? "..." : formatNumber(stats?.messages.count || 0)
+            }
             icon={MessageSquare}
             trend={
               stats?.messages.trend
@@ -314,7 +317,9 @@ export default function Index() {
           />
           <StatsCard
             title="Active Sessions"
-            value={statsLoading ? "..." : (stats?.activeSessions || 0).toString()}
+            value={
+              statsLoading ? "..." : (stats?.activeSessions || 0).toString()
+            }
             icon={Headphones}
             subtitle="Right now"
             variant="success"

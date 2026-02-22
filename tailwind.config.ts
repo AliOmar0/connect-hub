@@ -2,7 +2,12 @@ import type { Config } from "tailwindcss";
 
 export default {
   darkMode: ["class"],
-  content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  content: [
+    "./pages/**/*.{ts,tsx}",
+    "./components/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",
+    "./src/**/*.{ts,tsx}",
+  ],
   prefix: "",
   theme: {
     container: {
@@ -14,8 +19,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'sans-serif'],
-        display: ['Outfit', 'sans-serif'],
+        sans: ["Inter", "sans-serif"],
+        display: ["Outfit", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -85,11 +90,11 @@ export default {
         sm: "calc(var(--radius) - 4px)",
       },
       boxShadow: {
-        'glow': '0 0 20px hsl(var(--gold) / 0.3)',
-        'glow-lg': '0 0 40px hsl(var(--gold) / 0.4)',
-        'soft': '0 4px 20px hsl(var(--navy) / 0.08)',
-        'card': '0 2px 12px hsl(var(--navy) / 0.06)',
-        'elevated': '0 8px 30px hsl(var(--navy) / 0.12)',
+        glow: "0 0 20px hsl(var(--gold) / 0.3)",
+        "glow-lg": "0 0 40px hsl(var(--gold) / 0.4)",
+        soft: "0 4px 20px hsl(var(--navy) / 0.08)",
+        card: "0 2px 12px hsl(var(--navy) / 0.06)",
+        elevated: "0 8px 30px hsl(var(--navy) / 0.12)",
       },
       keyframes: {
         "accordion-down": {

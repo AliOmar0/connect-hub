@@ -24,7 +24,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute>
           <div>Protected Content</div>
         </ProtectedRoute>
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.getByText("Protected Content")).toBeInTheDocument();
@@ -42,7 +42,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute>
           <div>Protected Content</div>
         </ProtectedRoute>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.queryByText("Protected Content")).not.toBeInTheDocument();
@@ -60,7 +60,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute>
           <div>Protected Content</div>
         </ProtectedRoute>
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.queryByText("Protected Content")).not.toBeInTheDocument();
@@ -78,7 +78,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute requireRole="supervisor">
           <div>Admin Content</div>
         </ProtectedRoute>
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.getByText("Admin Content")).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute requireRole="admin">
           <div>Admin Content</div>
         </ProtectedRoute>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Agent should be redirected, not see access denied
@@ -115,7 +115,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute requireRole="admin">
           <div>Admin Content</div>
         </ProtectedRoute>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.queryByText("Admin Content")).not.toBeInTheDocument();
@@ -133,7 +133,7 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute allowedRoles={["manager", "admin"]}>
           <div>Manager Content</div>
         </ProtectedRoute>
-      </BrowserRouter>
+      </BrowserRouter>,
     );
 
     expect(screen.getByText("Manager Content")).toBeInTheDocument();
@@ -151,11 +151,10 @@ describe("ProtectedRoute", () => {
         <ProtectedRoute allowedRoles={["manager", "admin"]}>
           <div>Manager Content</div>
         </ProtectedRoute>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Agent should be redirected
     expect(screen.queryByText("Manager Content")).not.toBeInTheDocument();
   });
 });
-

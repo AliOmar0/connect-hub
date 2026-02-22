@@ -6,11 +6,7 @@ import { MessageSquare } from "lucide-react";
 describe("StatsCard", () => {
   it("renders with title and value", () => {
     render(
-      <StatsCard
-        title="Total Messages"
-        value="1,234"
-        icon={MessageSquare}
-      />
+      <StatsCard title="Total Messages" value="1,234" icon={MessageSquare} />,
     );
 
     expect(screen.getByText("Total Messages")).toBeInTheDocument();
@@ -24,7 +20,7 @@ describe("StatsCard", () => {
         value="1,234"
         icon={MessageSquare}
         trend={{ value: 12.5, isPositive: true }}
-      />
+      />,
     );
 
     expect(screen.getByText("12.5%")).toBeInTheDocument();
@@ -37,11 +33,9 @@ describe("StatsCard", () => {
         value="1,234"
         icon={MessageSquare}
         subtitle="This month"
-      />
+      />,
     );
 
     expect(screen.getByText("This month")).toBeInTheDocument();
   });
 });
-
-

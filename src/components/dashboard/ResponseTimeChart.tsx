@@ -50,17 +50,22 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
   return null;
 };
 
-export default function ResponseTimeChart({ data = [] }: ResponseTimeChartProps) {
-  const chartData = data.length > 0 ? data : [
-    { hour: "6AM", time: 0 },
-    { hour: "8AM", time: 0 },
-    { hour: "10AM", time: 0 },
-    { hour: "12PM", time: 0 },
-    { hour: "2PM", time: 0 },
-    { hour: "4PM", time: 0 },
-    { hour: "6PM", time: 0 },
-    { hour: "8PM", time: 0 },
-  ];
+export default function ResponseTimeChart({
+  data = [],
+}: ResponseTimeChartProps) {
+  const chartData =
+    data.length > 0
+      ? data
+      : [
+          { hour: "6AM", time: 0 },
+          { hour: "8AM", time: 0 },
+          { hour: "10AM", time: 0 },
+          { hour: "12PM", time: 0 },
+          { hour: "2PM", time: 0 },
+          { hour: "4PM", time: 0 },
+          { hour: "6PM", time: 0 },
+          { hour: "8PM", time: 0 },
+        ];
 
   return (
     <Card className="shadow-card">
@@ -86,14 +91,21 @@ export default function ResponseTimeChart({ data = [] }: ResponseTimeChartProps)
       <CardContent className="pt-4">
         <div className="h-48">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 5, right: 5, left: -15, bottom: 5 }}>
+            <BarChart
+              data={chartData}
+              margin={{ top: 5, right: 5, left: -15, bottom: 5 }}
+            >
               <defs>
                 <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopOpacity={1} />
                   <stop offset="100%" stopOpacity={0.6} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                vertical={false}
+                stroke="hsl(var(--border))"
+              />
               <XAxis
                 dataKey="hour"
                 axisLine={false}
@@ -106,8 +118,15 @@ export default function ResponseTimeChart({ data = [] }: ResponseTimeChartProps)
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
                 tickFormatter={(value) => `${value}m`}
               />
-              <Tooltip content={<CustomTooltip />} cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }} />
-              <Bar dataKey="time" radius={[4, 4, 0, 0]} animationDuration={1000}>
+              <Tooltip
+                content={<CustomTooltip />}
+                cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+              />
+              <Bar
+                dataKey="time"
+                radius={[4, 4, 0, 0]}
+                animationDuration={1000}
+              >
                 {chartData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={getBarColor(entry.time)} />
                 ))}

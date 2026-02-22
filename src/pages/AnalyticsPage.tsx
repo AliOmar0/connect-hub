@@ -71,7 +71,9 @@ export default function AnalyticsPage() {
       // Get raw data for calculations
       const { data: sessions } = await supabase
         .from("sessions")
-        .select("status, satisfaction_score, wait_time_seconds, duration_seconds")
+        .select(
+          "status, satisfaction_score, wait_time_seconds, duration_seconds",
+        )
         .gte("started_at", startDate.toISOString());
 
       const { data: messages } = await supabase
@@ -85,7 +87,8 @@ export default function AnalyticsPage() {
         .gte("started_at", startDate.toISOString());
 
       const totalSessions = sessions?.length || 0;
-      const completedSessions = sessions?.filter((s) => s.status === "completed").length || 0;
+      const completedSessions =
+        sessions?.filter((s) => s.status === "completed").length || 0;
       const avgSatisfaction =
         sessions?.reduce((sum, s) => sum + (s.satisfaction_score || 0), 0) /
         (sessions?.filter((s) => s.satisfaction_score).length || 1);
@@ -99,7 +102,8 @@ export default function AnalyticsPage() {
       return {
         totalSessions,
         completedSessions,
-        resolutionRate: totalSessions > 0 ? (completedSessions / totalSessions) * 100 : 0,
+        resolutionRate:
+          totalSessions > 0 ? (completedSessions / totalSessions) * 100 : 0,
         totalMessages: messages?.length || 0,
         totalCalls: calls?.length || 0,
         avgSatisfaction: avgSatisfaction.toFixed(1),
@@ -216,7 +220,9 @@ export default function AnalyticsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{summaryStats.totalSessions}</div>
+                <div className="text-2xl font-bold">
+                  {summaryStats.totalSessions}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   {summaryStats.completedSessions} completed
                 </p>
@@ -232,7 +238,9 @@ export default function AnalyticsPage() {
                 <div className="text-2xl font-bold">
                   {summaryStats.resolutionRate.toFixed(1)}%
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Completion rate</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Completion rate
+                </p>
               </CardContent>
             </Card>
             <Card>
@@ -242,7 +250,9 @@ export default function AnalyticsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{summaryStats.avgSatisfaction}</div>
+                <div className="text-2xl font-bold">
+                  {summaryStats.avgSatisfaction}
+                </div>
                 <p className="text-xs text-muted-foreground mt-1">Out of 5.0</p>
               </CardContent>
             </Card>
@@ -256,7 +266,9 @@ export default function AnalyticsPage() {
                 <div className="text-2xl font-bold">
                   {Math.round(summaryStats.avgWaitTime / 60)}m
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Before response</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Before response
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -13,7 +13,10 @@ interface IntegrationStatusProps {
 }
 
 const channelNames: Record<string, { name: string; description: string }> = {
-  whatsapp: { name: "WhatsApp Business", description: "Meta Business API integration" },
+  whatsapp: {
+    name: "WhatsApp Business",
+    description: "Meta Business API integration",
+  },
   messenger: { name: "Facebook Messenger", description: "Meta Messenger API" },
   sms: { name: "SMS Gateway", description: "SMS integration" },
   voice: { name: "Voice Calls", description: "Voice call integration" },
@@ -38,15 +41,18 @@ const statusConfig = {
   },
 };
 
-export default function IntegrationStatus({ integrations = [] }: IntegrationStatusProps) {
-  const displayIntegrations = integrations.length > 0
-    ? integrations
-    : [
-        { channel: "whatsapp" as const, is_active: false },
-        { channel: "messenger" as const, is_active: false },
-        { channel: "sms" as const, is_active: false },
-        { channel: "voice" as const, is_active: false },
-      ].map((item) => ({ ...item, id: item.channel } as ApiConfig));
+export default function IntegrationStatus({
+  integrations = [],
+}: IntegrationStatusProps) {
+  const displayIntegrations =
+    integrations.length > 0
+      ? integrations
+      : [
+          { channel: "whatsapp" as const, is_active: false },
+          { channel: "messenger" as const, is_active: false },
+          { channel: "sms" as const, is_active: false },
+          { channel: "voice" as const, is_active: false },
+        ].map((item) => ({ ...item, id: item.channel }) as ApiConfig);
 
   return (
     <Card className="shadow-card">
@@ -69,7 +75,9 @@ export default function IntegrationStatus({ integrations = [] }: IntegrationStat
           const status = integration.is_active ? "connected" : "pending";
           const StatusIcon = statusConfig[status].icon;
           const lastSync = integration.last_verified_at
-            ? formatDistanceToNow(new Date(integration.last_verified_at), { addSuffix: true })
+            ? formatDistanceToNow(new Date(integration.last_verified_at), {
+                addSuffix: true,
+              })
             : undefined;
 
           return (
@@ -81,17 +89,24 @@ export default function IntegrationStatus({ integrations = [] }: IntegrationStat
               {/* Icon */}
               <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
                 <span className="text-xl">
-                  {integration.channel === "whatsapp" ? "🟢" :
-                   integration.channel === "messenger" ? "🔵" :
-                   integration.channel === "voice" ? "📞" :
-                   integration.channel === "sms" ? "💬" : "📧"}
+                  {integration.channel === "whatsapp"
+                    ? "🟢"
+                    : integration.channel === "messenger"
+                      ? "🔵"
+                      : integration.channel === "voice"
+                        ? "📞"
+                        : integration.channel === "sms"
+                          ? "💬"
+                          : "📧"}
                 </span>
               </div>
 
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{channelInfo.name}</span>
+                  <span className="font-medium text-sm">
+                    {channelInfo.name}
+                  </span>
                 </div>
                 <p className="text-xs text-muted-foreground truncate">
                   {channelInfo.description}
@@ -104,7 +119,7 @@ export default function IntegrationStatus({ integrations = [] }: IntegrationStat
                   variant="outline"
                   className={cn(
                     "text-[10px] font-medium gap-1",
-                    statusConfig[status].className
+                    statusConfig[status].className,
                   )}
                 >
                   <StatusIcon className="h-3 w-3" />

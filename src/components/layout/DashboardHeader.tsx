@@ -10,9 +10,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { Notification } from "@/types/database";
@@ -29,7 +30,7 @@ export default function DashboardHeader() {
       const { data, count } = await supabase
         .from("notifications")
         .select("*", { count: "exact" })
-        .eq("user_id", user.id)
+        .or(`user_id.eq.${user.id},user_id.is.null`)
         .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(5);
@@ -37,6 +38,32 @@ export default function DashboardHeader() {
     },
     enabled: !!user?.id,
   });
+
+  const queryClient = useQueryClient();
+
+  // Real-time subscription for notifications
+  useEffect(() => {
+    if (!user?.id) return;
+
+    const channel = supabase
+      .channel("header-notifications-changes")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, queryClient]);
 
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between gap-4">
@@ -58,19 +85,23 @@ export default function DashboardHeader() {
         <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary/50">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-chart-success pulse-green" />
-            <span className="text-xs font-medium text-muted-foreground">WhatsApp</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              WhatsApp
+            </span>
           </div>
           <div className="w-px h-4 bg-border" />
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-chart-success pulse-green" />
-            <span className="text-xs font-medium text-muted-foreground">Messenger</span>
+            <span className="text-xs font-medium text-muted-foreground">
+              Messenger
+            </span>
           </div>
         </div>
 
         {/* Quick Action: Jump to Active AI Sessions */}
-        <Button 
-          variant="outline" 
-          size="icon" 
+        <Button
+          variant="outline"
+          size="icon"
           className="relative"
           onClick={() => navigate("/sessions")}
         >
@@ -112,12 +143,19 @@ export default function DashboardHeader() {
                     }}
                   >
                     <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${
-                        notif.type === "error" ? "bg-destructive" :
-                        notif.type === "warning" ? "bg-yellow-500" :
-                        notif.type === "success" ? "bg-green-500" :
-                        "bg-blue-500"
-                      }`} />
+                      <div
+                        className={`w-2 h-2 rounded-full ${
+                          notif.type === "error"
+                            ? "bg-destructive"
+                            : notif.type === "warning"
+                              ? "bg-yellow-500"
+                              : notif.type === "success"
+                                ? "bg-green-500"
+                                : notif.type === "escalation"
+                                  ? "bg-orange-500"
+                                  : "bg-blue-500"
+                        }`}
+                      />
                       <span className="font-medium text-sm">{notif.title}</span>
                     </div>
                     {notif.message && (
@@ -126,18 +164,23 @@ export default function DashboardHeader() {
                       </span>
                     )}
                     <span className="text-xs text-muted-foreground pl-4">
-                      {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true })}
+                      {formatDistanceToNow(new Date(notif.created_at), {
+                        addSuffix: true,
+                      })}
                     </span>
                   </DropdownMenuItem>
                 ))
               ) : (
-                <DropdownMenuItem disabled className="text-center text-sm text-muted-foreground py-4">
+                <DropdownMenuItem
+                  disabled
+                  className="text-center text-sm text-muted-foreground py-4"
+                >
                   No new notifications
                 </DropdownMenuItem>
               )}
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
+            <DropdownMenuItem
               className="text-center justify-center text-sm text-primary font-medium"
               onClick={() => navigate("/notifications")}
             >

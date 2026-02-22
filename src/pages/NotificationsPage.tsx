@@ -32,8 +32,8 @@ export default function NotificationsPage() {
       let query = supabase
         .from("notifications")
         .select("*")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .or(`user_id.eq.${user.id},user_id.is.null`); // Added .or filter here
 
       if (filter === "unread") {
         query = query.eq("is_read", false);
@@ -76,10 +76,8 @@ export default function NotificationsPage() {
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
-        .eq("user_id", user.id)
+        .or(`user_id.eq.${user.id},user_id.is.null`)
         .eq("is_read", false);
-
-      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -108,6 +106,26 @@ export default function NotificationsPage() {
     },
   });
 
+  const deleteAllReadMutation = useMutation({
+    mutationFn: async () => {
+      if (!user?.id) return;
+      const { error } = await supabase
+        .from("notifications")
+        .delete()
+        .eq("is_read", true)
+        .or(`user_id.eq.${user.id},user_id.is.null`);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      toast.success("All read notifications deleted");
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || "Failed to delete read notifications");
+    },
+  });
+
   // Real-time subscription
   useEffect(() => {
     if (!user?.id) return;
@@ -120,11 +138,11 @@ export default function NotificationsPage() {
           event: "*",
           schema: "public",
           table: "notifications",
-          filter: `user_id=eq.${user.id}`,
+          filter: undefined, // Listen to all notification changes and filter locally or let queryClient handle it
         },
         () => {
           queryClient.invalidateQueries({ queryKey: ["notifications"] });
-        }
+        },
       )
       .subscribe();
 
@@ -164,7 +182,10 @@ export default function NotificationsPage() {
             </p>
           </div>
           <div className="flex gap-2">
-            <Select value={filter} onValueChange={(v) => setFilter(v)}>
+            <Select
+              value={filter}
+              onValueChange={(v) => setFilter(v as "all" | "unread" | "read")}
+            >
               <SelectTrigger className="w-[180px]">
                 <Filter className="h-4 w-4 mr-2" />
                 <SelectValue />
@@ -185,6 +206,19 @@ export default function NotificationsPage() {
                 Mark All Read
               </Button>
             )}
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              onClick={() => {
+                if (confirm("Delete all read notifications?")) {
+                  deleteAllReadMutation.mutate();
+                }
+              }}
+              disabled={deleteAllReadMutation.isPending}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete All Read
+            </Button>
           </div>
         </div>
 
@@ -205,7 +239,7 @@ export default function NotificationsPage() {
                 key={notification.id}
                 className={cn(
                   "cursor-pointer transition-all hover:shadow-md",
-                  !notification.is_read && "border-primary/20 bg-primary/5"
+                  !notification.is_read && "border-primary/20 bg-primary/5",
                 )}
                 onClick={() => handleNotificationClick(notification)}
               >
@@ -218,14 +252,14 @@ export default function NotificationsPage() {
                             "h-4 w-4",
                             !notification.is_read
                               ? "text-primary"
-                              : "text-muted-foreground"
+                              : "text-muted-foreground",
                           )}
                         />
                         <h3
                           className={cn(
                             "font-semibold",
                             !notification.is_read && "text-foreground",
-                            notification.is_read && "text-muted-foreground"
+                            notification.is_read && "text-muted-foreground",
                           )}
                         >
                           {notification.title}
@@ -245,15 +279,18 @@ export default function NotificationsPage() {
                           className={cn(
                             "text-xs",
                             typeColors[notification.type || "info"] ||
-                              typeColors.info
+                              typeColors.info,
                           )}
                         >
                           {notification.type || "info"}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(new Date(notification.created_at), {
-                            addSuffix: true,
-                          })}
+                          {formatDistanceToNow(
+                            new Date(notification.created_at),
+                            {
+                              addSuffix: true,
+                            },
+                          )}
                         </span>
                       </div>
                     </div>
@@ -262,7 +299,8 @@ export default function NotificationsPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          title="Mark as Read"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
                           onClick={(e) => {
                             e.stopPropagation();
                             markAsReadMutation.mutate(notification.id);
@@ -274,7 +312,8 @@ export default function NotificationsPage() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        title="Delete"
+                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (confirm("Delete this notification?")) {

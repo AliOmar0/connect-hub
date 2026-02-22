@@ -15,7 +15,11 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import pibLogo from "@/assets/pib-logo.png";
@@ -40,19 +44,26 @@ const NavItem = ({ to, icon: Icon, label, collapsed, badge }: NavItemProps) => {
         "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative",
         isActive
           ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-glow"
-          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
       )}
     >
-      <Icon className={cn("h-5 w-5 flex-shrink-0", isActive && "text-sidebar-primary-foreground")} />
-      {!collapsed && (
-        <span className="font-medium text-sm">{label}</span>
-      )}
+      <Icon
+        className={cn(
+          "h-5 w-5 flex-shrink-0",
+          isActive && "text-sidebar-primary-foreground",
+        )}
+      />
+      {!collapsed && <span className="font-medium text-sm">{label}</span>}
       {badge !== undefined && badge > 0 && (
-        <span className={cn(
-          "absolute flex items-center justify-center min-w-[18px] h-[18px] text-[10px] font-bold rounded-full",
-          collapsed ? "top-0 right-0" : "right-3",
-          isActive ? "bg-sidebar-background text-sidebar-primary" : "bg-gold text-navy-dark"
-        )}>
+        <span
+          className={cn(
+            "absolute flex items-center justify-center min-w-[18px] h-[18px] text-[10px] font-bold rounded-full",
+            collapsed ? "top-0 right-0" : "right-3",
+            isActive
+              ? "bg-sidebar-background text-sidebar-primary"
+              : "bg-gold text-navy-dark",
+          )}
+        >
           {badge > 99 ? "99+" : badge}
         </span>
       )}
@@ -162,40 +173,83 @@ export default function DashboardSidebar() {
 
   // Define all navigation items with real badge counts
   const allMainNavItems = [
-    { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "supervisor", "manager", "viewer"] },
-    { to: "/sessions", icon: Headphones, label: "Active AI Sessions", badge: activeSessionsCount || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
-    { to: "/employees", icon: Users, label: "Employees", roles: ["admin", "supervisor", "manager"] },
-    { to: "/analytics", icon: BarChart3, label: "Analytics", roles: ["admin", "supervisor", "manager"] },
-    { to: "/twilio", icon: Phone, label: "Twilio Demo", roles: ["admin", "supervisor", "manager"] },
+    {
+      to: "/dashboard",
+      icon: LayoutDashboard,
+      label: "Dashboard",
+      roles: ["admin", "supervisor", "manager", "viewer"],
+    },
+    {
+      to: "/sessions",
+      icon: Headphones,
+      label: "Active AI Sessions",
+      badge: activeSessionsCount || 0,
+      roles: ["admin", "supervisor", "manager", "agent", "viewer"],
+    },
+    {
+      to: "/employees",
+      icon: Users,
+      label: "Employees",
+      roles: ["admin", "supervisor", "manager"],
+    },
+    {
+      to: "/analytics",
+      icon: BarChart3,
+      label: "Analytics",
+      roles: ["admin", "supervisor", "manager"],
+    },
+    {
+      to: "/twilio",
+      icon: Phone,
+      label: "Twilio Demo",
+      roles: ["admin", "supervisor", "manager"],
+    },
   ];
 
   const allSecondaryNavItems = [
-    { to: "/notifications", icon: Bell, label: "Notifications", badge: unreadNotifications || 0, roles: ["admin", "supervisor", "manager", "agent", "viewer"] },
-    { to: "/settings", icon: Settings, label: "Settings", roles: ["admin", "supervisor", "manager"] },
+    {
+      to: "/notifications",
+      icon: Bell,
+      label: "Notifications",
+      badge: unreadNotifications || 0,
+      roles: ["admin", "supervisor", "manager", "agent", "viewer"],
+    },
+    {
+      to: "/settings",
+      icon: Settings,
+      label: "Settings",
+      roles: ["admin", "supervisor", "manager"],
+    },
   ];
 
   // Filter navigation items based on user role
   const mainNavItems = allMainNavItems.filter(
-    (item) => !item.roles || item.roles.includes(userRole || "viewer")
+    (item) => !item.roles || item.roles.includes(userRole || "viewer"),
   );
 
   const secondaryNavItems = allSecondaryNavItems.filter(
-    (item) => !item.roles || item.roles.includes(userRole || "viewer")
+    (item) => !item.roles || item.roles.includes(userRole || "viewer"),
   );
 
   return (
     <aside
       className={cn(
         "h-screen bg-sidebar flex flex-col transition-all duration-300 ease-in-out border-r border-sidebar-border",
-        collapsed ? "w-[72px]" : "w-64"
+        collapsed ? "w-[72px]" : "w-64",
       )}
     >
       {/* Logo */}
-      <div className={cn(
-        "flex items-center h-16 px-4 border-b border-sidebar-border",
-        collapsed ? "justify-center" : "gap-3"
-      )}>
-        <img src={pibLogo} alt="PIB Logo" className="h-10 w-10 object-contain" />
+      <div
+        className={cn(
+          "flex items-center h-16 px-4 border-b border-sidebar-border",
+          collapsed ? "justify-center" : "gap-3",
+        )}
+      >
+        <img
+          src={pibLogo}
+          alt="PIB Logo"
+          className="h-10 w-10 object-contain"
+        />
         {!collapsed && (
           <div className="flex flex-col">
             <span className="font-display font-bold text-sm text-sidebar-foreground leading-tight">
@@ -226,10 +280,12 @@ export default function DashboardSidebar() {
       </nav>
 
       {/* User Section */}
-      <div className={cn(
-        "p-3 border-t border-sidebar-border",
-        collapsed ? "flex justify-center" : ""
-      )}>
+      <div
+        className={cn(
+          "p-3 border-t border-sidebar-border",
+          collapsed ? "flex justify-center" : "",
+        )}
+      >
         {!collapsed ? (
           <div className="flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50">
             <div className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm">
@@ -278,7 +334,7 @@ export default function DashboardSidebar() {
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
             "w-full text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent",
-            collapsed && "justify-center"
+            collapsed && "justify-center",
           )}
         >
           {collapsed ? (

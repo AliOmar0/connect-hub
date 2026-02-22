@@ -1,35 +1,43 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { toast } from 'sonner';
-import { Loader2 } from 'lucide-react';
-import pibLogo from '@/assets/pib-logo.png';
-import { z } from 'zod';
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
+import pibLogo from "@/assets/pib-logo.png";
+import { z } from "zod";
 
-const emailSchema = z.string().email('Please enter a valid email address');
-const passwordSchema = z.string().min(6, 'Password must be at least 6 characters');
+const emailSchema = z.string().email("Please enter a valid email address");
+const passwordSchema = z
+  .string()
+  .min(6, "Password must be at least 6 characters");
 
 export default function AuthPage() {
   const navigate = useNavigate();
   const { user, signIn, loading: authLoading } = useAuth();
-  
+
   const [isLoading, setIsLoading] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
 
   useEffect(() => {
     if (user) {
-      navigate('/');
+      navigate("/");
     }
   }, [user, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     try {
       emailSchema.parse(loginEmail);
       passwordSchema.parse(loginPassword);
@@ -39,23 +47,22 @@ export default function AuthPage() {
         return;
       }
     }
-    
+
     setIsLoading(true);
     const { error } = await signIn(loginEmail, loginPassword);
     setIsLoading(false);
-    
+
     if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        toast.error('Invalid email or password. Please try again.');
+      if (error.message.includes("Invalid login credentials")) {
+        toast.error("Invalid email or password. Please try again.");
       } else {
         toast.error(error.message);
       }
     } else {
-      toast.success('Welcome back!');
-      navigate('/');
+      toast.success("Welcome back!");
+      navigate("/");
     }
   };
-
 
   if (authLoading) {
     return (
@@ -73,8 +80,12 @@ export default function AuthPage() {
           <div className="flex items-center gap-3">
             <img src={pibLogo} alt="PIB Logo" className="h-12 w-auto" />
             <div className="flex flex-col">
-              <span className="text-xl font-display font-bold text-primary">PIB Connect</span>
-              <span className="text-xs text-muted-foreground">Communication Center</span>
+              <span className="text-xl font-display font-bold text-primary">
+                PIB Connect
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Communication Center
+              </span>
             </div>
           </div>
         </div>
@@ -82,9 +93,7 @@ export default function AuthPage() {
         <Card className="border-border/50 shadow-xl shadow-primary/5">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-display">Welcome</CardTitle>
-            <CardDescription>
-              Sign in to access your dashboard
-            </CardDescription>
+            <CardDescription>Sign in to access your dashboard</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
@@ -117,7 +126,7 @@ export default function AuthPage() {
                     Signing in...
                   </>
                 ) : (
-                  'Sign In'
+                  "Sign In"
                 )}
               </Button>
             </form>

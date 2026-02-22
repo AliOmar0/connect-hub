@@ -50,12 +50,17 @@ const statusConfig = {
   },
 };
 
-export default function EmployeesTable({ employees = [] }: EmployeesTableProps) {
+export default function EmployeesTable({
+  employees = [],
+}: EmployeesTableProps) {
   const { data: employeeStats } = useQuery({
-    queryKey: ["employee-stats", employees.map(e => e.id)],
+    queryKey: ["employee-stats", employees.map((e) => e.id)],
     queryFn: async () => {
       const today = startOfDay(new Date());
-      const stats: Record<string, { activeSessions: number; todayHandled: number }> = {};
+      const stats: Record<
+        string,
+        { activeSessions: number; todayHandled: number }
+      > = {};
 
       for (const emp of employees) {
         const { count: activeSessions } = await supabase
@@ -111,7 +116,10 @@ export default function EmployeesTable({ employees = [] }: EmployeesTableProps) 
           <TableBody>
             {displayEmployees.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-8 text-muted-foreground"
+                >
                   No employees found
                 </TableCell>
               </TableRow>
@@ -119,15 +127,20 @@ export default function EmployeesTable({ employees = [] }: EmployeesTableProps) 
               displayEmployees.map((employee, index) => {
                 const profile = employee.profile;
                 const name = profile
-                  ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "Unknown"
+                  ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+                    "Unknown"
                   : "Unknown";
-                const initials = name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase() || "?";
+                const initials =
+                  name
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase() || "?";
                 const status = profile?.status || "offline";
-                const stats = employeeStats?.[employee.id] || { activeSessions: 0, todayHandled: 0 };
+                const stats = employeeStats?.[employee.id] || {
+                  activeSessions: 0,
+                  todayHandled: 0,
+                };
                 const rating = employee.performance_score || 0;
 
                 return (
@@ -147,13 +160,16 @@ export default function EmployeesTable({ employees = [] }: EmployeesTableProps) 
                           <div
                             className={cn(
                               "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-card",
-                              statusConfig[status as keyof typeof statusConfig]?.dotClass || statusConfig.offline.dotClass
+                              statusConfig[status as keyof typeof statusConfig]
+                                ?.dotClass || statusConfig.offline.dotClass,
                             )}
                           />
                         </div>
                         <div>
                           <p className="font-medium text-sm">{name}</p>
-                          <p className="text-xs text-muted-foreground">{employee.department || "Agent"}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {employee.department || "Agent"}
+                          </p>
                         </div>
                       </div>
                     </TableCell>
@@ -162,17 +178,23 @@ export default function EmployeesTable({ employees = [] }: EmployeesTableProps) 
                         variant="secondary"
                         className={cn(
                           "text-[10px] font-medium",
-                          statusConfig[status as keyof typeof statusConfig]?.className || statusConfig.offline.className
+                          statusConfig[status as keyof typeof statusConfig]
+                            ?.className || statusConfig.offline.className,
                         )}
                       >
-                        {statusConfig[status as keyof typeof statusConfig]?.label || "Offline"}
+                        {statusConfig[status as keyof typeof statusConfig]
+                          ?.label || "Offline"}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-center">
-                      <span className={cn(
-                        "font-semibold",
-                        stats.activeSessions > 0 ? "text-foreground" : "text-muted-foreground"
-                      )}>
+                      <span
+                        className={cn(
+                          "font-semibold",
+                          stats.activeSessions > 0
+                            ? "text-foreground"
+                            : "text-muted-foreground",
+                        )}
+                      >
                         {stats.activeSessions}
                       </span>
                     </TableCell>
@@ -185,13 +207,19 @@ export default function EmployeesTable({ employees = [] }: EmployeesTableProps) 
                     <TableCell className="text-center">
                       <div className="flex items-center justify-center gap-1">
                         <Star className="h-3.5 w-3.5 text-gold fill-gold" />
-                        <span className="font-medium text-sm">{rating.toFixed(1)}</span>
+                        <span className="font-medium text-sm">
+                          {rating.toFixed(1)}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                          >
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>

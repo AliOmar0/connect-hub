@@ -4,12 +4,21 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Phone, MessageSquare, MoreVertical, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatDistanceToNow, intervalToDuration, formatDuration } from "date-fns";
+import {
+  formatDistanceToNow,
+  intervalToDuration,
+  formatDuration,
+} from "date-fns";
 import { Session, Customer, Employee, Profile } from "@/types/database";
 import { useNavigate } from "react-router-dom";
 
 interface ActiveSessionsPanelProps {
-  sessions?: Array<Session & { customer?: Customer; employee?: Employee & { profile?: Profile } }>;
+  sessions?: Array<
+    Session & {
+      customer?: Customer;
+      employee?: Employee & { profile?: Profile };
+    }
+  >;
 }
 
 const statusConfig = {
@@ -38,12 +47,16 @@ const channelIcons: Record<string, string> = {
 function formatDurationFromSeconds(seconds: number | null): string {
   if (!seconds) return "0:00";
   const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
-  return formatDuration(duration, { format: ["minutes", "seconds"] })
-    .replace(/ minutes?/, "m")
-    .replace(/ seconds?/, "s") || "0:00";
+  return (
+    formatDuration(duration, { format: ["minutes", "seconds"] })
+      .replace(/ minutes?/, "m")
+      .replace(/ seconds?/, "s") || "0:00"
+  );
 }
 
-export default function ActiveSessionsPanel({ sessions = [] }: ActiveSessionsPanelProps) {
+export default function ActiveSessionsPanel({
+  sessions = [],
+}: ActiveSessionsPanelProps) {
   const navigate = useNavigate();
   const displaySessions = sessions.slice(0, 5);
 
@@ -53,13 +66,16 @@ export default function ActiveSessionsPanel({ sessions = [] }: ActiveSessionsPan
         <div className="flex items-center justify-between">
           <CardTitle className="font-display text-lg font-semibold flex items-center gap-2">
             Active AI Sessions
-            <Badge variant="secondary" className="bg-gold/10 text-gold border border-gold/20">
+            <Badge
+              variant="secondary"
+              className="bg-gold/10 text-gold border border-gold/20"
+            >
               {sessions.length} live
             </Badge>
           </CardTitle>
-          <Button 
-            variant="ghost" 
-            size="sm" 
+          <Button
+            variant="ghost"
+            size="sm"
             className="text-muted-foreground"
             onClick={() => navigate("/sessions")}
           >
@@ -80,7 +96,9 @@ export default function ActiveSessionsPanel({ sessions = [] }: ActiveSessionsPan
               : "Unassigned";
             const duration = session.duration_seconds
               ? formatDurationFromSeconds(session.duration_seconds)
-              : formatDistanceToNow(new Date(session.started_at), { addSuffix: false });
+              : formatDistanceToNow(new Date(session.started_at), {
+                  addSuffix: false,
+                });
             const isCall = session.channel === "voice";
 
             return (
@@ -106,7 +124,9 @@ export default function ActiveSessionsPanel({ sessions = [] }: ActiveSessionsPan
                     <span className="font-medium text-sm truncate">
                       {customerName}
                     </span>
-                    <span className="text-sm">{channelIcons[session.channel] || "💬"}</span>
+                    <span className="text-sm">
+                      {channelIcons[session.channel] || "💬"}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Agent: {agentName}</span>
@@ -129,9 +149,14 @@ export default function ActiveSessionsPanel({ sessions = [] }: ActiveSessionsPan
                 {/* Status */}
                 <Badge
                   variant="outline"
-                  className={cn("text-[10px] font-medium", statusConfig[session.status as keyof typeof statusConfig]?.className || statusConfig.active.className)}
+                  className={cn(
+                    "text-[10px] font-medium",
+                    statusConfig[session.status as keyof typeof statusConfig]
+                      ?.className || statusConfig.active.className,
+                  )}
                 >
-                  {statusConfig[session.status as keyof typeof statusConfig]?.label || "Active"}
+                  {statusConfig[session.status as keyof typeof statusConfig]
+                    ?.label || "Active"}
                 </Badge>
 
                 {/* Actions */}

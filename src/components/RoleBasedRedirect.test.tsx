@@ -21,7 +21,7 @@ describe("RoleBasedRedirect", () => {
     render(
       <MemoryRouter>
         <RoleBasedRedirect />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Loading spinner should be shown
@@ -37,7 +37,7 @@ describe("RoleBasedRedirect", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <RoleBasedRedirect />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Should redirect to sessions (Navigate component behavior)
@@ -53,7 +53,7 @@ describe("RoleBasedRedirect", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <RoleBasedRedirect />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
@@ -68,7 +68,7 @@ describe("RoleBasedRedirect", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <RoleBasedRedirect />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
@@ -83,7 +83,7 @@ describe("RoleBasedRedirect", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <RoleBasedRedirect />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
@@ -98,11 +98,9 @@ describe("RoleBasedRedirect", () => {
     render(
       <MemoryRouter initialEntries={["/"]}>
         <RoleBasedRedirect />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.queryByText("Access Denied")).not.toBeInTheDocument();
   });
 });
-
-

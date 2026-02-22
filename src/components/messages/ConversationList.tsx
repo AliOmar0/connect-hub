@@ -1,12 +1,18 @@
-import { useState } from 'react';
-import { Session, Customer, ChannelType } from '@/types/database';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Search, MessageSquare, Phone, Mail, MessageCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { formatDistanceToNow } from 'date-fns';
+import { useState } from "react";
+import { Session, Customer, ChannelType } from "@/types/database";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  Search,
+  MessageSquare,
+  Phone,
+  Mail,
+  MessageCircle,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
 
 interface ConversationListProps {
   sessions: (Session & { customer?: Customer })[];
@@ -24,24 +30,24 @@ const channelIcons: Record<ChannelType, React.ElementType> = {
 };
 
 const channelColors: Record<ChannelType, string> = {
-  whatsapp: 'bg-green-500',
-  messenger: 'bg-blue-500',
-  sms: 'bg-purple-500',
-  voice: 'bg-orange-500',
-  email: 'bg-red-500',
+  whatsapp: "bg-green-500",
+  messenger: "bg-blue-500",
+  sms: "bg-purple-500",
+  voice: "bg-orange-500",
+  email: "bg-red-500",
 };
 
-export default function ConversationList({ 
-  sessions, 
-  selectedSession, 
+export default function ConversationList({
+  sessions,
+  selectedSession,
   onSelectSession,
-  loading 
+  loading,
 }: ConversationListProps) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredSessions = sessions.filter(session => {
-    const customerName = session.customer?.name?.toLowerCase() || '';
-    const customerPhone = session.customer?.phone?.toLowerCase() || '';
+  const filteredSessions = sessions.filter((session) => {
+    const customerName = session.customer?.name?.toLowerCase() || "";
+    const customerPhone = session.customer?.phone?.toLowerCase() || "";
     const query = searchQuery.toLowerCase();
     return customerName.includes(query) || customerPhone.includes(query);
   });
@@ -54,7 +60,10 @@ export default function ConversationList({
         </div>
         <div className="flex-1 p-4 space-y-3">
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 animate-pulse">
+            <div
+              key={i}
+              className="flex items-center gap-3 p-3 rounded-lg bg-muted/50 animate-pulse"
+            >
               <div className="w-10 h-10 rounded-full bg-muted" />
               <div className="flex-1 space-y-2">
                 <div className="h-4 w-24 bg-muted rounded" />
@@ -94,47 +103,55 @@ export default function ConversationList({
             filteredSessions.map((session) => {
               const ChannelIcon = channelIcons[session.channel];
               const isSelected = selectedSession === session.id;
-              
+
               return (
                 <button
                   key={session.id}
                   onClick={() => onSelectSession(session.id)}
                   className={cn(
                     "w-full flex items-center gap-3 p-3 rounded-lg text-left transition-colors",
-                    isSelected 
-                      ? "bg-primary/10 border border-primary/20" 
-                      : "hover:bg-muted/50"
+                    isSelected
+                      ? "bg-primary/10 border border-primary/20"
+                      : "hover:bg-muted/50",
                   )}
                 >
                   <div className="relative">
                     <Avatar className="h-10 w-10">
                       <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                        {session.customer?.name?.charAt(0) || '?'}
+                        {session.customer?.name?.charAt(0) || "?"}
                       </AvatarFallback>
                     </Avatar>
-                    <div className={cn(
-                      "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center",
-                      channelColors[session.channel]
-                    )}>
+                    <div
+                      className={cn(
+                        "absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full flex items-center justify-center",
+                        channelColors[session.channel],
+                      )}
+                    >
                       <ChannelIcon className="h-2.5 w-2.5 text-white" />
                     </div>
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-sm truncate">
-                        {session.customer?.name || session.customer?.phone || 'Unknown'}
+                        {session.customer?.name ||
+                          session.customer?.phone ||
+                          "Unknown"}
                       </span>
                       <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {formatDistanceToNow(new Date(session.started_at), { addSuffix: true })}
+                        {formatDistanceToNow(new Date(session.started_at), {
+                          addSuffix: true,
+                        })}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-0.5">
                       <span className="text-xs text-muted-foreground truncate">
-                        {session.customer?.phone || 'No phone'}
+                        {session.customer?.phone || "No phone"}
                       </span>
-                      <Badge 
-                        variant={session.status === 'active' ? 'default' : 'secondary'}
+                      <Badge
+                        variant={
+                          session.status === "active" ? "default" : "secondary"
+                        }
                         className="text-[10px] px-1.5 py-0"
                       >
                         {session.status}

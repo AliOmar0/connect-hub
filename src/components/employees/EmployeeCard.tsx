@@ -1,9 +1,9 @@
-import { Employee, Profile, ChannelType } from '@/types/database';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Progress } from '@/components/ui/progress';
+import { Employee, Profile, ChannelType } from "@/types/database";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Progress } from "@/components/ui/progress";
 import {
   MessageCircle,
   MessageSquare,
@@ -14,15 +14,15 @@ import {
   Star,
   Edit,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
-import { cn } from '@/lib/utils';
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
 
 interface EmployeeCardProps {
   employee: Employee & { profile?: Profile };
@@ -39,19 +39,23 @@ const channelIcons: Record<ChannelType, React.ElementType> = {
 };
 
 const channelColors: Record<ChannelType, string> = {
-  whatsapp: 'bg-green-500/10 text-green-600',
-  messenger: 'bg-blue-500/10 text-blue-600',
-  sms: 'bg-purple-500/10 text-purple-600',
-  voice: 'bg-orange-500/10 text-orange-600',
-  email: 'bg-red-500/10 text-red-600',
+  whatsapp: "bg-green-500/10 text-green-600",
+  messenger: "bg-blue-500/10 text-blue-600",
+  sms: "bg-purple-500/10 text-purple-600",
+  voice: "bg-orange-500/10 text-orange-600",
+  email: "bg-red-500/10 text-red-600",
 };
 
-export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCardProps) {
+export default function EmployeeCard({
+  employee,
+  onEdit,
+  onDelete,
+}: EmployeeCardProps) {
   const profile = employee.profile;
-  const fullName = profile 
-    ? `${profile.first_name || ''} ${profile.last_name || ''}`.trim() 
-    : 'Unknown';
-  
+  const fullName = profile
+    ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim()
+    : "Unknown";
+
   const performancePercent = (employee.performance_score || 0) * 100;
 
   return (
@@ -65,31 +69,37 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
                   <AvatarImage src={profile.avatar_url} alt={fullName} />
                 ) : null}
                 <AvatarFallback className="bg-primary/10 text-primary font-medium">
-                  {profile?.first_name?.charAt(0) || '?'}
-                  {profile?.last_name?.charAt(0) || ''}
+                  {profile?.first_name?.charAt(0) || "?"}
+                  {profile?.last_name?.charAt(0) || ""}
                 </AvatarFallback>
               </Avatar>
-              <div className={cn(
-                "absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background",
-                profile?.status === 'online' ? 'bg-green-500' :
-                profile?.status === 'busy' ? 'bg-yellow-500' :
-                profile?.status === 'away' ? 'bg-orange-500' :
-                'bg-muted-foreground'
-              )} />
+              <div
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background",
+                  profile?.status === "online"
+                    ? "bg-green-500"
+                    : profile?.status === "busy"
+                      ? "bg-yellow-500"
+                      : profile?.status === "away"
+                        ? "bg-orange-500"
+                        : "bg-muted-foreground",
+                )}
+              />
             </div>
             <div>
               <h3 className="font-semibold text-sm">{fullName}</h3>
               <p className="text-xs text-muted-foreground">
-                {employee.employee_code || 'No ID'} • {employee.department || 'No Dept'}
+                {employee.employee_code || "No ID"} •{" "}
+                {employee.department || "No Dept"}
               </p>
             </div>
           </div>
-          
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon" 
+              <Button
+                variant="ghost"
+                size="icon"
                 className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <MoreVertical className="h-4 w-4" />
@@ -101,7 +111,7 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
                 Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="text-destructive"
                 onClick={() => onDelete?.(employee)}
               >
@@ -118,7 +128,7 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
           <span className="text-muted-foreground">
             {employee.shift_start && employee.shift_end
               ? `${employee.shift_start.slice(0, 5)} - ${employee.shift_end.slice(0, 5)}`
-              : 'No shift assigned'}
+              : "No shift assigned"}
           </span>
         </div>
 
@@ -133,7 +143,7 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
                   key={channel}
                   className={cn(
                     "flex items-center gap-1 px-2 py-1 rounded-full text-xs",
-                    channelColors[channel]
+                    channelColors[channel],
                   )}
                 >
                   <Icon className="h-3 w-3" />
@@ -141,7 +151,8 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
                 </div>
               );
             })}
-            {(!employee.assigned_channels || employee.assigned_channels.length === 0) && (
+            {(!employee.assigned_channels ||
+              employee.assigned_channels.length === 0) && (
               <span className="text-xs text-muted-foreground">No channels</span>
             )}
           </div>
@@ -167,7 +178,9 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
             <p className="text-xs text-muted-foreground">Performance</p>
             <div className="flex items-center gap-1">
               <Star className="h-3 w-3 text-accent fill-accent" />
-              <span className="text-xs font-medium">{performancePercent.toFixed(0)}%</span>
+              <span className="text-xs font-medium">
+                {performancePercent.toFixed(0)}%
+              </span>
             </div>
           </div>
           <Progress value={performancePercent} className="h-1.5" />
@@ -175,11 +188,11 @@ export default function EmployeeCard({ employee, onEdit, onDelete }: EmployeeCar
 
         {/* Status Badge */}
         <div className="mt-4 pt-4 border-t border-border flex items-center justify-between">
-          <Badge variant={employee.is_active ? 'default' : 'secondary'}>
-            {employee.is_active ? 'Active' : 'Inactive'}
+          <Badge variant={employee.is_active ? "default" : "secondary"}>
+            {employee.is_active ? "Active" : "Inactive"}
           </Badge>
           <span className="text-xs text-muted-foreground capitalize">
-            {profile?.status || 'offline'}
+            {profile?.status || "offline"}
           </span>
         </div>
       </CardContent>
