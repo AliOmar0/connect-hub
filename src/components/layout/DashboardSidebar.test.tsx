@@ -100,26 +100,12 @@ describe("DashboardSidebar", () => {
     render(<DashboardSidebar />, { queryClient });
 
     await waitFor(() => {
-      // Find button with LogOut icon
-      const buttons = screen.getAllByRole("button");
-      const signOutButton = buttons.find(
-        (btn) =>
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("log-out") ||
-          btn.querySelector("svg")?.getAttribute("class")?.includes("LogOut"),
-      );
+      const signOutButton = screen.getByLabelText("Sign Out");
       expect(signOutButton).toBeInTheDocument();
       return signOutButton;
     });
 
-    const buttons = screen.getAllByRole("button");
-    const signOutButton = buttons.find(
-      (btn) =>
-        btn.querySelector("svg")?.getAttribute("class")?.includes("log-out") ||
-        btn.querySelector("svg")?.getAttribute("class")?.includes("LogOut"),
-    );
+    const signOutButton = screen.getByLabelText("Sign Out");
 
     if (signOutButton) {
       await user.click(signOutButton);
@@ -138,29 +124,11 @@ describe("DashboardSidebar", () => {
       expect(screen.getByText(/dashboard/i)).toBeInTheDocument();
     });
 
-    // Find button with "Collapse" text or chevron icon
+    // Find collapse button by label
     const buttons = screen.getAllByRole("button");
-    const collapseButton =
-      screen.queryByText("Collapse") ||
-      buttons.find(
-        (btn) =>
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("chevron-left") ||
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("chevron-right") ||
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("ChevronLeft") ||
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("ChevronRight"),
-      );
+    const collapseButton = screen.getByLabelText(
+      /Collapse Sidebar|Expand Sidebar/,
+    );
 
     // Verify sidebar rendered and has buttons
     expect(buttons.length).toBeGreaterThan(0);

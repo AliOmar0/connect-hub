@@ -86,13 +86,7 @@ describe("DashboardHeader", () => {
     render(<DashboardHeader />, { queryClient });
 
     await waitFor(() => {
-      // Find button with bell icon
-      const buttons = screen.getAllByRole("button");
-      const bellButton = buttons.find(
-        (btn) =>
-          btn.querySelector("svg")?.getAttribute("class")?.includes("bell") ||
-          btn.querySelector("svg")?.getAttribute("class")?.includes("Bell"),
-      );
+      const bellButton = screen.getByLabelText("Notifications");
       expect(bellButton).toBeInTheDocument();
     });
   });
@@ -138,38 +132,14 @@ describe("DashboardHeader", () => {
     render(<DashboardHeader />, { queryClient });
 
     await waitFor(() => {
-      const buttons = screen.getAllByRole("button");
-      const sessionsButton = buttons.find(
-        (btn) =>
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("headphones") ||
-          btn
-            .querySelector("svg")
-            ?.getAttribute("class")
-            ?.includes("Headphones"),
-      );
-      if (sessionsButton) {
-        return sessionsButton;
-      }
-      throw new Error("Sessions button not found");
+      const sessionsButton = screen.getByLabelText("Active AI Sessions");
+      expect(sessionsButton).toBeInTheDocument();
+      return sessionsButton;
     });
 
-    const buttons = screen.getAllByRole("button");
-    const sessionsButton = buttons.find(
-      (btn) =>
-        btn
-          .querySelector("svg")
-          ?.getAttribute("class")
-          ?.includes("headphones") ||
-        btn.querySelector("svg")?.getAttribute("class")?.includes("Headphones"),
-    );
-
-    if (sessionsButton) {
-      await user.click(sessionsButton);
-      expect(mockNavigate).toHaveBeenCalledWith("/sessions");
-    }
+    const sessionsButton = screen.getByLabelText("Active AI Sessions");
+    await user.click(sessionsButton);
+    expect(mockNavigate).toHaveBeenCalledWith("/sessions");
   });
 
   it("renders integration status indicators", async () => {

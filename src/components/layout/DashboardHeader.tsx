@@ -104,6 +104,7 @@ export default function DashboardHeader() {
           size="icon"
           className="relative"
           onClick={() => navigate("/sessions")}
+          aria-label="Active AI Sessions"
         >
           <Headphones className="h-4 w-4" />
         </Button>
@@ -111,7 +112,12 @@ export default function DashboardHeader() {
         {/* Notifications */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon" className="relative">
+            <Button
+              variant="outline"
+              size="icon"
+              className="relative"
+              aria-label="Notifications"
+            >
               <Bell className="h-4 w-4" />
               {notifications && notifications.count > 0 && (
                 <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">

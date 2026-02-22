@@ -298,6 +298,7 @@ export default function DashboardSidebar() {
               size="icon"
               className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-foreground"
               onClick={handleSignOut}
+              aria-label="Sign Out"
             >
               <LogOut className="h-4 w-4" />
             </Button>
@@ -308,6 +309,7 @@ export default function DashboardSidebar() {
               <button
                 className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm"
                 onClick={handleSignOut}
+                aria-label="Sign Out"
               >
                 {getUserInitials()}
               </button>
@@ -326,6 +328,7 @@ export default function DashboardSidebar() {
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
+          aria-label={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
           className={cn(
             "w-full text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent",
             collapsed && "justify-center",
