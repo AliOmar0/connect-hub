@@ -138,8 +138,8 @@ SYSTEM_PROMPT = r"""أنت مساعد ذكاء اصطناعي يمثل البن�
 بطاقات أخرى متوافقة مع الشريعة، حسب سياسة البنك.
 
 التمويل للأفراد:
-تمويل المرابحة:
-البنك يشتري السلعة (مثل سيارة أو معدات) ثم يبيعها للعميل بسعر يتضمن هامش ربح متفق عليه، يسدد غالباً بأقساط.
+تمويل المرابحة (ومن ضمنه تمويل السيارات):
+    المرابحة هي عقد بيع يشتري فيه المصرف السلعة التي يطلبها العميل ثم يبيعها له بهامش ربح متفق عليه.
 الإجارة (التأجير المنتهي بالتمليك):
 البنك يشتري الأصل ويؤجره للعميل مقابل أقساط إيجار، مع وعد بنقل الملكية في نهاية المدة وفق شروط محددة.
 صيغ أخرى (مثل الاستصناع لبعض المشروعات، أو المشاركة، حسب سياسات البنك).
@@ -464,15 +464,21 @@ class LLMService:
                 parent = t.get('parent_category', 'أخرى') or 'أخرى'
                 if parent not in grouped:
                     grouped[parent] = []
-                grouped[parent].append(t['name'])
+                grouped[parent].append(t) # Append the whole type dict
             
             types_text = ""
-            for group_name, names in grouped.items():
+            for group_name, types_list in grouped.items():
                 types_text += f"\n## {group_name}:\n"
-                for name in names:
-                    types_text += f"  - {name}\n"
+                for t in types_list:
+                    # Include detailed prompts/descriptions if they contain specific knowledge
+                    name = t.get('name', '')
+                    desc = t.get('description', '')
+                    if desc:
+                        types_text += f"  - {name}: {desc.strip()}\n"
+                    else:
+                        types_text += f"  - {name}\n"
             
-            dynamic_prompt += f"\n\nنطاق الخدمات المصنفة التي يمكنك المساعدة فيها حالياً:\n{types_text}\nعندما تفهم طلب العميل، حاول توجيهه ضمن أحد هذه المجالات إذا كان ذلك مناسباً."
+            dynamic_prompt += f"\n\nنطاق المعلومات والخدمات التفصيلية المتوفرة لديك حالياً:\n{types_text}\nعندما تفهم طلب العميل، استخدم المعلومات أعلاه لتقديم إجابة دقيقة."
 
 
         messages = [{"role": "system", "content": dynamic_prompt}]
