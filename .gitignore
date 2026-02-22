@@ -139,4 +139,23 @@ out.txt
 *.njsproj
 *.sln
 *.sw?
-__pycache__
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+ENV/
+env/
+.pytest_cache/
+
+# Large Log Files
+server_log*.txt
+whatsapp-support-backend/server_log*.txt
+whatsapp-support-backend/venv/
+
+# Environment
+.env
+.env.local
+.env.*.local
+

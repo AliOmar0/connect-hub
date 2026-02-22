@@ -16,6 +16,49 @@ logger = logging.getLogger("webhook")
 # Force INFO level
 logging.getLogger().setLevel(logging.INFO)
 
+# Security client for OTPs (Uses a different number if configured)
+security_client = WhatsAppClient(
+    phone_number_id=settings.SECURITY_WHATSAPP_PHONE_NUMBER_ID,
+    access_token=settings.SECURITY_WHATSAPP_ACCESS_TOKEN
+)
+
+# In-memory store for OTP sessions (Similar to Node.js backend)
+otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
+
+async def send_whatsapp_otp(phone: str):
+    """
+    Generate and send OTP via the Security WhatsApp Number
+    """
+    import random
+    otp = str(random.randint(1000, 9999))
+    logger.info(f"[OTP] Generated {otp} for {phone} (WhatsApp Delivery)")
+    
+    # 1. Save to Supabase
+    await crud.create_bank_otp(phone, otp)
+    
+    # 2. Send via Security WhatsApp
+    # If security credentials are not provided, it will fallback to defaults (or error)
+    try:
+        message = f"الرمز الخاص بك للتحقق من بيانات الحساب في البنك الإسلامي الفلسطيني هو: {otp}. يرجى عدم مشاركته مع أحد."
+        await security_client.send_text_message(phone, message)
+        logger.info(f"[OTP] Sent via Security WhatsApp to {phone}")
+    except Exception as e:
+        logger.error(f"[OTP Error] Failed to send via WhatsApp: {e}")
+        # We still return OTP so it can be verified via Notification Bell
+    
+    # 3. Also create In-app notification (for redundancy/free testing)
+    try:
+        await crud.create_notification(
+            None,
+            title="🔑 PIB WhatsApp OTP",
+            message=f"The WhatsApp OTP for {phone} (from security number) is: {otp}",
+            type="info"
+        )
+    except:
+        pass
+
+    return otp
+
 
 async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
     """
@@ -136,27 +179,50 @@ async def process_ai_response(
         if not session or session.status == SessionStatus.escalated or session.employee_id is not None:
             logger.info(f"Aborting AI response for session {db_session_id}. Reason: {'Escalated' if session and session.status == SessionStatus.escalated else 'Agent Assigned' if session else 'Session Not Found'}")
             return
-            
-        # 0.5 Classify the INCOMING user message
-        if db_message_id:
-            try:
-                classification = await llm_service.classify_message(user_message)
-                if classification:
-                    logger.info(f"Classified message {db_message_id} as {classification}")
-                    await crud.update_message_classification(None, db_message_id, classification)
-            except Exception as e:
-                logger.error(f"Failed to classify message {db_message_id}: {e}")
 
-        # 3. Send back to WhatsApp
+        # Initialize WhatsApp Client
         client = WhatsAppClient(
             phone_number_id=config.get("phone_number_id"),
             access_token=config.get("access_token")
         )
 
-        # 3.1 Mark as read & Send typing indicator
+        # Mark as read & Send typing indicator
         if message_id:
             await client.mark_message_as_read(message_id)
         await client.send_typing_indicator(customer_phone)
+
+        # --- Bank Verification Logic (New) ---
+        state = otp_sessions.get(str(db_session_id))
+        
+        # Scenario: User provided OTP
+        if state and state.get("type") == "WAITING_OTP":
+            import re
+            digits = "".join(re.findall(r'\d+', user_message))
+            if digits == state.get("otp"):
+                account = await crud.get_bank_account(customer_phone)
+                # Cleanup state
+                otp_sessions.pop(str(db_session_id), None)
+                
+                if account:
+                    ai_text = f"تم التحقق بنجاح! سيد {account['owner_name']}، رصيد حسابك هو {account['balance']} {account['currency']}. رقم حسابك: {account['account_number']}. هل هناك شيء آخر؟"
+                else:
+                    ai_text = "تم التحقق، ولكن لم نجد بيانات حساب مرتبطة بهذا الرقم."
+                
+                await client.send_text_message(customer_phone, ai_text)
+                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                return
+            else:
+                if "إلغاء" in user_message or "cancel" in user_message.lower():
+                    otp_sessions.pop(str(db_session_id), None)
+                    ai_text = "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟"
+                else:
+                    ai_text = "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'."
+                
+                await client.send_text_message(customer_phone, ai_text)
+                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                return
+        # --- End Bank Verification Logic ---
+
 
         # 1. Get History (last 5 messages for context)
         msgs = await crud.get_messages_for_session(None, db_session_id)
@@ -171,6 +237,24 @@ async def process_ai_response(
 
         # 2. Call LLM
         ai_text = await llm_service.get_ai_response(user_message, history, session_types)
+
+        # --- Bank Intent Detection (New) ---
+        account_keywords = ["رصيدي", "حسابي", "balance", "account", "بياناتي", "حساب"]
+        is_asking_account = any(k in user_message.lower() for k in account_keywords)
+        
+        if is_asking_account:
+            account = await crud.get_bank_account(customer_phone)
+            if account:
+                otp = await send_whatsapp_otp(customer_phone)
+                otp_sessions[str(db_session_id)] = {"type": "WAITING_OTP", "otp": otp, "phone": customer_phone}
+                ai_text = "لقد قمت بإرسال رمز تحقق (OTP) عبر واتساب من رقم الحماية الخاص بنا. يرجى تزويدي بالرمز لنتمكن من عرض بيانات حسابك بأمان."
+            else:
+                ai_text = "عذراً، لم أجد حساباً مرتبطاً برقم الهاتف هذا في قاعدة بياناتنا."
+            
+            await client.send_text_message(customer_phone, ai_text)
+            await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+            return
+        # --- End Bank Intent Detection ---
         
         # 2.5 Classify session (Understanding Required)
         # We trigger this in every response attempt if not yet classified

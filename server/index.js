@@ -279,8 +279,10 @@ const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي يمثل الب
 
 const VOICE_LIMIT_PROMPT = "\n\n(ملاحظة هامة جداً: أنت الآن تتحدث في اتصال صوتي مباشر مع العميل. يجب أن يكون ردك قصيراً جداً ومختصراً قدر الإمكان (جملة إلى ثلاث جمل كحد أقصى). استخدم لهجة فلسطينية محكية وودودة ومحترمة ومفهومة. لا تستخدم أبداً القوائم النقطية (Bullet points) أو الأرقام المتسلسلة لأنها تبدو غير طبيعية في الصوت. لا تذكر أي روابط إنترنت طويلة ولا تعطي إجابات موسوعة. إذا كان السؤال يتطلب تفصيلاً، اقترح على العميل تحويله لمركز الاتصال أو زيارة الفرع أو تصفح الموقع.)";
 
-// Supabase Setup
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
+
+// Memory store for OTP sessions
+const sessionStore = new Map();
 
 app.use(cors());
 app.use(express.json());
@@ -323,6 +325,129 @@ async function getAIResponse(userMessage, history = []) {
         console.error("[LLM] Error:", error.response?.data || error.message);
         return "أهلاً بك، كيف بقدر أساعدك؟";
     }
+}
+
+// Bank Logic Helpers
+async function getBankAccount(phone) {
+    const { data } = await supabase.from('bank_accounts').select('*').eq('owner_phone', phone).single();
+    return data;
+}
+
+async function sendOTP(phone) {
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    console.log(`[OTP] Generated ${otp} for ${phone}`);
+
+    // 1. Create In-App Notification (For free testing in Dashboard)
+    try {
+        await supabase.from('notifications').insert({
+            title: "🔑 PIB Verification OTP",
+            message: `The OTP for phone ${phone} is: ${otp}`,
+            type: "info",
+            is_read: false
+        });
+        console.log(`[Supabase] In-app notification sent for OTP ${otp}`);
+    } catch (e) {
+        console.error("[Supabase Notification Error]:", e.message);
+    }
+
+    // 2. Twilio SMS Disabled to save credits
+    /*
+    try {
+        await client.messages.create({
+            body: `رمز التحقق الخاص بك هو: ${otp}. يرجى عدم مشاركته مع أحد.`,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: phone
+        });
+        return otp;
+    } catch (e) {
+        console.error("[Twilio SMS Error]:", e.message);
+        return otp;
+    }
+    */
+    // 3. New: Try WhatsApp OTP (Using Security Number)
+    if (process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID && process.env.SECURITY_WHATSAPP_ACCESS_TOKEN) {
+        try {
+            const wa_url = `https://graph.facebook.com/v24.0/${process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID}/messages`;
+            const wa_response = await fetch(wa_url, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${process.env.SECURITY_WHATSAPP_ACCESS_TOKEN}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    messaging_product: "whatsapp",
+                    to: phone,
+                    type: "text",
+                    text: { body: `الرمز الخاص بك للتحقق من بيانات الحساب في البنك الإسلامي الفلسطيني هو: ${otp}. يرجى عدم مشاركته مع أحد.` }
+                })
+            });
+            const wa_data = await wa_response.json();
+            if (wa_response.ok) {
+                console.log(`[WhatsApp OTP] Successfully sent OTP to ${phone}`);
+            } else {
+                console.error(`[WhatsApp OTP Error]:`, wa_data);
+            }
+        } catch (e) {
+            console.error(`[WhatsApp OTP Exception]:`, e.message);
+        }
+    } else {
+        console.log(`[OTP] WhatsApp Security Credentials missing in .env. Skipping WhatsApp delivery.`);
+    }
+
+    return otp;
+}
+
+// Modified Message Handler with Verification State
+async function processMessage(userMessage, sessionId, phone = null, history = []) {
+    const state = sessionStore.get(sessionId);
+
+    // Case 1: Waiting for OTP
+    if (state && state.type === 'WAITING_OTP') {
+        const digits = userMessage.replace(/\D/g, '');
+        if (digits === state.otp) {
+            const account = await getBankAccount(state.phone);
+            sessionStore.delete(sessionId);
+            if (account) {
+                return `تم التحقق بنجاح! سيد ${account.owner_name}، رصيد حسابك هو ${account.balance} ${account.currency}. رقم حسابك: ${account.account_number}. هل هناك شيء آخر؟`;
+            }
+            return "تم التحقق، ولكن لم نجد بيانات الحساب.";
+        } else {
+            // Check if user wants to cancel
+            if (userMessage.includes("الغاء") || userMessage.includes("cancel")) {
+                sessionStore.delete(sessionId);
+                return "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟";
+            }
+            return "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'.";
+        }
+    }
+
+    // Case 2: Regular LLM with Trigger Check
+    const aiResponse = await getAIResponse(userMessage, history);
+
+    // Check if user is asking for account details
+    const accountKeywords = ["رصيدي", "حسابي", "balance", "account", "my data", "بياناتي"];
+    const isAskingAccount = accountKeywords.some(k => userMessage.toLowerCase().includes(k));
+
+    if (isAskingAccount) {
+        if (!phone) {
+            return "للأسف، لا يمكنني التحقق من هويتك عبر هذا الشات المباشر دون رقم هاتف. يرجى الاتصال بنا هاتفياً أو تزويدي برقمك المسجل.";
+        }
+
+        const account = await getBankAccount(phone);
+        if (account) {
+            const otp = await sendOTP(phone);
+            if (otp) {
+                sessionStore.set(sessionId, { type: 'WAITING_OTP', otp, phone, timestamp: Date.now() });
+                return "لقد قمت بإرسال رمز تحقق (OTP) إلى هاتفك المسجل لدينا. يرجى تزويدي بالرمز لنتمكن من عرض بيانات حسابك بأمان.";
+            } else {
+                return "عذراً، واجهت مشكلة في إرسال رمز التحقق. يرجى المحاولة لاحقاً.";
+            }
+        } else {
+            return "عذراً، لم أجد حساباً مرتبطاً برقم الهاتف هذا في قاعدة بياناتنا.";
+        }
+    }
+
+    return aiResponse;
 }
 
 // Log Call to Supabase
@@ -370,23 +495,24 @@ app.post('/voice', (req, res) => {
 app.post('/handle-speech', async (req, res) => {
     const userSpeech = req.body.SpeechResult;
     const callSid = req.body.CallSid;
-    console.log(`[STT] Captured: "${userSpeech || 'Silence'}"`);
+    const fromPhone = req.body.From;
+
+    console.log(`[Voice] Captured: "${userSpeech || 'Silence'}" from ${fromPhone}`);
     const twiml = new twilio.twiml.VoiceResponse();
 
     if (userSpeech) {
-        console.log(`[LLM] Requesting response...`);
-        const aiText = await getAIResponse(userSpeech);
-        console.log(`[LLM] Response: ${aiText.substring(0, 100)}...`);
+        console.log(`[Logic] Processing speech...`);
+        const aiText = await processMessage(userSpeech, callSid, fromPhone);
+        console.log(`[Logic] Result: ${aiText.substring(0, 100)}...`);
 
         const gather = twiml.gather({
             input: 'speech',
-            language: 'ar-SA', // Fixed locale for robust Arabic recognition
+            language: 'ar-SA',
             speechTimeout: 'auto',
             action: '/handle-speech',
-            interruptible: true // Critical for natural two-way feel
+            interruptible: true
         });
 
-        console.log("[TTS] Playing Polly Audio");
         gather.say({ voice: 'Polly.Zeina', language: 'arb' }, aiText);
         saveCallLog(callSid, userSpeech, aiText, null, 'polly-zeina');
 
@@ -414,14 +540,38 @@ app.post('/api/voice-sdk', (req, res) => {
     res.type('text/xml').send(twiml.toString());
 });
 
+app.post('/api/make-call', async (req, res) => {
+    const { to } = req.body;
+    if (!to) return res.status(400).json({ error: "Missing 'to' phone number" });
+
+    try {
+        console.log(`[Twilio] Initiating outbound AI call to: ${to}`);
+        const call = await client.calls.create({
+            url: `${process.env.NGROK_URL}/voice`,
+            to: to,
+            from: process.env.TWILIO_PHONE_NUMBER
+        });
+        res.json({ success: true, sid: call.sid });
+    } catch (error) {
+        console.error("Outbound Call Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/token', (req, res) => {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const apiKey = process.env.TWILIO_API_KEY;
     const apiSecret = process.env.TWILIO_API_SECRET;
     const outgoingApplicationSid = process.env.TWIML_APP_SID;
 
+    console.log(`[Token] Generating for account: ${accountSid?.substring(0, 5)}...`);
     if (!apiKey || !apiSecret || !outgoingApplicationSid) {
-        return res.status(500).json({ error: "Missing TWILIO_API_KEY, TWILIO_API_SECRET, or TWIML_APP_SID in .env" });
+        const missing = [];
+        if (!apiKey) missing.push("TWILIO_API_KEY");
+        if (!apiSecret) missing.push("TWILIO_API_SECRET");
+        if (!outgoingApplicationSid) missing.push("TWIML_APP_SID");
+        console.error(`[Token] Failed: Missing ${missing.join(', ')}`);
+        return res.status(500).json({ error: `Missing environment variables: ${missing.join(', ')}` });
     }
 
     const { AccessToken } = twilio.jwt;
@@ -431,9 +581,45 @@ app.get('/api/token', (req, res) => {
     try {
         const accessToken = new AccessToken(accountSid, apiKey, apiSecret, { identity });
         accessToken.addGrant(new VoiceGrant({ outgoingApplicationSid: outgoingApplicationSid, incomingAllow: true }));
-        res.json({ token: accessToken.toJwt(), identity });
+        const jwt = accessToken.toJwt();
+        console.log(`[Token] Success for identity: ${identity}`);
+        res.json({ token: jwt, identity });
     } catch (error) {
-        console.error("Token Generation Error:", error);
+        console.error("[Token] Generation Error:", error);
+        res.status(500).json({ error: error.message || "An internal error occurred during token generation" });
+    }
+});
+
+app.post('/api/chat', async (req, res) => {
+    const { message, history, sessionId, phone } = req.body;
+    if (!message) return res.status(400).json({ error: "Missing 'message' field" });
+
+    const sessionKey = sessionId || 'web-chat-default';
+
+    try {
+        const response = await processMessage(message, sessionKey, phone, history || []);
+        res.json({ content: response });
+    } catch (error) {
+        console.error("Chat Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/sms', async (req, res) => {
+    const { to, message } = req.body;
+    if (!to || !message) {
+        return res.status(400).json({ error: "Missing 'to' or 'message' field." });
+    }
+
+    try {
+        console.log(`[Manual SMS] To: ${to}, Message: ${message} (Twilio Disabled to save credits)`);
+        res.json({
+            success: true,
+            sid: "SMS_DISABLED_CREDIT_SAFETY",
+            note: "Use the Notification Bell for OTPs"
+        });
+    } catch (error) {
+        console.error("SMS error:", error);
         res.status(500).json({ error: error.message });
     }
 });

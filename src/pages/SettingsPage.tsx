@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
+import TwilioDemo from "@/pages/TwilioDemo";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelType, Profile, SessionMainType } from "@/types/database";
 import { Badge } from "@/components/ui/badge";
@@ -39,6 +40,7 @@ import {
   Loader2,
   Plus,
   Trash2,
+  Mic,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -273,6 +275,75 @@ export default function SettingsPage() {
     }
   };
 
+  const [smsData, setSmsData] = useState({
+    to: "",
+    message: "Test message from PIB Connect Hub",
+  });
+  const [smsSending, setSmsSending] = useState(false);
+
+  const handleSendTestSms = async () => {
+    if (!smsData.to || !smsData.message) {
+      toast.error("Please provide both a phone number and a message");
+      return;
+    }
+    setSmsSending(true);
+    try {
+      const response = await fetch("http://localhost:3001/api/sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(smsData),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        toast.success(`SMS sent successfully! SID: ${data.sid}`);
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err: unknown) {
+      const error = err as Error;
+      toast.error(`Failed to send SMS: ${error.message}`);
+    } finally {
+      setSmsSending(false);
+    }
+  };
+
+  const handleTestConfig = async (channel: ChannelType): Promise<boolean> => {
+    try {
+      if (channel === "voice") {
+        const response = await fetch("http://localhost:3001/api/token");
+        const data = await response.json();
+        if (response.ok && data.token) {
+          toast.success("Voice Gateway is Online and Ready");
+          return true;
+        } else {
+          throw new Error(data.error || "Failed to get token");
+        }
+      } else if (channel === "sms") {
+        // Simple health check or ping
+        const response = await fetch("http://localhost:3001/");
+        if (response.ok) {
+          toast.success("SMS Gateway Server is Responsive");
+          return true;
+        } else {
+          throw new Error("Gateway server unreachable");
+        }
+      } else if (channel === "whatsapp") {
+        const response = await fetch("http://localhost:8000/");
+        if (response.ok) {
+          toast.success("WhatsApp Backend is Online");
+          return true;
+        } else {
+          throw new Error("WhatsApp backend unreachable");
+        }
+      }
+      return false;
+    } catch (err: unknown) {
+      const error = err as Error;
+      toast.error(`Test failed: ${error.message}`);
+      return false;
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -307,6 +378,10 @@ export default function SettingsPage() {
               <LayoutList className="h-4 w-4" />
               Session Types
             </TabsTrigger>
+            <TabsTrigger value="twilio" className="gap-2">
+              <Mic className="h-4 w-4" />
+              Voice Testing
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="integrations" className="space-y-4">
@@ -332,12 +407,46 @@ export default function SettingsPage() {
             ) : (
               <div className="grid gap-4">
                 {channels.map((channel) => (
-                  <ApiKeyCard
-                    key={channel}
-                    channel={channel}
-                    config={configs[channel]}
-                    onSave={(data) => handleSave(channel, data)}
-                  />
+                  <div key={channel} className="space-y-4">
+                    <ApiKeyCard
+                      channel={channel}
+                      config={configs[channel]}
+                      onSave={(data) => handleSave(channel, data)}
+                      onTest={() => handleTestConfig(channel)}
+                    />
+                    {channel === "sms" && configs[channel]?.is_active && (
+                      <Card className="border-dashed border-primary/20 bg-primary/5">
+                        <CardHeader className="py-3">
+                          <CardTitle className="text-sm">
+                            Quick SMS Test
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3 pb-4">
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="+970..."
+                              size={30}
+                              value={smsData.to}
+                              onChange={(e) =>
+                                setSmsData({ ...smsData, to: e.target.value })
+                              }
+                            />
+                            <Button
+                              size="sm"
+                              disabled={smsSending}
+                              onClick={handleSendTestSms}
+                            >
+                              {smsSending ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Send Test"
+                              )}
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -673,6 +782,10 @@ export default function SettingsPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="twilio" className="space-y-4">
+            <TwilioDemo />
           </TabsContent>
         </Tabs>
       </div>

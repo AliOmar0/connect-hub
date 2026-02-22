@@ -102,16 +102,6 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            <Route
-              path="/twilio"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["supervisor", "manager", "admin"]}
-                >
-                  <TwilioDemo />
-                </ProtectedRoute>
-              }
-            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

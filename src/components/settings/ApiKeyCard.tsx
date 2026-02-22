@@ -179,6 +179,7 @@ export default function ApiKeyCard({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
   const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({});
   const [formData, setFormData] = useState<Record<string, string>>({});
 
@@ -227,7 +228,8 @@ export default function ApiKeyCard({
     if (!onTest) return;
     setIsTesting(true);
     try {
-      await onTest();
+      const success = await onTest();
+      setIsInitialized(success);
     } finally {
       setIsTesting(false);
     }
@@ -268,6 +270,15 @@ export default function ApiKeyCard({
               >
                 <X className="h-3 w-3 mr-1" />
                 Not configured
+              </Badge>
+            )}
+            {isInitialized && (
+              <Badge
+                variant="outline"
+                className="bg-primary/10 text-primary border-primary/20"
+              >
+                <Check className="h-3 w-3 mr-1" />
+                Initialized
               </Badge>
             )}
           </div>

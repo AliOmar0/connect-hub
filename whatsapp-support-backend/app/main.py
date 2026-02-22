@@ -30,11 +30,11 @@ async def lifespan(app: FastAPI):
             from pyngrok import ngrok
             # Check for existing tunnels on port 5000 to avoid duplicates during reload
             tunnels = ngrok.get_tunnels()
-            existing_tunnel = next((t for t in tunnels if ":5000" in t.config['addr']), None)
+            existing_tunnel = next((t for t in tunnels if ":8005" in t.config['addr']), None)
             
             if not existing_tunnel:
-                # Use public port from uvicorn or default to 5000
-                public_url = ngrok.connect(5000).public_url
+                # Use public port from uvicorn or default to 8005
+                public_url = ngrok.connect(8005).public_url
                 print(f"\n==============================================")
                 print(f"NGROK Tunnel is live!")
                 print(f"Public URL: {public_url}")

@@ -8,6 +8,12 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    watch: {
+      ignored: ["**/whatsapp-support-backend/**"],
+    },
+  },
+  optimizeDeps: {
+    exclude: ["whatsapp-support-backend"],
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(
     Boolean,

@@ -198,12 +198,6 @@ export default function DashboardSidebar() {
       label: "Analytics",
       roles: ["admin", "supervisor", "manager"],
     },
-    {
-      to: "/twilio",
-      icon: Phone,
-      label: "Twilio Demo",
-      roles: ["admin", "supervisor", "manager"],
-    },
   ];
 
   const allSecondaryNavItems = [

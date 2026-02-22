@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     # WhatsApp Settings (Defaults, but usually pulled from DB)
     WHATSAPP_VERIFY_TOKEN: str = "pib_verify_token_2024"
     
+    # Security WhatsApp (For OTPs)
+    SECURITY_WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
+    SECURITY_WHATSAPP_ACCESS_TOKEN: Optional[str] = None
+    
     # App
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     USE_NGROK: bool = False
@@ -41,5 +45,7 @@ except Exception as e:
         SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
         SUPABASE_KEY=os.getenv("SUPABASE_KEY", ""),
         OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
-        OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free")
+        OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free"),
+        SECURITY_WHATSAPP_PHONE_NUMBER_ID=os.getenv("SECURITY_WHATSAPP_PHONE_NUMBER_ID"),
+        SECURITY_WHATSAPP_ACCESS_TOKEN=os.getenv("SECURITY_WHATSAPP_ACCESS_TOKEN")
     )
