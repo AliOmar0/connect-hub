@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@/test-utils/render";
+import { render, screen, waitFor, act } from "@/test-utils/render";
+import "@testing-library/jest-dom";
 import { QueryClient } from "@tanstack/react-query";
 import DashboardSidebar from "./DashboardSidebar";
 import { useAuth } from "@/hooks/useAuth";
@@ -122,8 +123,12 @@ describe("DashboardSidebar", () => {
     );
 
     if (signOutButton) {
-      await user.click(signOutButton);
-      expect(mockSignOut).toHaveBeenCalled();
+      await act(async () => {
+        await user.click(signOutButton);
+      });
+      await waitFor(() => {
+        expect(mockSignOut).toHaveBeenCalled();
+      });
     }
   });
 
