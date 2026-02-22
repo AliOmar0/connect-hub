@@ -39,12 +39,23 @@ async def generate_audio_async(text):
 @app.route('/tts', methods=['POST'])
 def tts_route():
     try:
-        data = request.json
+        print(f"[EdgeTTS] Incoming Request: {request.method} {request.url}")
+        print(f"[EdgeTTS] Headers: {dict(request.headers)}")
+        
+        # Try to parse JSON, even if content-type is missing/wrong
+        data = request.get_json(force=True, silent=True)
+        
+        if not data:
+            # Fallback: check form data or query params
+            data = request.form or request.args
+            
+        print(f"[EdgeTTS] Parsed Data: {data}")
+            
         text = data.get('text', '')
         if not text:
             return "No text provided", 400
         
-        print(f"[EdgeTTS] Request for: {text[:20]}...")
+        print(f"[EdgeTTS] Processing text: {text[:20]}...")
         
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)

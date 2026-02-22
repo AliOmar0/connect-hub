@@ -1,0 +1,1 @@
+﻿<?xml version="1.0" encoding="UTF-8"?><Response><Gather input="speech" language="ar-PS" speechTimeout="auto" action="/handle-speech" enhanced="true" interruptible="true"><Say voice="Google.ar-XA-Wavenet-A" language="ar-XA">أهلاً بك في البنك الإسلامي الفلسطيني، كيف بقدر أساعدك؟</Say></Gather><Redirect>/voice</Redirect></Response>

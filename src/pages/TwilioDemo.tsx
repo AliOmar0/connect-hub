@@ -33,6 +33,7 @@ const TwilioDemo = () => {
 
             if (!response.ok) throw new Error(data.details || data.error);
 
+            // Twilio Voice SDK v2.0+ instantiation
             const newDevice = new Device(data.token, {
                 logLevel: 'debug',
                 codecPreferences: ['opus', 'pcmu'],
@@ -62,8 +63,9 @@ const TwilioDemo = () => {
             await newDevice.register();
             setDevice(newDevice);
         } catch (error: any) {
-            setSdkStatus("Setup Required: " + error.message);
-            console.error(error);
+            console.error("SDK Setup Error:", error);
+            const errorMessage = error?.message || (typeof error === 'string' ? error : JSON.stringify(error));
+            setSdkStatus("Setup Required: " + errorMessage);
         }
     };
 
