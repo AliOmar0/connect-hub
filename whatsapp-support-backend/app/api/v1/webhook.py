@@ -170,7 +170,7 @@ async def process_ai_response(
         session_types = await crud.get_session_main_types(None)
 
         # 2. Call LLM
-        ai_text = await llm_service.get_ai_response(user_message, history, session_types)
+        ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
         
         # 2.5 Classify session (Understanding Required)
         # We trigger this in every response attempt if not yet classified

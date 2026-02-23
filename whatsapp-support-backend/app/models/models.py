@@ -93,6 +93,7 @@ class SessionMainType(BaseModel):
     name: str
     parent_category: Optional[str] = None
     description: Optional[str] = None
+    ai_prompt: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
 class ChatShortcut(BaseModel):
