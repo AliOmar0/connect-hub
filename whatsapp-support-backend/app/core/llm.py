@@ -373,7 +373,102 @@ SYSTEM_PROMPT += """
    - الرد الصحيح: "أهلاً بك في البنك الإسلامي الفلسطيني. إذا كنت مهتماً بالاستثمار في الذهب، يمكننا تزويدك بمعلومات حول حسابات الاستثمار أو تمويل شراء المعادن المتوافقة مع الشريعة. هل تود تفاصيل أكثر حول ذلك؟"
 """
 
+SYSTEM_PROMPT += """
+سابع عشر: قاعدة البيانات المعرفية (Knowledge Base)
+1. يتم تزويدك ببيانات مستخلصة من موقع البنك الرسمي (bank_dataset_web.json) بشكل ديناميكي تحت عنوان "معلومات إضافية من موقع البنك (Knowledge Base)".
+2. يجب أن تكون هذه البيانات هي مرجعك الأساسي والأول للمعلومات التفصيلية (مثل: مواقع الفروع، أرقام التواصل، تفاصيل المنتجات الدقيقة، أخبار البنك).
+3. إذا حدث تعارض بين المعلومات العامة في تعليماتك وبين المعلومات الواردة في "Knowledge Base"، الأولوية دائماً للمعلومات الواردة في الـ Knowledge Base لأنها أكثر حداثة وتفصيلاً.
+4. عند استخدام معلومة من الـ Knowledge Base، صغها بأسلوبك المهني (إيمان) ولا تنقل النص حرفياً إذا كان طويلاً أو غير منسق، مع الحفاظ على دقة الأرقام والأسماء.
+5. إذا سُئلت عن شيء غير متوفر في الـ Knowledge Base أو التعليمات، اعتذر بلطف ووجه العميل للقنوات الرسمية.
+"""
+
 class LLMService:
+    _dataset = None
+
+    @staticmethod
+    def _get_dataset():
+        if LLMService._dataset is None:
+            try:
+                # Resolve path relative to app root
+                current_dir = os.path.dirname(os.path.abspath(__file__))
+                dataset_path = os.path.join(os.path.dirname(current_dir), "dataset", "bank_dataset_web.json")
+                
+                if os.path.exists(dataset_path):
+                    with open(dataset_path, "r", encoding="utf-8") as f:
+                        LLMService._dataset = json.load(f)
+                    logger.info(f"Loaded bank knowledge base: {len(LLMService._dataset)} pages.")
+                else:
+                    logger.warning(f"Dataset not found at {dataset_path}")
+                    LLMService._dataset = []
+            except Exception as e:
+                logger.error(f"Error loading dataset: {e}")
+                LLMService._dataset = []
+        return LLMService._dataset
+
+    @staticmethod
+    def _find_context(query: str, top_n: int = 3) -> str:
+        dataset = LLMService._get_dataset()
+        if not dataset or not query:
+            return ""
+        
+        query = query.lower().strip()
+        matches = []
+        
+        # Simple heuristic search
+        for item in dataset:
+            score = 0
+            title = item.get("title", "").lower()
+            content = item.get("content", "").lower()
+            
+            # 1. Exact phrase match in title (Highest boost)
+            if query in title:
+                score += 100
+            
+            # 2. Exact phrase match in content
+            if query in content:
+                score += 50
+            
+            # 3. Individual word matches
+            words = query.split()
+            for word in words:
+                if len(word) < 2: continue # ignore single characters
+                
+                if word in title:
+                    score += 20
+                if word in content:
+                    score += 10
+            
+            if score > 0:
+                matches.append((score, item))
+        
+        if not matches:
+            return ""
+            
+        # Sort by score descending
+        matches.sort(key=lambda x: x[0], reverse=True)
+        
+        # Deduplicate matches by URL to avoid redundant snippets
+        seen_urls = set()
+        unique_matches = []
+        for score, item in matches:
+            url = item.get("url")
+            if url not in seen_urls:
+                seen_urls.add(url)
+                unique_matches.append(item)
+                if len(unique_matches) >= top_n:
+                    break
+        
+        context_block = "\n\n=== معلومات إضافية من موقع البنك (Knowledge Base) ===\n"
+        for i, item in enumerate(unique_matches):
+            title = item.get('title', 'معلومات')
+            url = item.get('url', '')
+            clean_content = item.get('content', '').replace('\n', ' ').strip()
+            # Limit each snippet to avoid context overflow
+            snippet = clean_content[:1200]
+            context_block += f"المقال {i+1}: {title}\nالرابط: {url}\nالمحتوى: {snippet}...\n\n"
+            
+        return context_block
+
     @staticmethod
     def sanitize_input(text: str) -> str:
         """Strip potentially hazardous control tokens and normalize text"""
@@ -469,6 +564,11 @@ class LLMService:
             return "السلام عليكم ورحمة الله وبركاته، أنا المساعد الرقمي للبنك الإسلامي الفلسطيني. لا يمكنني تنفيذ هذا الطلب، ومهمتي محصورة في تقديم معلومات عن الخدمات المصرفية الإسلامية الرسمية للبنك. كيف يمكنني مساعدتك في استفساراتك البنكية؟"
             
         dynamic_prompt = SYSTEM_PROMPT
+        
+        # 0. Augment with external knowledge base (bank_dataset_web.json)
+        knowledge_context = LLMService._find_context(user_message)
+        if knowledge_context:
+            dynamic_prompt += knowledge_context
         
         # 1. Look for specific instructions for REALLY current type if known
         current_type_instructions = ""
