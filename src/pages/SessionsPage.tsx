@@ -116,7 +116,7 @@ export default function SessionsPage() {
     queryFn: async () => {
       // Fetch from Python Backend
       try {
-        const response = await fetch(`${BACKEND_URL}/api/v1/sessions`);
+        const response = await fetch("http://localhost:5000/api/v1/sessions");
         if (!response.ok) {
           throw new Error("Failed to fetch sessions from backend");
         }
@@ -251,7 +251,7 @@ export default function SessionsPage() {
 
       try {
         const response = await fetch(
-          `${BACKEND_URL}/api/v1/sessions/${selectedSession.id}/messages`,
+          `http://localhost:5000/api/v1/sessions/${selectedSession.id}/messages`,
         );
         if (!response.ok) {
           // Fallback to Supabase if backend fails or route 404s?
@@ -432,7 +432,7 @@ export default function SessionsPage() {
     try {
       // Send via Python Backend
       const response = await fetch(
-        `${BACKEND_URL}/api/v1/sessions/${selectedSession.id}/send`,
+        `http://localhost:5000/api/v1/sessions/${selectedSession.id}/send`,
         {
           method: "POST",
           headers: {
@@ -477,7 +477,7 @@ export default function SessionsPage() {
 
     try {
       const response = await fetch(
-        `${BACKEND_URL}/api/v1/sessions/${selectedSession.id}`,
+        `http://localhost:5000/api/v1/sessions/${selectedSession.id}`,
         {
           method: "PATCH",
           headers: {
@@ -513,7 +513,7 @@ export default function SessionsPage() {
 
     try {
       const response = await fetch(
-        `${BACKEND_URL}/api/v1/sessions/${selectedSession.id}`,
+        `http://localhost:5000/api/v1/sessions/${selectedSession.id}`,
         {
           method: "PATCH",
           headers: {
@@ -535,7 +535,7 @@ export default function SessionsPage() {
 
       // Fetch fresh data for duration/wait_time
       setTimeout(async () => {
-        const response = await fetch(`${BACKEND_URL}/api/v1/sessions`);
+        const response = await fetch("http://localhost:5000/api/v1/sessions");
         if (response.ok) {
           const data = (await response.json()) as BackendSession[];
           const updated = data.find(
