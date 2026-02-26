@@ -12,22 +12,6 @@ logger = logging.getLogger(__name__)
 async def get_bank_account(phone: str):
     response = supabase.table("bank_accounts").select("*").eq("phone", phone).execute()
     return response.data[0] if response.data else None
-
-async def create_bank_otp(phone: str, otp: str):
-    supabase.table("bank_otps").insert({"phone": phone, "otp": otp}).execute()
-
-async def verify_bank_otp(phone: str, otp: str):
-    from datetime import datetime, timedelta, timezone
-    limit = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-    response = supabase.table("bank_otps")\
-        .select("*")\
-        .eq("phone", phone)\
-        .eq("otp", otp)\
-        .gt("created_at", limit)\
-        .order("created_at", desc=True)\
-        .limit(1)\
-        .execute()
-    return len(response.data) > 0
 # --- End Bank Logic ---
 
 

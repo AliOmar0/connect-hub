@@ -9,55 +9,32 @@ from app.core.whatsapp import WhatsAppClient
 from app.core.notifications import NotificationService
 from typing import Any, Optional
 import logging
+import httpx
 from uuid import UUID
 
 router = APIRouter()
 logger = logging.getLogger("webhook")
-# Force INFO level
-logging.getLogger().setLevel(logging.INFO)
-
-# Security client for OTPs (Uses a different number if configured)
-security_client = WhatsAppClient(
-    phone_number_id=settings.SECURITY_WHATSAPP_PHONE_NUMBER_ID,
-    access_token=settings.SECURITY_WHATSAPP_ACCESS_TOKEN
-)
 
 # In-memory store for OTP sessions (Similar to Node.js backend)
 otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
 
 async def send_whatsapp_otp(phone: str):
     """
-    Generate and send OTP via the Security WhatsApp Number
+    Call the standalone OTP service to generate and send OTP
     """
-    import random
-    otp = str(random.randint(1000, 9999))
-    logger.info(f"[OTP] Generated {otp} for {phone} (WhatsApp Delivery)")
-    
-    # 1. Save to Supabase
-    await crud.create_bank_otp(phone, otp)
-    
-    # 2. Send via Security WhatsApp
-    # If security credentials are not provided, it will fallback to defaults (or error)
     try:
-        message = f"الرمز الخاص بك للتحقق من بيانات الحساب في البنك الإسلامي الفلسطيني هو: {otp}. يرجى عدم مشاركته مع أحد."
-        await security_client.send_text_message(phone, message)
-        logger.info(f"[OTP] Sent via Security WhatsApp to {phone}")
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "http://localhost:5001/generate",
+                json={"phone": phone},
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("otp")
     except Exception as e:
-        logger.error(f"[OTP Error] Failed to send via WhatsApp: {e}")
-        # We still return OTP so it can be verified via Notification Bell
-    
-    # 3. Also create In-app notification (for redundancy/free testing)
-    try:
-        await crud.create_notification(
-            None,
-            title="🔑 PIB WhatsApp OTP",
-            message=f"The WhatsApp OTP for {phone} (from security number) is: {otp}",
-            type="info"
-        )
-    except:
-        pass
-
-    return otp
+        logger.error(f"[OTP Error] Failed to call OTP service: {e}")
+        return None
 
 
 async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
