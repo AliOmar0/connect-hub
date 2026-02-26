@@ -156,5 +156,16 @@ export interface AnalyticsDaily {
 export interface SessionMainType {
   id: string;
   name: string;
+  parent_category: string | null;
+  description: string | null;
   created_at: string;
+}
+
+export interface ChatShortcut {
+  id: string;
+  user_id: string;
+  title: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
 }

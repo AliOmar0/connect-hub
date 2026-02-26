@@ -13,7 +13,7 @@ import EmployeesPage from "./pages/EmployeesPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotificationsPage from "./pages/NotificationsPage";
-import TwilioDemo from "./pages/TwilioDemo";
+import ShortcutsPage from "./pages/ShortcutsPage";
 import NotFound from "./pages/NotFound";
 
 import EscalationListener from "@/components/EscalationListener";
@@ -99,6 +99,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <NotificationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shortcuts"
+              element={
+                <ProtectedRoute>
+                  <ShortcutsPage />
                 </ProtectedRoute>
               }
             />

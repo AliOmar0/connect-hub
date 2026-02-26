@@ -101,6 +101,41 @@ export type Database = {
         };
         Relationships: [];
       };
+      chat_shortcuts: {
+        Row: {
+          id: string;
+          user_id: string;
+          title: string;
+          content: string;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          title: string;
+          content: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          title?: string;
+          content?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "chat_shortcuts_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       calls: {
         Row: {
           created_at: string | null;
@@ -481,6 +516,7 @@ export type Database = {
         Row: {
           id: string;
           name: string;
+          parent_category: string | null;
           description: string | null;
           color: string | null;
           created_at: string;
@@ -489,6 +525,7 @@ export type Database = {
         Insert: {
           id?: string;
           name: string;
+          parent_category?: string | null;
           description?: string | null;
           color?: string | null;
           created_at?: string;
@@ -497,6 +534,7 @@ export type Database = {
         Update: {
           id?: string;
           name?: string;
+          parent_category?: string | null;
           description?: string | null;
           color?: string | null;
           created_at?: string;

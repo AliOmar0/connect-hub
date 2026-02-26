@@ -91,7 +91,18 @@ class Notification(BaseModel):
 class SessionMainType(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str
+    parent_category: Optional[str] = None
+    description: Optional[str] = None
+    ai_prompt: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
+
+class ChatShortcut(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    user_id: UUID
+    title: str
+    content: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
 
 # Re-resolve forward refs
 Session.model_rebuild()

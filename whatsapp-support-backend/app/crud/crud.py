@@ -364,3 +364,36 @@ async def delete_old_notifications(db: Any, hours: int = 24):
         logger.info(f"Automatically deleted {len(response.data)} old notifications (> {hours} hours).")
         return len(response.data)
     return 0
+
+async def get_chat_shortcuts(db: Any, user_id: UUID) -> List[Any]:
+    response = supabase.table("chat_shortcuts")\
+        .select("*")\
+        .eq("user_id", str(user_id))\
+        .order("created_at", desc=True)\
+        .execute()
+    return response.data if response.data else []
+
+async def create_chat_shortcut(db: Any, user_id: UUID, title: str, content: str) -> Any:
+    data = {
+        "user_id": str(user_id),
+        "title": title,
+        "content": content
+    }
+    response = supabase.table("chat_shortcuts").insert(data).execute()
+    if response.data:
+        return response.data[0]
+    raise Exception("Failed to create chat shortcut")
+
+async def update_chat_shortcut(db: Any, shortcut_id: UUID, title: str, content: str) -> Any:
+    data = {
+        "title": title,
+        "content": content
+    }
+    response = supabase.table("chat_shortcuts").update(data).eq("id", str(shortcut_id)).execute()
+    if response.data:
+        return response.data[0]
+    raise Exception("Failed to update chat shortcut")
+
+async def delete_chat_shortcut(db: Any, shortcut_id: UUID) -> bool:
+    response = supabase.table("chat_shortcuts").delete().eq("id", str(shortcut_id)).execute()
+    return True if response.data else False

@@ -130,7 +130,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText("Type a message...");
+    const input = screen.getByPlaceholderText(/type a message/i);
     fireEvent.change(input, { target: { value: "Test message" } });
 
     // Send button is icon-only, find it by the Send icon SVG
@@ -161,7 +161,7 @@ describe("ChatView", () => {
     );
 
     const input = screen.getByPlaceholderText(
-      "Type a message...",
+      /type a message/i,
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Test message" } });
     // Use keyPress which is what the component listens to
@@ -183,7 +183,7 @@ describe("ChatView", () => {
     );
 
     const input = screen.getByPlaceholderText(
-      "Type a message...",
+      /type a message/i,
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Test message" } });
     // Use keyPress which is what the component listens to
@@ -208,7 +208,7 @@ describe("ChatView", () => {
     );
 
     const input = screen.getByPlaceholderText(
-      "Type a message...",
+      /type a message/i,
     ) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Test message" } });
 
@@ -260,7 +260,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText("Type a message...");
+    const input = screen.getByPlaceholderText(/type a message/i);
     fireEvent.change(input, { target: { value: "   " } });
 
     // Send button is icon-only, find it by the Send icon SVG

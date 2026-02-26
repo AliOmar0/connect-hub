@@ -5,7 +5,11 @@ import {
   Customer,
   ChannelType,
   SessionMainType,
+  ChatShortcut,
 } from "@/types/database";
+import { useAuth } from "@/hooks/useAuth";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -37,6 +41,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format, intervalToDuration, formatDuration } from "date-fns";
+import ChatShortcuts from "./ChatShortcuts";
 
 function formatSessionDuration(seconds: number | null): string {
   if (!seconds) return "-";
@@ -86,7 +91,26 @@ export default function ChatView({
   loading,
 }: ChatViewProps) {
   const [newMessage, setNewMessage] = useState("");
+  const [showShortcutMenu, setShowShortcutMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const { user } = useAuth();
+
+  // Fetch shortcuts for the \ trigger
+  const { data: shortcuts } = useQuery({
+    queryKey: ["chat-shortcuts", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return [];
+      const { data, error } = await supabase
+        .from("chat_shortcuts")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) return [];
+      return data as ChatShortcut[];
+    },
+    enabled: !!user?.id,
+  });
 
   useEffect(() => {
     // Scroll to bottom when messages change
@@ -99,14 +123,64 @@ export default function ChatView({
     if (!newMessage.trim()) return;
     onSendMessage(newMessage);
     setNewMessage("");
+    setShowShortcutMenu(false);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
+      if (
+        showShortcutMenu &&
+        filteredShortcuts &&
+        filteredShortcuts.length > 0
+      ) {
+        // If menu is open, maybe select first? Or just let it be.
+        // For now, normal enter sends message.
+      }
       e.preventDefault();
       handleSend();
     }
   };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setNewMessage(value);
+
+    // Trigger menu if value ends with \ or contains \ and we are filtering
+    if (value.endsWith("\\")) {
+      setShowShortcutMenu(true);
+    } else if (!value.includes("\\")) {
+      setShowShortcutMenu(false);
+    }
+  };
+
+  const selectShortcut = (content: string) => {
+    // Replace the \ and any text after it with the shortcut content
+    // For simplicity, if we just typed \ at the end, replace it.
+    if (newMessage.endsWith("\\")) {
+      setNewMessage(newMessage.slice(0, -1) + content);
+    } else {
+      // Handle mid-text \ if needed, but for now just append/replace last
+      setNewMessage((prev) => {
+        const parts = prev.split("\\");
+        parts.pop(); // remove the part after last \
+        return parts.join("\\") + content;
+      });
+    }
+    setShowShortcutMenu(false);
+  };
+
+  // Get text after the last backslash for filtering
+  const lastBackslashIndex = newMessage.lastIndexOf("\\");
+  const shortcutQuery =
+    lastBackslashIndex !== -1
+      ? newMessage.slice(lastBackslashIndex + 1).toLowerCase()
+      : "";
+
+  const filteredShortcuts = shortcuts?.filter(
+    (s) =>
+      s.title.toLowerCase().includes(shortcutQuery) ||
+      s.content.toLowerCase().includes(shortcutQuery),
+  );
 
   if (!session) {
     return (
@@ -337,15 +411,45 @@ export default function ChatView({
       </ScrollArea>
 
       {/* Message Input */}
-      <div className="p-4 border-t border-border bg-card">
+      <div className="p-4 border-t border-border bg-card relative">
+        {showShortcutMenu &&
+          filteredShortcuts &&
+          filteredShortcuts.length > 0 && (
+            <div className="absolute bottom-full left-4 mb-2 w-64 max-h-48 bg-popover border border-border rounded-lg shadow-xl overflow-y-auto z-50">
+              <div className="p-2 border-b border-border bg-muted/50">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                  Quick Shortcuts
+                </span>
+              </div>
+              {filteredShortcuts.map((shortcut) => (
+                <button
+                  key={shortcut.id}
+                  className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground transition-colors flex flex-col gap-0.5 border-b border-border/50 last:border-0"
+                  onClick={() => selectShortcut(shortcut.content)}
+                >
+                  <span className="text-sm font-medium">{shortcut.title}</span>
+                  <span className="text-xs text-muted-foreground truncate">
+                    {shortcut.content}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
         <div className="flex items-center gap-2">
+          <ChatShortcuts
+            onSelect={(content) => {
+              setNewMessage((prev) =>
+                prev ? `${prev.trim()} ${content}` : content,
+              );
+            }}
+          />
           <Button variant="ghost" size="icon" className="shrink-0">
             <Paperclip className="h-5 w-5" />
           </Button>
           <Input
-            placeholder="Type a message..."
+            placeholder="Type a message... (use \ for shortcuts)"
             value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
+            onChange={handleInputChange}
             onKeyPress={handleKeyPress}
             className="flex-1"
           />
