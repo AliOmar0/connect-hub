@@ -9,7 +9,7 @@ def start_tunnel():
     # Set authtoken if you have one (optional, but recommended)
     # ngrok.set_auth_token("YOUR_AUTHTOKEN")
     
-    # Open a HTTP tunnel on port 8000
+    # Open a HTTP tunnel on port 5000
     public_url = ngrok.connect(5000).public_url
     print(f"\n==============================================")
     print(f"NGROK Tunnel is live!")

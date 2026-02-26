@@ -236,8 +236,7 @@ async def process_ai_response(
         session_types = await crud.get_session_main_types(None)
 
         # 2. Call LLM
-<<<<<<< HEAD
-        ai_text = await llm_service.get_ai_response(user_message, history, session_types)
+        ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
 
         # --- Bank Intent Detection (New) ---
         account_keywords = ["رصيدي", "حسابي", "balance", "account", "بياناتي", "حساب"]
@@ -256,9 +255,6 @@ async def process_ai_response(
             await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
             return
         # --- End Bank Intent Detection ---
-=======
-        ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
->>>>>>> WhatsApp-Configure
         
         # 2.5 Classify session (Understanding Required)
         # We trigger this in every response attempt if not yet classified
