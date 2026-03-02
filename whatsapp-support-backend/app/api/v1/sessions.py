@@ -8,12 +8,36 @@ from app.api.v1.deps import get_session
 from app.crud import crud
 from app.schemas.schemas import SessionResponse, MessageResponse, SendMessageRequest, UpdateSessionRequest
 from app.core.whatsapp import WhatsAppClient
+from app.core.message_buffer import message_buffer
 from app.models.enums import MessageDirection, ChannelType, SessionStatus
 from app.database import supabase
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.get("/sessions/typing-status")
+async def get_all_typing_status():
+    """
+    Get typing status for all sessions.
+    Frontend polls this endpoint to show 'customer is typing...' indicators
+    in the sessions list sidebar.
+    
+    Returns: { "session_id": { is_typing, buffered_count, is_processing }, ... }
+    """
+    return message_buffer.get_all_typing_sessions()
+
+
+@router.get("/sessions/{session_id}/typing")
+async def get_session_typing_status(session_id: UUID):
+    """
+    Get typing/buffer status for a specific session.
+    Frontend polls this endpoint to show typing indicator in the chat view.
+    
+    Returns: { is_typing, buffered_count, is_processing, rapid_typing, typing_started_at }
+    """
+    return message_buffer.get_typing_status(session_id)
 
 @router.get("/sessions", response_model=List[SessionResponse])
 async def list_sessions(db: Any = Depends(get_session)):

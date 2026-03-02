@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Message,
   Session,
@@ -94,6 +94,45 @@ export default function ChatView({
   const [showShortcutMenu, setShowShortcutMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
+
+  // ---- Customer Typing Indicator ----
+  const [customerTyping, setCustomerTyping] = useState(false);
+  const [bufferedCount, setBufferedCount] = useState(0);
+
+  // Poll typing status every 3 seconds when a session is selected
+  useEffect(() => {
+    if (!session?.id) {
+      setCustomerTyping(false);
+      setBufferedCount(0);
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollTypingStatus = async () => {
+      try {
+        const response = await fetch(
+          `http://localhost:5000/api/v1/sessions/${session.id}/typing`,
+        );
+        if (response.ok && !cancelled) {
+          const data = await response.json();
+          setCustomerTyping(data.is_typing || false);
+          setBufferedCount(data.buffered_count || 0);
+        }
+      } catch {
+        // Silently fail - typing indicator is non-critical
+      }
+    };
+
+    // Poll immediately and then every 3 seconds
+    pollTypingStatus();
+    const interval = setInterval(pollTypingStatus, 3000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [session?.id]);
 
   // Fetch shortcuts for the \ trigger
   const { data: shortcuts } = useQuery({
@@ -409,6 +448,33 @@ export default function ChatView({
           </div>
         )}
       </ScrollArea>
+
+      {/* Customer Typing Indicator */}
+      {customerTyping && (
+        <div className="px-6 py-2 border-t border-border/50 bg-muted/30">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex gap-0.5">
+              <span
+                className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
+                style={{ animationDelay: "0ms" }}
+              />
+              <span
+                className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
+                style={{ animationDelay: "150ms" }}
+              />
+              <span
+                className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
+                style={{ animationDelay: "300ms" }}
+              />
+            </div>
+            <span className="text-xs font-medium">
+              Customer is typing
+              {bufferedCount > 1 ? ` (${bufferedCount} messages buffered)` : ""}
+              ...
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Message Input */}
       <div className="p-4 border-t border-border bg-card relative">

@@ -7,6 +7,7 @@ from app.core.llm import llm_service
 from app.core.stt import stt_service
 from app.core.whatsapp import WhatsAppClient
 from app.core.notifications import NotificationService
+from app.core.message_buffer import message_buffer
 from typing import Any, Optional
 import logging
 import httpx
@@ -17,6 +18,10 @@ logger = logging.getLogger("webhook")
 
 # In-memory store for OTP sessions (Similar to Node.js backend)
 otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
+
+# Track processed WhatsApp message IDs to prevent duplicate webhook processing
+_processed_message_ids: set = set()
+_MAX_PROCESSED_IDS = 10000  # Prevent unbounded memory growth
 
 async def send_whatsapp_otp(phone: str):
     """
@@ -148,7 +153,8 @@ async def process_ai_response(
     db_message_id: Optional[UUID] = None
 ):
     """
-    Background task to get AI response and send back to WhatsApp
+    Process AI response for a (possibly combined) user message.
+    Called by the message buffer after collecting all messages.
     """
     try:
         # 0. Safety Check: Verify session is still eligible for AI response
@@ -168,7 +174,7 @@ async def process_ai_response(
             await client.mark_message_as_read(message_id)
         await client.send_typing_indicator(customer_phone)
 
-        # --- Bank Verification Logic (New) ---
+        # --- Bank Verification Logic ---
         state = otp_sessions.get(str(db_session_id))
         
         # Scenario: User provided OTP
@@ -212,10 +218,11 @@ async def process_ai_response(
         # 1.5 Get Session Types for awareness
         session_types = await crud.get_session_main_types(None)
 
-        # 2. Call LLM
+        # 2. Call LLM with the combined message
+        logger.info(f"[AI] Sending combined message to LLM for session {db_session_id}: '{user_message[:100]}...'")
         ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
 
-        # --- Bank Intent Detection (New) ---
+        # --- Bank Intent Detection ---
         account_keywords = ["رصيدي", "حسابي", "balance", "account", "بياناتي", "حساب"]
         is_asking_account = any(k in user_message.lower() for k in account_keywords)
         
@@ -234,10 +241,7 @@ async def process_ai_response(
         # --- End Bank Intent Detection ---
         
         # 2.5 Classify session (Understanding Required)
-        # We trigger this in every response attempt if not yet classified
         if session.main_type_id is None:
-            # We call it as a separate task logic here directly for responsiveness
-            # or we could use another background task
             await auto_classify_session(db_session_id, user_message)
 
         # 3. Handle Escalation or Send Response
@@ -248,22 +252,17 @@ async def process_ai_response(
             # Send the handover message
             await client.send_text_message(customer_phone, clean_text)
             
-            # Update session status to escalated
-            # We need a db session here. Since process_ai_response is background task, 
-            # we should best use a fresh session or rely on crud handling it if it accepts None (it does for read, but update might need commit).
-            # Looking at crud.py, update_session_status uses supabase client directly which is global. So None is fine.
             await crud.update_session_status(None, db_session_id, SessionStatus.escalated)
 
-            # NEW: Classification at Escalation (End of AI conversation)
-            # Fetch fresh session state to be sure
+            # Clear the buffer for this session since it's escalated
+            message_buffer.clear_session_buffer(db_session_id)
+
+            # Classification at Escalation
             session = await crud.get_session_by_id(None, db_session_id)
             if session and session.main_type_id is None:
                 await auto_classify_session(db_session_id, user_message)
 
-            # Create Database Notifications for all employees
-            # We use a single broadcast notification (user_id=None) visible to everyone.
-            # This avoids creating N notifications for N employees (preventing duplicates).
-            
+            # Create Database Notifications
             try:
                 await crud.create_notification(
                     None,
@@ -297,6 +296,11 @@ async def process_ai_response(
             )
     except Exception as e:
         logger.error(f"Error in background AI response: {e}")
+
+
+# Register the AI callback with the message buffer
+message_buffer.set_ai_callback(process_ai_response)
+
 
 @router.get("/webhook")
 async def verify_webhook(request: Request, db: Any = Depends(get_session)):
@@ -336,7 +340,13 @@ async def extract_webhook(
     db: Any = Depends(get_session)
 ):
     """
-    Receive WhatsApp messages
+    Receive WhatsApp messages.
+    
+    ANTI-DUPLICATE STRATEGY:
+    1. WhatsApp message ID dedup: Prevents processing the same webhook delivery twice.
+    2. Message Buffer: Collects rapid messages per session and combines them after 30s 
+       of inactivity, sending only ONE AI request instead of multiple.
+    3. Buffer lock: Prevents concurrent AI processing for the same session.
     """
     try:
         payload = await request.json()
@@ -373,6 +383,25 @@ async def extract_webhook(
         message_id = msg_data.get("id")
         text_body = msg_data.get("text", {}).get("body")
         msg_type = msg_data.get("type")
+
+        # ============================================================
+        # DEDUP CHECK: Prevent processing the same WhatsApp message twice
+        # (WhatsApp sometimes sends duplicate webhook deliveries)
+        # ============================================================
+        if message_id:
+            if message_id in _processed_message_ids:
+                logger.warning(f"[DEDUP] Duplicate webhook for message {message_id}. Ignoring.")
+                return {"status": "ignored", "reason": "duplicate message_id"}
+            
+            # Add to processed set
+            _processed_message_ids.add(message_id)
+            
+            # Prevent unbounded memory growth
+            if len(_processed_message_ids) > _MAX_PROCESSED_IDS:
+                # Remove oldest entries (set doesn't maintain order, but this is good enough)
+                excess = len(_processed_message_ids) - _MAX_PROCESSED_IDS
+                for _ in range(excess):
+                    _processed_message_ids.pop()
         
         # Audio handling
         media_id = None
@@ -409,7 +438,7 @@ async def extract_webhook(
                 action_url=f"/sessions/{session.id}"
             )
         
-        # NEW: If session was Escalated, do NOT change to Active automatically. Just notify.
+        # If session was Escalated, do NOT change to Active automatically. Just notify.
         if session.status == SessionStatus.escalated:
             logger.info(f"Session {session.id} is Escalated. Customer replied. Notifying agents.")
             
@@ -426,7 +455,7 @@ async def extract_webhook(
             # We do NOT let it fall through to AI (because AI checks status).
 
             
-        # 3. Save Inbound Message (If text)
+        # 3. Save Inbound Message IMMEDIATELY (for real-time dashboard display)
         db_message = None
         if msg_type == "text":
             db_message = await crud.create_message(
@@ -446,21 +475,34 @@ async def extract_webhook(
                 "access_token": api_config.access_token_encrypted
             }
         
-        # 5. Trigger AI process or Voice Transcription in background
+        # 5. Trigger AI process or Voice Transcription
         if msg_type == "text":
             # ALWAYS try to classify if not yet classified, regardless of AI status
             if session.main_type_id is None:
                 background_tasks.add_task(auto_classify_session, session.id, text_body)
 
             if session.status != SessionStatus.escalated and session.employee_id is None:
-                background_tasks.add_task(
-                    process_ai_response, 
-                    session.id, 
-                    text_body, 
-                    sender_phone,
-                    config_data,
-                    message_id,     # WhatsApp ID
-                    db_message.id   # Database ID
+                # ============================================================
+                # MESSAGE BUFFER: Instead of calling AI immediately, buffer the
+                # message. The buffer collects messages for 30 seconds, then
+                # combines them into a single AI request.
+                # This prevents duplicate AI submissions when customers send
+                # multiple rapid messages.
+                # ============================================================
+                buffer_status = message_buffer.get_buffer_status(session.id)
+                logger.info(
+                    f"[Buffer] Session {session.id}: Adding to buffer. "
+                    f"Current status: {buffer_status}"
+                )
+                
+                # Add message to buffer (non-blocking, uses asyncio tasks internally)
+                await message_buffer.add_message(
+                    session_id=session.id,
+                    content=text_body,
+                    customer_phone=sender_phone,
+                    config=config_data,
+                    message_id=message_id,     # WhatsApp ID
+                    db_message_id=db_message.id if db_message else None,   # Database ID
                 )
             else:
                  # If Escalated, rely on the notification we sent (or will send)
