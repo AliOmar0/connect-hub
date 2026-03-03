@@ -1,8 +1,10 @@
-#!/usr/bin/env sh
-. "$(dirname -- "$0")/_/husky.sh"
-
 # Validate commit message format (conventional commits)
 commit_msg=$(cat "$1")
+
+# Allow merge commits (e.g., from github or git merge)
+if echo "$commit_msg" | grep -qE "^Merge (branch|remote-tracking branch|tag) .+$"; then
+  exit 0
+fi
 
 if ! echo "$commit_msg" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .+"; then
   echo "❌ Commit message does not follow conventional commits format"

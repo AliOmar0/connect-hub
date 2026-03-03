@@ -12,7 +12,8 @@ const app = express();
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
-const port = process.env.PORT || 3001;
+// Prefer dedicated env var to avoid conflicts with generic PORT in some environments
+const port = Number(process.env.TWILIO_SERVER_PORT || process.env.PORT || 3001);
 
 const FALLBACK_OPENROUTER_KEY = "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";
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || FALLBACK_OPENROUTER_KEY;
