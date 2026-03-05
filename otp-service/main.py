@@ -8,6 +8,7 @@ from typing import Optional
 import httpx
 from supabase import create_client, Client
 from dotenv import load_dotenv
+from datetime import datetime, timedelta, timezone
 
 # Load env
 load_dotenv()
@@ -27,11 +28,34 @@ async def lifespan(app: FastAPI):
             existing_tunnel = next((t for t in tunnels if ":5001" in t.config['addr']), None)
             
             if not existing_tunnel:
-                public_url = ngrok.connect(5001).public_url
-                print(f"\n==============================================")
-                print(f"OTP Service NGROK Tunnel is live!")
-                print(f"Public URL: {public_url}")
-                print(f"==============================================\n")
+                # Use ID and URL from .env if available
+                ngrok_id = os.getenv("ID")
+                ngrok_url = os.getenv("URL")
+                
+                if ngrok_id and len(ngrok_id) > 20 and not ngrok_id.startswith("rd_"): 
+                    ngrok.set_auth_token(ngrok_id)
+                
+                connect_kwargs = {"addr": 5001}
+                if ngrok_url:
+                    connect_kwargs["domain"] = ngrok_url
+                
+                # Only use ID as name if it's not the auth token
+                if ngrok_id and len(ngrok_id) <= 20:
+                    connect_kwargs["name"] = ngrok_id
+                else:
+                    connect_kwargs["name"] = "otp-service-tunnel"
+                
+                try:
+                    public_url = ngrok.connect(**connect_kwargs).public_url
+                    print(f"\n==============================================")
+                    print(f"OTP Service NGROK Tunnel is live!")
+                    print(f"Public URL: {public_url}")
+                    print(f"==============================================\n")
+                except Exception as connect_error:
+                    if "already online" in str(connect_error).lower():
+                        print(f"\n[NGROK] Tunnel is already online for domain {ngrok_url}. Skipping startup.")
+                    else:
+                        raise connect_error
             else:
                 print(f"\nNGROK Tunnel already active: {existing_tunnel.public_url}\n")
         except Exception as e:
@@ -39,6 +63,23 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(title="OTP Service", lifespan=lifespan)
+
+@app.get("/")
+async def root():
+    return {
+        "message": "OTP Service is running",
+        "endpoints": {
+            "generate": "/generate [POST]",
+            "verify": "/verify [POST]",
+            "webhook": "/webhook [POST] (alias for generate)",
+            "health": "/health [GET]"
+        }
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
 # Supabase init
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -58,7 +99,7 @@ class VerifyRequest(BaseModel):
     otp: str
 
 async def send_whatsapp_message(phone: str, text: str):
-    url = f"https://graph.facebook.com/v24.0/{SECURITY_WHATSAPP_PHONE_NUMBER_ID}/messages"
+    url = f"https://graph.facebook.com/v21.0/{SECURITY_WHATSAPP_PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {SECURITY_WHATSAPP_ACCESS_TOKEN}",
         "Content-Type": "application/json"
@@ -75,14 +116,20 @@ async def send_whatsapp_message(phone: str, text: str):
         return response.json()
 
 @app.post("/generate")
+@app.post("/webhook")
 async def generate_otp(request: OtpRequest):
     phone = request.phone
     otp = str(random.randint(1000, 9999))
     logger.info(f"Generating OTP {otp} for {phone}")
     
     # 1. Save to Supabase (bank_otps table)
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
     try:
-        supabase.table("bank_otps").insert({"phone": phone, "otp": otp}).execute()
+        supabase.table("bank_otps").insert({
+            "phone_number": phone, 
+            "otp_code": otp,
+            "expires_at": expires_at
+        }).execute()
     except Exception as e:
         logger.error(f"Failed to save OTP to database: {e}")
         raise HTTPException(status_code=500, detail="Database error")
@@ -110,20 +157,21 @@ async def generate_otp(request: OtpRequest):
 
 @app.post("/verify")
 async def verify_otp(request: VerifyRequest):
-    from datetime import datetime, timedelta, timezone
-    limit = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-    
     try:
         response = supabase.table("bank_otps")\
             .select("*")\
-            .eq("phone", request.phone)\
-            .eq("otp", request.otp)\
-            .gt("created_at", limit)\
+            .eq("phone_number", request.phone)\
+            .eq("otp_code", request.otp)\
+            .eq("verified", False)\
+            .gt("expires_at", datetime.now(timezone.utc).isoformat())\
             .order("created_at", desc=True)\
             .limit(1)\
             .execute()
         
         if response.data:
+            # Mark as verified
+            otp_id = response.data[0]['id']
+            supabase.table("bank_otps").update({"verified": True}).eq("id", otp_id).execute()
             return {"status": "verified", "valid": True}
         else:
             return {"status": "invalid", "valid": False}

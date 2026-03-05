@@ -10,7 +10,20 @@ def start_tunnel():
     # ngrok.set_auth_token("YOUR_AUTHTOKEN")
     
     # Open a HTTP tunnel on port 5000
-    public_url = ngrok.connect(5000).public_url
+    # Use ID and URL from .env if available
+    ngrok_id = os.getenv("ID")
+    ngrok_url = os.getenv("URL")
+    
+    if ngrok_id and len(ngrok_id) > 20 and not ngrok_id.startswith("rd_"):
+        ngrok.set_auth_token(ngrok_id)
+    
+    connect_kwargs = {"addr": 5000}
+    if ngrok_url:
+        connect_kwargs["domain"] = ngrok_url
+    if ngrok_id:
+        connect_kwargs["name"] = ngrok_id
+        
+    public_url = ngrok.connect(**connect_kwargs).public_url
     print(f"\n==============================================")
     print(f"NGROK Tunnel is live!")
     print(f"Public URL: {public_url}")

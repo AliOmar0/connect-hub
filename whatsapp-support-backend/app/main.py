@@ -33,13 +33,32 @@ async def lifespan(app: FastAPI):
             existing_tunnel = next((t for t in tunnels if ":5000" in t.config['addr']), None)
             
             if not existing_tunnel:
-                # Use public port from uvicorn or default to 5000
-                public_url = ngrok.connect(5000).public_url
-                print(f"\n==============================================")
-                print(f"NGROK Tunnel is live!")
-                print(f"Public URL: {public_url}")
-                print(f"WhatsApp Webhook URL: {public_url}/webhook")
-                print(f"==============================================\n")
+                # Use ID and URL from settings if available
+                if settings.NGROK_ID and len(settings.NGROK_ID) > 20 and not settings.NGROK_ID.startswith("rd_"):
+                    ngrok.set_auth_token(settings.NGROK_ID)
+                
+                connect_kwargs = {"addr": 5000}
+                if settings.NGROK_URL:
+                    connect_kwargs["domain"] = settings.NGROK_URL
+                
+                # Only use ID as name if it's not the auth token
+                if settings.NGROK_ID and len(settings.NGROK_ID) <= 20:
+                    connect_kwargs["name"] = settings.NGROK_ID
+                else:
+                    connect_kwargs["name"] = "whatsapp-backend-tunnel"
+                
+                try:
+                    public_url = ngrok.connect(**connect_kwargs).public_url
+                    print(f"\n==============================================")
+                    print(f"NGROK Tunnel is live!")
+                    print(f"Public URL: {public_url}")
+                    print(f"WhatsApp Webhook URL: {public_url}/webhook")
+                    print(f"==============================================\n")
+                except Exception as connect_error:
+                    if "already online" in str(connect_error).lower():
+                        print(f"\n[NGROK] Tunnel is already online for domain {settings.NGROK_URL}. Skipping startup.")
+                    else:
+                        raise connect_error
             else:
                 print(f"\nNGROK Tunnel already active: {existing_tunnel.public_url}\n")
         except Exception as e:

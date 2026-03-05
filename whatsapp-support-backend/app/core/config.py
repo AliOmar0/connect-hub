@@ -1,6 +1,11 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, AliasChoices
 from typing import List, Optional
 import os
+from dotenv import load_dotenv
+
+# Load .env file explicitly
+load_dotenv()
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -31,6 +36,8 @@ class Settings(BaseSettings):
     # App
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
     USE_NGROK: bool = False
+    NGROK_ID: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_ID", "ID"))
+    NGROK_URL: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_URL", "URL"))
 
 # Initialize settings
 try:
@@ -47,5 +54,7 @@ except Exception as e:
         OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
         OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free"),
         SECURITY_WHATSAPP_PHONE_NUMBER_ID=os.getenv("SECURITY_WHATSAPP_PHONE_NUMBER_ID"),
-        SECURITY_WHATSAPP_ACCESS_TOKEN=os.getenv("SECURITY_WHATSAPP_ACCESS_TOKEN")
+        SECURITY_WHATSAPP_ACCESS_TOKEN=os.getenv("SECURITY_WHATSAPP_ACCESS_TOKEN"),
+        NGROK_ID=os.getenv("ID"),
+        NGROK_URL=os.getenv("URL")
     )
