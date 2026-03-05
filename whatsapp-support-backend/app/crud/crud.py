@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 # --- Bank Logic ---
 async def get_bank_account(phone: str):
-    response = supabase.table("bank_accounts").select("*").eq("phone", phone).execute()
+    response = supabase.table("bank_accounts").select("*").eq("phone_number", phone).execute()
     return response.data[0] if response.data else None
 # --- End Bank Logic ---
 

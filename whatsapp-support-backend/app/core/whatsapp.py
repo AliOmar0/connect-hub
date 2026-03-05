@@ -10,7 +10,7 @@ class WhatsAppClient:
         # Prefer passed values, then environment settings if they exist, otherwise None
         self.phone_number_id = phone_number_id or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
         self.access_token = access_token or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
-        self.base_url = "https://graph.facebook.com/v24.0"
+        self.base_url = "https://graph.facebook.com/v21.0"
 
     def _get_api_url(self):
         if not self.phone_number_id:

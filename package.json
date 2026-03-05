@@ -4,12 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "npx concurrently \"npm:dev:client\" \"npm:dev:server\" \"npm:dev:whatsapp\"",
-    "dev:client": "npx vite",
-    "dev:server": "nodemon server/index.js",
-    "dev:whatsapp": "cd whatsapp-support-backend && venv\\Scripts\\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
-    "build": "vite build",
-    "build:dev": "vite build --mode development",
+    "dev": "npx vite",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest",

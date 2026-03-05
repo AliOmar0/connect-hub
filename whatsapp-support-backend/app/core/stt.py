@@ -7,6 +7,11 @@ import numpy as np
 import librosa
 from typing import Optional
 
+import warnings
+# Suppress noisy Transformers generation warnings
+warnings.filterwarnings("ignore", message=".*SuppressTokensLogitsProcessor.*")
+warnings.filterwarnings("ignore", message=".*SuppressTokensAtBeginLogitsProcessor.*")
+
 logger = logging.getLogger(__name__)
 
 class STTService:
@@ -58,7 +63,7 @@ class STTService:
             
             # Run inference
             # generate_kwargs for Arabic support
-            result = self.pipe(y, generate_kwargs={"language": "arabic"})
+            result = self.pipe(y, generate_kwargs={"language": "arabic", "task": "transcribe"})
             
             return result.get("text")
         except Exception as e:
