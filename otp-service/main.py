@@ -93,6 +93,7 @@ WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WhatsAPP_BUSSINES")
 
 class OtpRequest(BaseModel):
     phone: str
+    intent: Optional[str] = "BANK_ACCOUNT"
 
 class VerifyRequest(BaseModel):
     phone: str
@@ -116,7 +117,6 @@ async def send_whatsapp_message(phone: str, text: str):
         return response.json()
 
 @app.post("/generate")
-@app.post("/webhook")
 async def generate_otp(request: OtpRequest):
     phone = request.phone
     otp = str(random.randint(1000, 9999))
@@ -136,9 +136,13 @@ async def generate_otp(request: OtpRequest):
 
     # 2. Send via WhatsApp
     try:
-        message = f"الرمز الخاص بك للتحقق من بيانات الحساب في البنك الإسلامي الفلسطيني هو: {otp}. يرجى عدم مشاركته مع أحد."
+        if request.intent == "CRITICAL_ACTION":
+            message = f"رمز التحقق الخاص بك لإتمام العملية الحساسة هو: {otp}. يرجى عدم مشاركته مع أحد لحماية حسابك."
+        else:
+            message = f"الرمز الخاص بك للتحقق من بيانات الحساب في البنك الإسلامي الفلسطيني هو: {otp}. يرجى عدم مشاركته مع أحد."
+            
         await send_whatsapp_message(phone, message)
-        logger.info(f"OTP sent to {phone} via WhatsApp")
+        logger.info(f"OTP sent to {phone} for {request.intent} via WhatsApp")
     except Exception as e:
         logger.error(f"Failed to send WhatsApp message: {e}")
         # We don't fail the whole request as the OTP is still valid in DB
