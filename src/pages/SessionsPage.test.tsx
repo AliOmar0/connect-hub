@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen } from "@/test-utils/render";
 import SessionsPage from "./SessionsPage";
 import { useAuth } from "@/hooks/useAuth";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  QueryClient,
+} from "@tanstack/react-query";
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
@@ -24,7 +26,14 @@ const createTestQueryClient = () =>
   });
 
 // Mock dependencies
-vi.mock("@/hooks/useAuth");
+vi.mock("@/hooks/useAuth", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/hooks/useAuth")>("@/hooks/useAuth");
+  return {
+    ...actual,
+    useAuth: vi.fn(),
+  };
+});
 vi.mock("@/components/layout/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
@@ -66,6 +75,7 @@ vi.mock("@/integrations/supabase/client", () => ({
 describe("SessionsPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
     (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(
       mockQueryClient,
     );
@@ -77,7 +87,8 @@ describe("SessionsPage", () => {
   });
 
   it("renders sessions page title", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -89,19 +100,14 @@ describe("SessionsPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <SessionsPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<SessionsPage />, { queryClient });
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
   });
 
   it("shows assign agent button for managers", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "manager",
       user: { id: "123" },
     });
@@ -113,19 +119,14 @@ describe("SessionsPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <SessionsPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<SessionsPage />, { queryClient });
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
   });
 
   it("displays search input", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -137,13 +138,7 @@ describe("SessionsPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <SessionsPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<SessionsPage />, { queryClient });
 
     // Search input should be present
     expect(
@@ -154,7 +149,8 @@ describe("SessionsPage", () => {
   });
 
   it("shows filter dropdowns", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -166,19 +162,14 @@ describe("SessionsPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <SessionsPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<SessionsPage />, { queryClient });
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
   });
 
   it("shows conversation placeholder when no session is selected", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -190,14 +181,8 @@ describe("SessionsPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <SessionsPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<SessionsPage />, { queryClient });
 
-    expect(screen.getByText("No conversation selected")).toBeInTheDocument();
+    expect(screen.getByText("لم يتم اختيار محادثة")).toBeInTheDocument();
   });
 });

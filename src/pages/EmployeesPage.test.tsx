@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { BrowserRouter } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen } from "@/test-utils/render";
 import EmployeesPage from "./EmployeesPage";
 import { useAuth } from "@/hooks/useAuth";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  QueryClient,
+} from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
 vi.mock("react-router-dom", async () => {
@@ -24,12 +27,24 @@ const createTestQueryClient = () =>
   });
 
 // Mock dependencies
-vi.mock("@/hooks/useAuth");
+vi.mock("@/hooks/useAuth", async () => {
+  const actual =
+    await vi.importActual<typeof import("@/hooks/useAuth")>("@/hooks/useAuth");
+  return {
+    ...actual,
+    useAuth: vi.fn(),
+  };
+});
 vi.mock("@/components/layout/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
 }));
+
+const mockQueryClient = {
+  invalidateQueries: vi.fn(),
+};
+
 vi.mock("@tanstack/react-query", async () => {
   const actual = await vi.importActual("@tanstack/react-query");
   return {
@@ -39,6 +54,7 @@ vi.mock("@tanstack/react-query", async () => {
     useQueryClient: vi.fn(() => mockQueryClient),
   };
 });
+
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: vi.fn(() => ({
@@ -55,19 +71,17 @@ vi.mock("@/integrations/supabase/client", () => ({
 }));
 
 describe("EmployeesPage", () => {
-  const mockQueryClient = {
-    invalidateQueries: vi.fn(),
-  };
-
   beforeEach(() => {
     vi.clearAllMocks();
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
     (useQueryClient as ReturnType<typeof vi.fn>).mockReturnValue(
       mockQueryClient,
     );
   });
 
   it("renders employees page title", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -94,19 +108,14 @@ describe("EmployeesPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <EmployeesPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<EmployeesPage />, { queryClient });
 
-    expect(screen.getByText("Employees")).toBeInTheDocument();
+    expect(screen.getByText("Employee Management")).toBeInTheDocument();
   });
 
   it("shows create user button for managers", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "manager",
       user: { id: "123" },
     });
@@ -123,19 +132,14 @@ describe("EmployeesPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <EmployeesPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<EmployeesPage />, { queryClient });
 
     expect(screen.getByText("Create User")).toBeInTheDocument();
   });
 
   it("shows create user button for admins", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -152,19 +156,14 @@ describe("EmployeesPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <EmployeesPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<EmployeesPage />, { queryClient });
 
     expect(screen.getByText("Create User")).toBeInTheDocument();
   });
 
   it("does not show create user button for agents", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "agent",
       user: { id: "123" },
     });
@@ -181,19 +180,14 @@ describe("EmployeesPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <EmployeesPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<EmployeesPage />, { queryClient });
 
     expect(screen.queryByText("Create User")).not.toBeInTheDocument();
   });
 
   it("displays search input", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -210,13 +204,7 @@ describe("EmployeesPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <EmployeesPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<EmployeesPage />, { queryClient });
 
     expect(
       screen.getByPlaceholderText(
@@ -226,7 +214,8 @@ describe("EmployeesPage", () => {
   });
 
   it("shows loading state", () => {
-    (useAuth as ReturnType<typeof vi.fn>).mockReturnValue({
+    const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
+    mockedUseAuth.mockReturnValue({
       userRole: "admin",
       user: { id: "123" },
     });
@@ -243,13 +232,7 @@ describe("EmployeesPage", () => {
 
     const queryClient = createTestQueryClient();
 
-    render(
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <EmployeesPage />
-        </BrowserRouter>
-      </QueryClientProvider>,
-    );
+    render(<EmployeesPage />, { queryClient });
 
     // Should show loading skeletons (check for search input which should still be visible)
     expect(

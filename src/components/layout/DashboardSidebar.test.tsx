@@ -145,7 +145,10 @@ describe("DashboardSidebar", () => {
         ? "w-64"
         : "w-[72px]";
 
-      await user.click(collapseButton);
+      // Wrap click in act
+      await act(async () => {
+        await user.click(collapseButton);
+      });
 
       // Verify sidebar state changed (width class changed)
       await waitFor(() => {

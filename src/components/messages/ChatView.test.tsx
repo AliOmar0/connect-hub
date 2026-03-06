@@ -30,9 +30,9 @@ describe("ChatView", () => {
       />,
     );
 
-    expect(screen.getByText("No conversation selected")).toBeInTheDocument();
+    expect(screen.getByText("لم يتم اختيار محادثة")).toBeInTheDocument();
     expect(
-      screen.getByText(/Choose a conversation from the list/),
+      screen.getByText(/الرجاء اختيار محادثة من القائمة الجانبية/),
     ).toBeInTheDocument();
   });
 
@@ -101,9 +101,7 @@ describe("ChatView", () => {
       />,
     );
 
-    expect(
-      screen.getByText("No messages yet. Start the conversation!"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("لا توجد رسائل بعد")).toBeInTheDocument();
   });
 
   it("renders messages list", () => {
@@ -130,7 +128,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText(/type a message/i);
+    const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "Test message" } });
 
     // Send button is icon-only, find it by the Send icon SVG
@@ -160,9 +158,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText(
-      /type a message/i,
-    ) as HTMLInputElement;
+    const input = screen.getByRole("textbox") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Test message" } });
     // Use keyPress which is what the component listens to
     fireEvent.keyPress(input, { key: "Enter", code: "Enter", charCode: 13 });
@@ -182,9 +178,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText(
-      /type a message/i,
-    ) as HTMLInputElement;
+    const input = screen.getByRole("textbox") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Test message" } });
     // Use keyPress which is what the component listens to
     fireEvent.keyPress(input, {
@@ -207,9 +201,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText(
-      /type a message/i,
-    ) as HTMLInputElement;
+    const input = screen.getByRole("textbox") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "Test message" } });
 
     // Send button is icon-only, find it by the Send icon SVG
@@ -260,7 +252,7 @@ describe("ChatView", () => {
       />,
     );
 
-    const input = screen.getByPlaceholderText(/type a message/i);
+    const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "   " } });
 
     // Send button is icon-only, find it by the Send icon SVG
