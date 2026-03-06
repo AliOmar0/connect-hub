@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List, Any
 from uuid import UUID
+import httpx
 
 from app.api.v1.deps import get_session
 from app.crud import crud
@@ -134,17 +135,39 @@ async def send_message(
     client = WhatsAppClient(phone_number_id=phone_id, access_token=token)
     
     try:
-        await client.send_text_message(to_phone=phone, text=body.text)
+        if body.media_url:
+            # Handle media sending
+            if body.media_type and body.media_type.startswith("audio"):
+                # 1. Download from our storage
+                async with httpx.AsyncClient() as http_client:
+                    resp = await http_client.get(body.media_url)
+                    resp.raise_for_status()
+                    media_bytes = resp.content
+                
+                # 2. Upload to Meta
+                media_id = await client.upload_media(media_bytes, "voice.ogg", "audio/ogg")
+                if not media_id:
+                    raise HTTPException(status_code=500, detail="Failed to upload audio to WhatsApp")
+                
+                # 3. Send as audio
+                await client.send_audio_message(to_phone=phone, media_id=media_id)
+            else:
+                # For now, default to text if media type not supported for manual send
+                await client.send_text_message(to_phone=phone, text=body.text or "[Media]")
+        else:
+            await client.send_text_message(to_phone=phone, text=body.text)
     except Exception as e:
         logger.error(f"Manual send error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to send WhatsApp message")
+        raise HTTPException(status_code=500, detail=f"Failed to send WhatsApp message: {str(e)}")
         
     # Save Outbound Message
     msg = await crud.create_message(
         db, 
         session_id=session.id, 
-        content=body.text, 
-        direction=MessageDirection.outbound
+        content=body.text or "[Media]", 
+        direction=MessageDirection.outbound,
+        media_url=body.media_url,
+        media_type=body.media_type
     )
     
     return {"status": "sent", "message_id": str(msg.id)}

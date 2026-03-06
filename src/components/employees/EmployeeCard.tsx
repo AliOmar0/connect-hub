@@ -59,7 +59,8 @@ export default function EmployeeCard({
   const performancePercent = (employee.performance_score || 0) * 100;
 
   return (
-    <Card className="group hover:shadow-lg hover:shadow-primary/5 transition-all duration-300 border-border/50">
+    <Card className="group hover:shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:-translate-y-1 transition-all duration-500 border-border/40 bg-card/60 backdrop-blur-sm overflow-hidden">
+      <div className="absolute top-0 left-0 w-1 h-full bg-primary/0 group-hover:bg-primary/40 transition-all duration-500" />
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -174,16 +175,23 @@ export default function EmployeeCard({
 
         {/* Performance Score */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <p className="text-xs text-muted-foreground">Performance</p>
-            <div className="flex items-center gap-1">
-              <Star className="h-3 w-3 text-accent fill-accent" />
-              <span className="text-xs font-medium">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-[10px] uppercase tracking-widest text-muted-foreground font-bold">
+              Overall Performance
+            </p>
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-primary/5 border border-primary/10">
+              <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />
+              <span className="text-xs font-bold text-primary">
                 {performancePercent.toFixed(0)}%
               </span>
             </div>
           </div>
-          <Progress value={performancePercent} className="h-1.5" />
+          <div className="relative h-2 w-full bg-muted rounded-full overflow-hidden">
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-primary to-primary/60 transition-all duration-1000 ease-out rounded-full"
+              style={{ width: `${performancePercent}%` }}
+            />
+          </div>
         </div>
 
         {/* Status Badge */}

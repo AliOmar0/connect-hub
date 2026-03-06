@@ -5,6 +5,7 @@ import TwilioDemo from "@/pages/TwilioDemo";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelType, Profile, SessionMainType } from "@/types/database";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tables } from "@/integrations/supabase/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -214,6 +215,7 @@ export default function SettingsPage() {
         last_name: profile.last_name,
         email: profile.email,
         phone: profile.phone,
+        department: profile.department,
       })
       .eq("user_id", user.id);
 
@@ -221,6 +223,43 @@ export default function SettingsPage() {
       toast.error(error.message);
     } else {
       toast.success("Profile updated successfully");
+    }
+  };
+
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) return;
+
+    setAvatarUploading(true);
+    const fileExt = file.name.split(".").pop();
+    const filePath = `${user.id}/${Math.random()}.${fileExt}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(filePath, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const {
+        data: { publicUrl },
+      } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({ avatar_url: publicUrl })
+        .eq("user_id", user.id);
+
+      if (updateError) throw updateError;
+
+      setProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : null));
+      toast.success("Profile photo updated");
+    } catch (error) {
+      const err = error as Error;
+      toast.error(err.message || "Failed to update avatar");
+    } finally {
+      setAvatarUploading(false);
     }
   };
 
@@ -693,20 +732,75 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle>Profile Settings</CardTitle>
                 <CardDescription>
-                  Update your personal information and preferences.
+                  Update your personal information and profile picture.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-8">
                 {profileLoading ? (
-                  <div className="text-center py-8">Loading...</div>
+                  <div className="text-center py-12 flex flex-col items-center gap-4">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground font-medium">
+                      Loading profile data...
+                    </p>
+                  </div>
                 ) : profile ? (
                   <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="first-name">
-                          <User className="h-4 w-4 inline mr-2" />
-                          First Name
+                    <div className="flex flex-col items-center sm:flex-row gap-6 p-6 rounded-2xl bg-primary/5 border border-primary/10">
+                      <div className="relative group">
+                        <div className="w-24 h-24 rounded-full bg-gradient-navy-gold p-1 shadow-lg relative">
+                          <div className="w-full h-full rounded-full bg-card flex items-center justify-center overflow-hidden">
+                            <Avatar className="h-full w-full">
+                              <AvatarImage
+                                src={
+                                  profile.avatar_url ||
+                                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.email}`
+                                }
+                              />
+                              <AvatarFallback className="text-xl font-bold bg-primary/10 text-primary">
+                                {profile.first_name?.[0]}
+                              </AvatarFallback>
+                            </Avatar>
+                          </div>
+                          {avatarUploading && (
+                            <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center">
+                              <Loader2 className="h-6 w-6 animate-spin text-white" />
+                            </div>
+                          )}
+                        </div>
+                        <Label
+                          htmlFor="settings-avatar-upload"
+                          className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full shadow-md border-2 border-background bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-colors cursor-pointer opacity-100"
+                        >
+                          <Edit2 className="h-3 w-3" />
                         </Label>
+                        <input
+                          id="settings-avatar-upload"
+                          type="file"
+                          accept="image/*"
+                          onChange={handleAvatarUpload}
+                          disabled={avatarUploading}
+                          className="hidden"
+                        />
+                      </div>
+                      <div className="space-y-1 text-center sm:text-left">
+                        <h3 className="text-xl font-bold text-primary">
+                          {profile.first_name} {profile.last_name}
+                        </h3>
+                        <p className="text-sm text-muted-foreground">
+                          {profile.email}
+                        </p>
+                        <Badge
+                          variant="outline"
+                          className="mt-2 bg-background/50 uppercase tracking-tighter"
+                        >
+                          {userRole}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="first-name">First Name</Label>
                         <Input
                           id="first-name"
                           value={profile.first_name || ""}
@@ -717,6 +811,7 @@ export default function SettingsPage() {
                                 : null,
                             )
                           }
+                          className="h-11 border-border/60 focus-visible:ring-primary/20"
                         />
                       </div>
                       <div className="space-y-2">
@@ -731,63 +826,66 @@ export default function SettingsPage() {
                                 : null,
                             )
                           }
+                          className="h-11 border-border/60 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="email">Email Address</Label>
+                        <Input
+                          id="email"
+                          type="email"
+                          value={profile.email || ""}
+                          onChange={(e) =>
+                            setProfile((prev) =>
+                              prev ? { ...prev, email: e.target.value } : null,
+                            )
+                          }
+                          className="h-11 border-border/60 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="phone">Phone Number</Label>
+                        <Input
+                          id="phone"
+                          type="tel"
+                          value={profile.phone || ""}
+                          onChange={(e) =>
+                            setProfile((prev) =>
+                              prev ? { ...prev, phone: e.target.value } : null,
+                            )
+                          }
+                          className="h-11 border-border/60 focus-visible:ring-primary/20"
+                        />
+                      </div>
+                      <div className="space-y-2 md:col-span-2">
+                        <Label htmlFor="department">Department</Label>
+                        <Input
+                          id="department"
+                          value={profile.department || ""}
+                          onChange={(e) =>
+                            setProfile((prev) =>
+                              prev
+                                ? { ...prev, department: e.target.value }
+                                : null,
+                            )
+                          }
+                          className="h-11 border-border/60 focus-visible:ring-primary/20"
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="email">
-                        <Mail className="h-4 w-4 inline mr-2" />
-                        Email
-                      </Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={profile.email || ""}
-                        onChange={(e) =>
-                          setProfile((prev) =>
-                            prev ? { ...prev, email: e.target.value } : null,
-                          )
-                        }
-                      />
+                    <div className="pt-4 flex justify-end">
+                      <Button
+                        onClick={handleSaveProfile}
+                        className="px-8 h-12 text-md font-bold shadow-lg shadow-primary/20"
+                      >
+                        <Save className="h-5 w-5 mr-3" />
+                        Save Changes
+                      </Button>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">
-                        <Phone className="h-4 w-4 inline mr-2" />
-                        Phone
-                      </Label>
-                      <Input
-                        id="phone"
-                        type="tel"
-                        value={profile.phone || ""}
-                        onChange={(e) =>
-                          setProfile((prev) =>
-                            prev ? { ...prev, phone: e.target.value } : null,
-                          )
-                        }
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="department">Department</Label>
-                      <Input
-                        id="department"
-                        value={profile.department || ""}
-                        onChange={(e) =>
-                          setProfile((prev) =>
-                            prev
-                              ? { ...prev, department: e.target.value }
-                              : null,
-                          )
-                        }
-                      />
-                    </div>
-                    <Button onClick={handleSaveProfile}>
-                      <Save className="h-4 w-4 mr-2" />
-                      Save Profile
-                    </Button>
                   </>
                 ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    Profile not found
+                  <div className="text-center py-12 text-muted-foreground font-medium">
+                    Profile settings not found.
                   </div>
                 )}
               </CardContent>

@@ -85,7 +85,7 @@ export default function SessionsTable({
 }: SessionsTableProps) {
   if (loading) {
     return (
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
+      <div className="w-full">
         <Table>
           <TableHeader>
             <TableRow>
@@ -118,7 +118,7 @@ export default function SessionsTable({
   }
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden">
+    <div className="w-full">
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30">

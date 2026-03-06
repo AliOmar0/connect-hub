@@ -23,6 +23,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import pibLogo from "@/assets/pib-logo.png";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface NavItemProps {
   to: string;
@@ -288,9 +289,15 @@ export default function DashboardSidebar() {
       >
         {!collapsed ? (
           <div className="flex items-center gap-3 p-2 rounded-lg bg-sidebar-accent/50">
-            <div className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm">
-              {getUserInitials()}
-            </div>
+            <Avatar className="h-9 w-9 border border-sidebar-border shadow-sm">
+              <AvatarImage
+                src={profile?.avatar_url || ""}
+                alt={getUserName()}
+              />
+              <AvatarFallback className="bg-gradient-navy-gold text-white font-semibold text-xs">
+                {getUserInitials()}
+              </AvatarFallback>
+            </Avatar>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-sidebar-foreground truncate">
                 {getUserName()}
@@ -313,11 +320,19 @@ export default function DashboardSidebar() {
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                className="w-9 h-9 rounded-full bg-gradient-navy-gold flex items-center justify-center text-primary-foreground font-semibold text-sm"
+                className="flex items-center justify-center"
                 onClick={handleSignOut}
                 aria-label="Sign Out"
               >
-                {getUserInitials()}
+                <Avatar className="h-9 w-9 border border-sidebar-border shadow-sm hover:ring-2 hover:ring-sidebar-primary transition-all">
+                  <AvatarImage
+                    src={profile?.avatar_url || ""}
+                    alt={getUserName()}
+                  />
+                  <AvatarFallback className="bg-gradient-navy-gold text-white font-semibold text-xs">
+                    {getUserInitials()}
+                  </AvatarFallback>
+                </Avatar>
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">

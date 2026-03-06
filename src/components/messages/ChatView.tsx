@@ -42,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import { format, intervalToDuration, formatDuration } from "date-fns";
 import ChatShortcuts from "./ChatShortcuts";
+import { ChatVoicePlayer } from "./ChatVoicePlayer";
 
 function formatSessionDuration(seconds: number | null): string {
   if (!seconds) return "-";
@@ -223,11 +224,16 @@ export default function ChatView({
 
   if (!session) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 text-muted-foreground">
-        <MessageSquare className="h-16 w-16 mb-4 opacity-30" />
-        <h3 className="text-lg font-medium mb-1">No conversation selected</h3>
-        <p className="text-sm">
-          Choose a conversation from the list to start messaging
+      <div className="flex-1 flex flex-col items-center justify-center bg-muted/10 text-muted-foreground p-8 text-center">
+        <div className="w-20 h-20 rounded-full bg-primary/5 flex items-center justify-center mb-6">
+          <MessageCircle className="h-10 w-10 text-primary/40" />
+        </div>
+        <h3 className="text-xl font-semibold mb-2 text-foreground">
+          لم يتم اختيار محادثة
+        </h3>
+        <p className="text-sm max-w-[280px] leading-relaxed">
+          الرجاء اختيار محادثة من القائمة الجانبية للبدء في متابعة مراسلات
+          العملاء
         </p>
       </div>
     );
@@ -242,10 +248,10 @@ export default function ChatView({
   }
 
   return (
-    <div className="flex-1 flex flex-col bg-background">
+    <div className="flex-1 flex flex-col bg-background relative h-full">
       {/* Chat Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-20 shadow-sm shrink-0">
+        <div className="flex items-center gap-4">
           <Avatar className="h-10 w-10">
             <AvatarFallback className="bg-primary/10 text-primary">
               {session.customer?.name?.charAt(0) || "?"}
@@ -267,7 +273,7 @@ export default function ChatView({
         </div>
 
         {/* Actionable Metrics */}
-        <div className="hidden lg:flex items-center gap-6 border-x border-border px-6 mx-6 h-10">
+        {/* <div className="hidden lg:flex items-center gap-6 border-x border-border px-6 mx-6 h-10">
           <div className="flex flex-col">
             <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
               Wait Time
@@ -309,7 +315,7 @@ export default function ChatView({
               )}
             </div>
           </div>
-        </div>
+        </div> */}
 
         <div className="flex items-center gap-2">
           {sessionTypes && onUpdateType && (
@@ -372,7 +378,10 @@ export default function ChatView({
       </div>
 
       {/* Messages Area */}
-      <ScrollArea className="flex-1 p-6" ref={scrollRef}>
+      <ScrollArea
+        className="flex-1 p-6 min-h-0 custom-scrollbar"
+        ref={scrollRef}
+      >
         {loading ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
@@ -393,9 +402,12 @@ export default function ChatView({
             ))}
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <MessageSquare className="h-12 w-12 mb-3 opacity-30" />
-            <p className="text-sm">No messages yet. Start the conversation!</p>
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-center">
+            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
+              <MessageSquare className="h-8 w-8 opacity-20" />
+            </div>
+            <p className="text-sm font-medium">لا توجد رسائل بعد</p>
+            <p className="text-xs mt-1">ابدأ المحادثة الآن مع العميل</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -418,9 +430,33 @@ export default function ChatView({
                         : "bg-muted rounded-bl-md",
                     )}
                   >
-                    <p className="text-sm whitespace-pre-wrap">
-                      {message.content}
-                    </p>
+                    {message.media_url &&
+                      message.media_type?.startsWith("audio") && (
+                        <div className="mb-2 mt-1">
+                          <ChatVoicePlayer
+                            url={message.media_url}
+                            isOutbound={isOutbound}
+                          />
+                        </div>
+                      )}
+                    {message.media_url &&
+                      message.media_type?.startsWith("image") && (
+                        <div className="mb-2 mt-1">
+                          <img
+                            src={message.media_url}
+                            alt="Sticker"
+                            className="max-w-[120px] h-auto rounded-lg shadow-sm"
+                          />
+                        </div>
+                      )}
+                    {!(
+                      message.media_url &&
+                      message.media_type?.startsWith("audio")
+                    ) && (
+                      <p className="text-sm whitespace-pre-wrap">
+                        {message.content}
+                      </p>
+                    )}
                     <div
                       className={cn(
                         "flex items-center justify-end gap-1 mt-1",
@@ -451,33 +487,33 @@ export default function ChatView({
 
       {/* Customer Typing Indicator */}
       {customerTyping && (
-        <div className="px-6 py-2 border-t border-border/50 bg-muted/30">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <div className="flex gap-0.5">
+        <div className="px-6 py-2.5 bg-background/95 backdrop-blur-sm flex items-center gap-3 border-t border-border/40 absolute bottom-[72px] left-0 right-0 z-10 fade-in">
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-primary/5 rounded-full border border-primary/10">
+            <div className="flex gap-1">
               <span
-                className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
+                className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"
                 style={{ animationDelay: "0ms" }}
               />
               <span
-                className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
+                className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"
                 style={{ animationDelay: "150ms" }}
               />
               <span
-                className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"
+                className="w-1.5 h-1.5 bg-primary/60 rounded-full animate-bounce"
                 style={{ animationDelay: "300ms" }}
               />
             </div>
-            <span className="text-xs font-medium">
-              Customer is typing
-              {bufferedCount > 1 ? ` (${bufferedCount} messages buffered)` : ""}
-              ...
+            <span className="text-[11px] font-semibold text-primary/80 uppercase tracking-tighter">
+              {bufferedCount > 1
+                ? `العميل يكتب (${bufferedCount} رسائل)...`
+                : "العميل يكتب الآن..."}
             </span>
           </div>
         </div>
       )}
 
       {/* Message Input */}
-      <div className="p-4 border-t border-border bg-card relative">
+      <div className="p-4 bg-card border-t border-border shadow-[0_-4px_12px_rgba(0,0,0,0.03)] z-20 shrink-0">
         {showShortcutMenu &&
           filteredShortcuts &&
           filteredShortcuts.length > 0 && (
@@ -513,11 +549,11 @@ export default function ChatView({
             <Paperclip className="h-5 w-5" />
           </Button>
           <Input
-            placeholder="Type a message... (use \ for shortcuts)"
+            placeholder="اكتب رسالة هنا... (استخدم \ للاختصارات)"
             value={newMessage}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}
-            className="flex-1"
+            className="flex-1 bg-muted/30 border-muted-foreground/10 focus-visible:ring-primary/20 h-11"
           />
           <Button
             onClick={handleSend}

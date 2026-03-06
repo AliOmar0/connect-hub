@@ -5,12 +5,16 @@ from uuid import UUID
 from app.models.enums import SessionStatus, MessageDirection
 
 class SendMessageRequest(BaseModel):
-    text: str
+    text: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
 
 class MessageResponse(BaseModel):
     id: UUID
     direction: MessageDirection
     content: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
     sent_at: datetime
     
     class Config:

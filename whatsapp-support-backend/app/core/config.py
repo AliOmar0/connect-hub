@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     USE_NGROK: bool = False
     NGROK_ID: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_ID", "ID"))
     NGROK_URL: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_URL", "URL"))
+    OTP_SERVICE_URL: str = "https://cupulate-azaria-tented.ngrok-free.dev/generate"
 
 # Initialize settings
 try:

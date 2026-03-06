@@ -122,7 +122,9 @@ async def create_message(
     session_id: UUID, 
     content: str, 
     direction: MessageDirection, 
-    external_id: Optional[str] = None
+    external_id: Optional[str] = None,
+    media_url: Optional[str] = None,
+    media_type: Optional[str] = None
 ) -> Message:
     now = datetime.utcnow()
     
@@ -161,7 +163,9 @@ async def create_message(
         "content": content,
         "direction": direction.value,
         "channel": ChannelType.whatsapp.value,
-        "external_message_id": external_id
+        "external_message_id": external_id,
+        "media_url": media_url,
+        "media_type": media_type
     }
     response = supabase.table("messages").insert(data).execute()
     if response.data:

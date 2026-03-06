@@ -30,7 +30,7 @@ async def send_whatsapp_otp(phone: str, intent: str = "BANK_ACCOUNT"):
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                "http://localhost:5001/generate",
+                settings.OTP_SERVICE_URL,
                 json={"phone": phone, "intent": intent},
                 timeout=10.0
             )
@@ -41,6 +41,8 @@ async def send_whatsapp_otp(phone: str, intent: str = "BANK_ACCOUNT"):
         logger.error(f"[OTP Error] Failed to call OTP service: {e}")
         return None
 
+
+from app.core.storage import storage_service
 
 async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
     """
@@ -69,6 +71,11 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
             logger.error("Failed to download audio")
             return
 
+        # 3.5 Upload to Storage for website playback
+        stored_url = await storage_service.upload_audio(audio_bytes)
+        if not stored_url:
+            logger.warning("Failed to upload audio to storage - but will still transcribe")
+
         # 4. Transcribe Audio
         transcription = await stt_service.transcribe_audio(audio_bytes)
         if not transcription:
@@ -79,15 +86,15 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
 
         logger.info(f"Transcription: {transcription}")
 
-        # 5. Save Inbound Message (Transcribed)
-        # In background tasks, we don't need to worry about the session dependency
-        # since our CRUD uses the global supabase client.
+        # 5. Save Inbound Message (Transcribed + Media URL)
         await crud.create_message(
             None,
             session_id=db_session_id,
             content=f"[رسالة صوتية]: {transcription}",
             direction=MessageDirection.inbound,
-            external_id=message_id
+            external_id=message_id,
+            media_url=stored_url,
+            media_type="audio/ogg"
         )
         
         # 6. Check if AI should respond
@@ -100,6 +107,39 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
 
     except Exception as e:
         logger.error(f"Error in background voice processing: {e}")
+
+async def process_sticker_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
+    """
+    Background task to download sticker, upload to storage, and save message
+    """
+    try:
+        client = WhatsAppClient(
+            phone_number_id=config.get("phone_number_id"),
+            access_token=config.get("access_token")
+        )
+        await client.mark_message_as_read(message_id)
+
+        media_url = await client.get_media_url(media_id)
+        if not media_url:
+            return
+
+        sticker_bytes = await client.download_media(media_url)
+        if not sticker_bytes:
+            return
+
+        stored_url = await storage_service.upload_sticker(sticker_bytes)
+        
+        await crud.create_message(
+            None,
+            session_id=db_session_id,
+            content="[Sticker]",
+            direction=MessageDirection.inbound,
+            external_id=message_id,
+            media_url=stored_url,
+            media_type="image/webp"
+        )
+    except Exception as e:
+        logger.error(f"Error in background sticker processing: {e}")
 
 async def auto_classify_session(db_session_id: UUID, user_message: Optional[str] = None):
     """
@@ -320,7 +360,6 @@ async def process_ai_response(
 # Register the AI callback with the message buffer
 message_buffer.set_ai_callback(process_ai_response)
 
-
 @router.get("/webhook")
 async def verify_webhook(request: Request, db: Any = Depends(get_session)):
     """
@@ -377,167 +416,184 @@ async def extract_webhook(
         logger.error(f"Failed to parse JSON payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # Basic validation of structure
-    entry = payload.get("entry", [])
-    if not entry:
-        return {"status": "ignored", "reason": "no entry"}
+    try:
+        # Basic validation of structure
+        entry = payload.get("entry", [])
+        if not entry:
+            return {"status": "ignored", "reason": "no entry"}
+            
+        changes = entry[0].get("changes", [])
+        if not changes:
+            return {"status": "ignored", "reason": "no changes"}
+            
+        value = changes[0].get("value", {})
         
-    changes = entry[0].get("changes", [])
-    if not changes:
-        return {"status": "ignored", "reason": "no changes"}
+        # Check for messages
+        messages = value.get("messages", [])
+        contacts = value.get("contacts", [])
         
-    value = changes[0].get("value", {})
-    
-    # Check for messages
-    messages = value.get("messages", [])
-    contacts = value.get("contacts", [])
-    
-    if messages:
-        msg_data = messages[0]
-        contact_data = contacts[0] if contacts else {}
-        
-        sender_phone = msg_data.get("from")
-        name = contact_data.get("profile", {}).get("name", "Unknown")
-        
-        message_id = msg_data.get("id")
-        text_body = msg_data.get("text", {}).get("body")
-        msg_type = msg_data.get("type")
+        if messages:
+            msg_data = messages[0]
+            contact_data = contacts[0] if contacts else {}
+            
+            sender_phone = msg_data.get("from")
+            name = contact_data.get("profile", {}).get("name", "Unknown")
+            
+            message_id = msg_data.get("id")
+            text_body = msg_data.get("text", {}).get("body")
+            msg_type = msg_data.get("type")
 
-        # ============================================================
-        # DEDUP CHECK: Prevent processing the same WhatsApp message twice
-        # (WhatsApp sometimes sends duplicate webhook deliveries)
-        # ============================================================
-        if message_id:
-            if message_id in _processed_message_ids:
-                logger.warning(f"[DEDUP] Duplicate webhook for message {message_id}. Ignoring.")
-                return {"status": "ignored", "reason": "duplicate message_id"}
-            
-            # Add to processed set
-            _processed_message_ids.add(message_id)
-            
-            # Prevent unbounded memory growth
-            if len(_processed_message_ids) > _MAX_PROCESSED_IDS:
-                # Remove oldest entries (set doesn't maintain order, but this is good enough)
-                excess = len(_processed_message_ids) - _MAX_PROCESSED_IDS
-                for _ in range(excess):
-                    _processed_message_ids.pop()
-        
-        # Audio handling
-        media_id = None
-        if msg_type == "audio":
-            media_id = msg_data.get("audio", {}).get("id")
-            if not media_id:
-                return {"status": "ignored", "reason": "audio message without media id"}
-        elif msg_type != "text":
-            return {"status": "ignored", "reason": f"unsupported message type: {msg_type}"}
-            
-        if not sender_phone or (msg_type == "text" and not text_body):
-             return {"status": "ignored", "reason": "incomplete data"}
-             
-        # 1. Find Customer
-        customer = await crud.get_customer_by_phone(db, sender_phone)
-        if not customer:
-            customer = await crud.create_customer(db, sender_phone, name)
-            
-        # 2. Find/Create Session
-        session = await crud.get_active_session_by_customer(db, customer.id)
-        
-        if not session:
-            # Create a fresh session every time if no active/waiting/escalated session exists
-            logger.info(f"No active session found. Creating fresh session for customer {customer.id}")
-            session = await crud.create_session(db, customer.id)
-            
-            # Notify agents of new session
-            await crud.create_notification(
-                db,
-                user_id=None,  # Broadcast
-                title="New Session Started",
-                message=f"Customer {sender_phone} started a new conversation.",
-                type="info",
-                action_url=f"/sessions/{session.id}"
-            )
-        
-        # If session was Escalated, do NOT change to Active automatically. Just notify.
-        if session.status == SessionStatus.escalated:
-            logger.info(f"Session {session.id} is Escalated. Customer replied. Notifying agents.")
-            
-            # Notify agents
-            await crud.create_notification(
-                db,
-                user_id=None, # Broadcast
-                title="New Reply in Escalated Session",
-                message=f"Customer {sender_phone} sent a new message.",
-                type="info", 
-                action_url=f"/sessions/{session.id}"
-            )
-            # We do NOT change status to Active here.
-            # We do NOT let it fall through to AI (because AI checks status).
-
-            
-        # 3. Save Inbound Message IMMEDIATELY (for real-time dashboard display)
-        db_message = None
-        if msg_type == "text":
-            db_message = await crud.create_message(
-                db, 
-                session_id=session.id, 
-                content=text_body, 
-                direction=MessageDirection.inbound, 
-                external_id=message_id
-            )
-        
-        # 4. Fetch dynamic configuration
-        api_config = await crud.get_api_config(db, ChannelType.whatsapp)
-        config_data = {}
-        if api_config and api_config.is_active:
-            config_data = {
-                "phone_number_id": api_config.phone_number_id,
-                "access_token": api_config.access_token_encrypted
-            }
-        
-        # 5. Trigger AI process or Voice Transcription
-        if msg_type == "text":
-            # ALWAYS try to classify if not yet classified, regardless of AI status
-            if session.main_type_id is None:
-                background_tasks.add_task(auto_classify_session, session.id, text_body)
-
-            if session.status != SessionStatus.escalated and session.employee_id is None:
-                # ============================================================
-                # MESSAGE BUFFER: Instead of calling AI immediately, buffer the
-                # message. The buffer collects messages for 30 seconds, then
-                # combines them into a single AI request.
-                # This prevents duplicate AI submissions when customers send
-                # multiple rapid messages.
-                # ============================================================
-                buffer_status = message_buffer.get_buffer_status(session.id)
-                logger.info(
-                    f"[Buffer] Session {session.id}: Adding to buffer. "
-                    f"Current status: {buffer_status}"
-                )
+            # ============================================================
+            # DEDUP CHECK: Prevent processing the same WhatsApp message twice
+            # (WhatsApp sometimes sends duplicate webhook deliveries)
+            # ============================================================
+            if message_id:
+                if message_id in _processed_message_ids:
+                    logger.warning(f"[DEDUP] Duplicate webhook for message {message_id}. Ignoring.")
+                    return {"status": "ignored", "reason": "duplicate message_id"}
                 
-                # Add message to buffer (non-blocking, uses asyncio tasks internally)
-                await message_buffer.add_message(
-                    session_id=session.id,
-                    content=text_body,
-                    customer_phone=sender_phone,
-                    config=config_data,
-                    message_id=message_id,     # WhatsApp ID
-                    db_message_id=db_message.id if db_message else None,   # Database ID
+                # Add to processed set
+                _processed_message_ids.add(message_id)
+                
+                # Prevent unbounded memory growth
+                if len(_processed_message_ids) > _MAX_PROCESSED_IDS:
+                    # Remove oldest entries (set doesn't maintain order, but this is good enough)
+                    excess = len(_processed_message_ids) - _MAX_PROCESSED_IDS
+                    for _ in range(excess):
+                        _processed_message_ids.pop()
+            
+            # Media handling
+            media_id = None
+            if msg_type == "audio":
+                media_id = msg_data.get("audio", {}).get("id")
+                if not media_id:
+                    return {"status": "ignored", "reason": "audio message without media id"}
+            elif msg_type == "sticker":
+                media_id = msg_data.get("sticker", {}).get("id")
+                if not media_id:
+                    return {"status": "ignored", "reason": "sticker message without media id"}
+            elif msg_type != "text":
+                return {"status": "ignored", "reason": f"unsupported message type: {msg_type}"}
+                
+            if not sender_phone or (msg_type == "text" and not text_body):
+                 return {"status": "ignored", "reason": "incomplete data"}
+                 
+            # 1. Find Customer
+            customer = await crud.get_customer_by_phone(db, sender_phone)
+            if not customer:
+                customer = await crud.create_customer(db, sender_phone, name)
+                
+            # 2. Find/Create Session
+            session = await crud.get_active_session_by_customer(db, customer.id)
+            
+            if not session:
+                # Create a fresh session every time if no active/waiting/escalated session exists
+                logger.info(f"No active session found. Creating fresh session for customer {customer.id}")
+                session = await crud.create_session(db, customer.id)
+                
+                # Notify agents of new session
+                await crud.create_notification(
+                    db,
+                    user_id=None,  # Broadcast
+                    title="New Session Started",
+                    message=f"Customer {sender_phone} started a new conversation.",
+                    type="info",
+                    action_url=f"/sessions/{session.id}"
                 )
-            else:
-                 # If Escalated, rely on the notification we sent (or will send)
-                 reason = "Escalated" if session.status == SessionStatus.escalated else "Agent Assigned"
-                 logger.info(f"Skipping AI response for text message in session {session.id}. Reason: {reason}")
+            
+            # If session was Escalated, do NOT change to Active automatically. Just notify.
+            if session.status == SessionStatus.escalated:
+                logger.info(f"Session {session.id} is Escalated. Customer replied. Notifying agents.")
+                
+                # Notify agents
+                await crud.create_notification(
+                    db,
+                    user_id=None, # Broadcast
+                    title="New Reply in Escalated Session",
+                    message=f"Customer {sender_phone} sent a new message.",
+                    type="info", 
+                    action_url=f"/sessions/{session.id}"
+                )
+                # We do NOT change status to Active here.
+                # We do NOT let it fall through to AI (because AI checks status).
 
-        
-        elif msg_type == "audio":
-            # Always process voice message to ensure transcription is available for agents
-            background_tasks.add_task(
-                process_voice_message,
-                session.id,
-                media_id,
-                sender_phone,
-                message_id,
-                config_data
-            )
-        
+                
+            # 3. Save Inbound Message IMMEDIATELY (for real-time dashboard display)
+            db_message = None
+            if msg_type == "text":
+                db_message = await crud.create_message(
+                    db, 
+                    session_id=session.id, 
+                    content=text_body, 
+                    direction=MessageDirection.inbound, 
+                    external_id=message_id
+                )
+            
+            # 4. Fetch dynamic configuration
+            api_config = await crud.get_api_config(db, ChannelType.whatsapp)
+            config_data = {}
+            if api_config and api_config.is_active:
+                config_data = {
+                    "phone_number_id": api_config.phone_number_id,
+                    "access_token": api_config.access_token_encrypted
+                }
+            
+            # 5. Trigger AI process or Voice Transcription
+            if msg_type == "text":
+                # ALWAYS try to classify if not yet classified, regardless of AI status
+                if session.main_type_id is None:
+                    background_tasks.add_task(auto_classify_session, session.id, text_body)
+
+                if session.status != SessionStatus.escalated and session.employee_id is None:
+                    # ============================================================
+                    # MESSAGE BUFFER: Instead of calling AI immediately, buffer the
+                    # message. The buffer collects messages for 30 seconds, then
+                    # combines them into a single AI request.
+                    # This prevents duplicate AI submissions when customers send
+                    # multiple rapid messages.
+                    # ============================================================
+                    buffer_status = message_buffer.get_buffer_status(session.id)
+                    logger.info(
+                        f"[Buffer] Session {session.id}: Adding to buffer. "
+                        f"Current status: {buffer_status}"
+                    )
+                    
+                    # Add message to buffer (non-blocking, uses asyncio tasks internally)
+                    await message_buffer.add_message(
+                        session_id=session.id,
+                        content=text_body,
+                        customer_phone=sender_phone,
+                        config=config_data,
+                        message_id=message_id,     # WhatsApp ID
+                        db_message_id=db_message.id if db_message else None,   # Database ID
+                    )
+                else:
+                     # If Escalated, rely on the notification we sent (or will send)
+                     reason = "Escalated" if session.status == SessionStatus.escalated else "Agent Assigned"
+                     logger.info(f"Skipping AI response for text message in session {session.id}. Reason: {reason}")
+
+            
+            elif msg_type == "audio":
+                # Always process voice message to ensure transcription is available for agents
+                background_tasks.add_task(
+                    process_voice_message,
+                    session.id,
+                    media_id,
+                    sender_phone,
+                    message_id,
+                    config_data
+                )
+            elif msg_type == "sticker":
+                 background_tasks.add_task(
+                    process_sticker_message,
+                    session.id,
+                    media_id,
+                    sender_phone,
+                    message_id,
+                    config_data
+                )
+    except Exception as e:
+        logger.error(f"Error in extract_webhook: {e}")
+        return {"status": "error", "message": str(e)}
+
     return {"status": "received"}

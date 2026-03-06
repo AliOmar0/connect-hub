@@ -114,5 +114,57 @@ class WhatsAppClient:
                 logger.warning(f"WhatsApp Mark as Read Error: {e}")
                 return None
 
+    async def upload_media(self, media_bytes: bytes, filename: str, content_type: str) -> Optional[str]:
+        """
+        Upload media to Meta (required before sending).
+        Returns the media_id.
+        """
+        form = {
+            "file": (filename, media_bytes, content_type),
+            "messaging_product": (None, "whatsapp"),
+            "type": (None, content_type.split('/')[0])
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                # Use multipart/form-data for media upload
+                # Note: Meta requires 'messaging_product=whatsapp'
+                response = await client.post(
+                    f"{self.base_url}/{self.phone_number_id}/media",
+                    headers={"Authorization": f"Bearer {self.access_token}"},
+                    files={"file": (filename, media_bytes, content_type)},
+                    data={"messaging_product": "whatsapp", "type": content_type}
+                )
+                response.raise_for_status()
+                return response.json().get("id")
+            except httpx.HTTPError as e:
+                logger.error(f"WhatsApp Media Upload Error: {e}")
+                logger.error(f"Response: {e.response.text if e.response else 'No response'}")
+                return None
+
+    async def send_audio_message(self, to_phone: str, media_id: str):
+        """
+        Send an audio message (voice note style) using a media_id.
+        """
+        payload = {
+            "messaging_product": "whatsapp",
+            "to": to_phone,
+            "type": "audio",
+            "audio": {"id": media_id}
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self._get_api_url(), 
+                    json=payload, 
+                    headers=self._get_headers()
+                )
+                response.raise_for_status()
+                return response.json()
+            except httpx.HTTPError as e:
+                logger.error(f"WhatsApp Send Audio Error: {e}")
+                raise e
+
 # Default client
 whatsapp_client = WhatsAppClient()

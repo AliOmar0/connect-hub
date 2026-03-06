@@ -9,14 +9,19 @@ from typing import Optional
 
 import warnings
 # Suppress noisy Transformers generation warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="transformers.generation.utils")
 warnings.filterwarnings("ignore", message=".*SuppressTokensLogitsProcessor.*")
 warnings.filterwarnings("ignore", message=".*SuppressTokensAtBeginLogitsProcessor.*")
+
+# Silence transformers and related loggers that are too chatty
+logging.getLogger("transformers.generation.utils").setLevel(logging.ERROR)
+logging.getLogger("transformers.configuration_utils").setLevel(logging.ERROR)
 
 logger = logging.getLogger(__name__)
 
 class STTService:
     def __init__(self):
-        self.model_id = "openai/whisper-medium"
+        self.model_id = "openai/whisper-small"
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
         

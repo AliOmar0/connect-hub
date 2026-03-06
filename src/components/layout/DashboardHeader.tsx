@@ -17,6 +17,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { Notification } from "@/types/database";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function DashboardHeader() {
   const { user } = useAuth();
@@ -40,6 +41,21 @@ export default function DashboardHeader() {
   });
 
   const queryClient = useQueryClient();
+
+  // Fetch user profile for avatar
+  const { data: profile } = useQuery({
+    queryKey: ["user-profile", user?.id],
+    queryFn: async () => {
+      if (!user?.id) return null;
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("user_id", user.id)
+        .single();
+      return data;
+    },
+    enabled: !!user?.id,
+  });
 
   // Real-time subscription for notifications
   useEffect(() => {
@@ -195,21 +211,32 @@ export default function DashboardHeader() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Time display */}
-        <div className="hidden lg:flex flex-col items-end text-right px-3">
-          <span className="text-sm font-semibold font-display">
-            {new Date().toLocaleTimeString("en-US", {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {new Date().toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            })}
-          </span>
+        {/* User Avatar & Time */}
+        <div className="flex items-center gap-3 pl-2 border-l border-border/60">
+          <div className="hidden lg:flex flex-col items-end text-right">
+            <span className="text-sm font-semibold font-display">
+              {new Date().toLocaleTimeString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+            <span className="text-xs text-muted-foreground truncate max-w-[100px]">
+              {profile
+                ? `${profile.first_name || ""} ${profile.last_name || ""}`
+                : "Loading..."}
+            </span>
+          </div>
+
+          <Avatar
+            className="h-9 w-9 border border-border cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all"
+            onClick={() => navigate("/settings?tab=general")}
+          >
+            <AvatarImage src={profile?.avatar_url || ""} />
+            <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+              {profile?.first_name?.[0]}
+              {profile?.last_name?.[0]}
+            </AvatarFallback>
+          </Avatar>
         </div>
       </div>
     </header>

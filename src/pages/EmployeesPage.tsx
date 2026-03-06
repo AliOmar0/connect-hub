@@ -23,12 +23,13 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Plus, Users } from "lucide-react";
+import { Search, Plus, Users, Star, Upload, Camera } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AppRole } from "@/types/database";
 import { Loader2 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default function EmployeesPage() {
   const { userRole } = useAuth();
@@ -154,20 +155,23 @@ export default function EmployeesPage() {
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-display font-bold tracking-tight">
-              Employees
+            <h1 className="text-3xl font-display font-bold tracking-tight text-primary">
+              Employee Management
             </h1>
             <p className="text-muted-foreground">
-              Manage your team, roles, and permissions.
+              Manage your team, roles, and individual permissions.
             </p>
           </div>
           {canManage && (
-            <div className="flex gap-2">
+            <div className="flex gap-3">
               <CreateUserDialog />
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline">
-                    <Plus className="h-4 w-4 mr-2" />
+                  <Button
+                    variant="outline"
+                    className="border-primary/20 hover:bg-primary/5"
+                  >
+                    <Plus className="h-4 w-4 mr-2 text-primary" />
                     Add Employee
                   </Button>
                 </DialogTrigger>
@@ -196,16 +200,91 @@ export default function EmployeesPage() {
           )}
         </div>
 
+        {/* Team Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Card className="bg-primary/5 border-primary/10 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                  Total Team
+                </p>
+                <h4 className="text-2xl font-bold text-primary">
+                  {employees?.length || 0}
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
+                <Users className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-green-500/5 border-green-500/10 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                  Active Now
+                </p>
+                <h4 className="text-2xl font-bold text-green-600">
+                  {employees?.filter((e) => e.is_active).length || 0}
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-green-500/10 rounded-xl flex items-center justify-center text-green-600">
+                <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-yellow-500/5 border-yellow-500/10 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                  Avg Performance
+                </p>
+                <h4 className="text-2xl font-bold text-yellow-600">
+                  {employees && employees.length > 0
+                    ? (
+                        (employees.reduce(
+                          (acc, curr) => acc + (curr.performance_score || 0),
+                          0,
+                        ) /
+                          employees.length) *
+                        100
+                      ).toFixed(0)
+                    : 0}
+                  %
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-yellow-500/10 rounded-xl flex items-center justify-center text-yellow-600">
+                <Star className="h-5 w-5 fill-yellow-600" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-blue-500/5 border-blue-500/10 shadow-sm">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                  Active Depts
+                </p>
+                <h4 className="text-2xl font-bold text-blue-600">
+                  {new Set(employees?.map((e) => e.department).filter(Boolean))
+                    .size || 0}
+                </h4>
+              </div>
+              <div className="h-10 w-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-600">
+                <Users className="h-5 w-5" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         {/* Search */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Card className="border-none shadow-none bg-transparent">
+          <CardContent className="p-0">
+            <div className="relative group">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
               <Input
                 placeholder="Search employees by name, code, or department..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9"
+                className="pl-12 h-14 bg-card border-border/40 shadow-sm text-lg focus-visible:ring-primary/20 rounded-2xl"
               />
             </div>
           </CardContent>
@@ -262,6 +341,19 @@ function EmployeeForm({
     assigned_channels: (employee?.assigned_channels || []) as ChannelType[],
     is_active: employee?.is_active ?? true,
   });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string>(
+    employee?.profile?.avatar_url || "",
+  );
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+    }
+  };
 
   const channels: ChannelType[] = [
     "whatsapp",
@@ -271,9 +363,45 @@ function EmployeeForm({
     "email",
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData);
+    setUploading(true);
+
+    try {
+      let avatar_url = previewUrl;
+
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split(".").pop();
+        const filePath = `${formData.profile_id}/${Math.random()}.${fileExt}`;
+
+        const { error: uploadError, data } = await supabase.storage
+          .from("avatars")
+          .upload(filePath, selectedFile, { upsert: true });
+
+        if (uploadError) throw uploadError;
+
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("avatars").getPublicUrl(filePath);
+
+        avatar_url = publicUrl;
+
+        // Update the profile with the new avatar_url
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({ avatar_url })
+          .eq("id", formData.profile_id);
+
+        if (profileError) throw profileError;
+      }
+
+      onSubmit(formData);
+    } catch (error) {
+      toast.error("Failed to upload image");
+      console.error(error);
+    } finally {
+      setUploading(false);
+    }
   };
 
   const toggleChannel = (channel: ChannelType) => {
@@ -295,7 +423,39 @@ function EmployeeForm({
             : "Create a new employee record and link it to a user profile."}
         </DialogDescription>
       </DialogHeader>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="flex flex-col items-center gap-4 py-4 bg-muted/30 rounded-2xl border border-dashed border-border/60">
+          <div className="relative group">
+            <Avatar className="h-24 w-24 ring-4 ring-background shadow-md">
+              <AvatarImage src={previewUrl} />
+              <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
+                {employee?.profile?.first_name?.charAt(0) || (
+                  <Camera className="h-8 w-8 opacity-40" />
+                )}
+              </AvatarFallback>
+            </Avatar>
+            <Label
+              htmlFor="avatar-upload"
+              className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            >
+              <Upload className="h-6 w-6" />
+            </Label>
+            <input
+              id="avatar-upload"
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-semibold">Employee Photo</p>
+            <p className="text-xs text-muted-foreground">
+              Click to upload or drag and drop
+            </p>
+          </div>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="profile_id">User Profile</Label>
           <Select
@@ -416,7 +576,16 @@ function EmployeeForm({
           <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button type="submit">Save</Button>
+          <Button type="submit" disabled={uploading}>
+            {uploading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              "Save Changes"
+            )}
+          </Button>
         </div>
       </form>
     </>

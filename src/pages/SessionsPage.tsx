@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import SessionsTable from "@/components/sessions/SessionsTable";
@@ -32,7 +32,17 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Search, Filter, Download } from "lucide-react";
+import {
+  Search,
+  Filter,
+  Download,
+  Users,
+  Phone,
+  MessageSquare,
+  MessageCircle,
+  Clock,
+  CheckCircle,
+} from "lucide-react";
 import { subDays } from "date-fns";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
@@ -79,6 +89,16 @@ export default function SessionsPage() {
     null,
   );
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+
+  const scrollToChat = () => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  };
 
   const canAssign =
     userRole === "admin" || userRole === "supervisor" || userRole === "manager";
@@ -393,15 +413,10 @@ export default function SessionsPage() {
     setSelectedSession(session);
     navigate(`/sessions/${session.id}`);
 
-    // Smooth scroll to chat view on mobile
-    if (window.innerWidth < 1024) {
-      setTimeout(() => {
-        const chatElement = document.getElementById("chat-view-container");
-        if (chatElement) {
-          chatElement.scrollIntoView({ behavior: "smooth" });
-        }
-      }, 100);
-    }
+    // Automatically scroll to chat view for better flow
+    setTimeout(() => {
+      scrollToChat();
+    }, 100);
   };
 
   const handleAssignAgent = (session: Session) => {
@@ -619,13 +634,22 @@ export default function SessionsPage() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6">
+      <div className="flex flex-col space-y-8 pb-10">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-display font-bold tracking-tight">
+          <h1
+            className="text-3xl font-display font-bold tracking-tight cursor-pointer hover:text-primary transition-colors inline-block"
+            onClick={scrollToChat}
+          >
             Active AI Sessions
           </h1>
           <p className="text-muted-foreground">
-            Monitor and manage all currently active customer sessions.
+            Monitor and manage all active sessions.{" "}
+            <span
+              className="text-primary/70 font-medium cursor-pointer hover:underline"
+              onClick={scrollToChat}
+            >
+              Jump to Chat ↓
+            </span>
           </p>
         </div>
 
@@ -709,19 +733,110 @@ export default function SessionsPage() {
           </CardContent>
         </Card>
 
-        {/* Sessions Table */}
-        <SessionsTable
-          sessions={sessions || []}
-          sessionTypes={sessionTypes}
-          loading={isLoading}
-          onViewSession={handleViewSession}
-          onAssignAgent={canAssign ? handleAssignAgent : undefined}
-        />
+        {/* Simple Stats Row */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+          <Card className="bg-primary/5 border-primary/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Active Sessions
+                </p>
+                <h4 className="text-xl font-bold text-primary">
+                  {sessions?.filter((s) => s.status === "active").length || 0}
+                </h4>
+              </div>
+              <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                <MessageCircle className="h-4 w-4" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-yellow-500/5 border-yellow-500/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Waiting Queue
+                </p>
+                <h4 className="text-xl font-bold text-yellow-600">
+                  {sessions?.filter(
+                    (s) => s.status === "waiting" || s.status === "missed",
+                  ).length || 0}
+                </h4>
+              </div>
+              <div className="p-2 bg-yellow-500/10 rounded-lg text-yellow-600">
+                <Clock className="h-4 w-4" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-green-500/5 border-green-500/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Completed (24h)
+                </p>
+                <h4 className="text-xl font-bold text-green-600">
+                  {sessions?.filter((s) => s.status === "completed").length ||
+                    0}
+                </h4>
+              </div>
+              <div className="p-2 bg-green-500/10 rounded-lg text-green-600">
+                <CheckCircle className="h-4 w-4" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-blue-500/5 border-blue-500/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Total Agents
+                </p>
+                <h4 className="text-xl font-bold text-blue-600">
+                  {employees?.length || 0}
+                </h4>
+              </div>
+              <div className="p-2 bg-blue-500/10 rounded-lg text-blue-600">
+                <Users className="h-4 w-4" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              Sessions Overview
+            </h2>
+          </div>
+          <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm max-h-[450px] overflow-y-auto custom-scrollbar">
+            <SessionsTable
+              sessions={sessions || []}
+              sessionTypes={sessionTypes}
+              loading={isLoading}
+              onViewSession={handleViewSession}
+              onAssignAgent={canAssign ? handleAssignAgent : undefined}
+            />
+          </div>
+        </div>
 
-        {/* Session Detail: Messages & Call timeline */}
-        <div className="grid lg:grid-cols-3 gap-4" id="chat-view-container">
-          <Card className="lg:col-span-2 h-[650px] flex flex-col">
-            <CardContent className="p-0 flex-1 flex flex-col">
+        {/* Separator */}
+        <div
+          className="border-t border-border pt-8 mt-4"
+          ref={chatContainerRef}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              Conversation Details
+            </h2>
+          </div>
+        </div>
+
+        {/* Chat & Activity Section - Stacked or Side-by-Side with fixed height for stability */}
+        <div
+          className="grid lg:grid-cols-3 gap-6 h-[800px]"
+          id="chat-view-container"
+        >
+          <Card className="lg:col-span-2 flex flex-col overflow-hidden border-border/60 shadow-md">
+            <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
               <ChatView
                 session={selectedSession}
                 messages={sessionMessages || []}
@@ -734,63 +849,82 @@ export default function SessionsPage() {
             </CardContent>
           </Card>
 
-          <Card className="h-[650px] flex flex-col">
-            <CardContent className="p-4 flex-1 overflow-hidden">
-              <div className="flex items-center justify-between mb-4">
+          <Card className="flex flex-col overflow-hidden border-border/60 shadow-md">
+            <CardContent className="p-6 flex-1 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between mb-6 shrink-0">
                 <div>
-                  <h3 className="text-lg font-semibold">Session Activity</h3>
+                  <h3 className="text-lg font-semibold">Activity Timeline</h3>
                   <p className="text-sm text-muted-foreground">
-                    Latest calls & status updates
+                    Call history and updates
                   </p>
                 </div>
                 {selectedSession && (
-                  <Badge variant="outline" className="capitalize">
+                  <Badge className="capitalize font-medium px-3 py-1">
                     {selectedSession.status}
                   </Badge>
                 )}
               </div>
 
-              <div className="space-y-3 overflow-y-auto h-full pr-1">
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
                 {callsLoading ? (
                   [...Array(4)].map((_, idx) => (
                     <div
                       key={idx}
-                      className="h-16 rounded-lg bg-muted animate-pulse"
+                      className="h-20 rounded-xl bg-muted animate-pulse"
                     />
                   ))
                 ) : sessionCalls && sessionCalls.length > 0 ? (
                   sessionCalls.map((call) => (
                     <div
                       key={call.id}
-                      className="rounded-lg border border-border p-3 bg-muted/30 space-y-1"
+                      className="rounded-xl border border-border p-4 bg-muted/20 space-y-2 hover:border-primary/20 hover:bg-muted/40 transition-all group"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium capitalize">
-                          {call.direction} call
+                        <span className="text-sm font-semibold capitalize flex items-center gap-2">
+                          {call.direction === "inbound" ? (
+                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                          ) : (
+                            <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                          )}
+                          {call.direction} Call
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(call.started_at).toLocaleString()}
+                        <span className="text-[11px] text-muted-foreground font-medium">
+                          {new Date(call.started_at).toLocaleString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            day: "2-digit",
+                            month: "short",
+                          })}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Status: {call.status}</span>
-                        <span>
-                          Duration:{" "}
-                          {call.duration_seconds
-                            ? `${call.duration_seconds}s`
-                            : "-"}
-                        </span>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                        <div className="bg-background/50 p-2 rounded-lg border border-border/50">
+                          <span className="block opacity-60">Status</span>
+                          <span className="font-medium text-foreground">
+                            {call.status}
+                          </span>
+                        </div>
+                        <div className="bg-background/50 p-2 rounded-lg border border-border/50">
+                          <span className="block opacity-60">Duration</span>
+                          <span className="font-medium text-foreground">
+                            {call.duration_seconds
+                              ? `${call.duration_seconds}s`
+                              : "0s"}
+                          </span>
+                        </div>
                       </div>
                       {call.phone_number && (
-                        <p className="text-xs text-muted-foreground">
-                          Phone: {call.phone_number}
+                        <p className="text-xs text-muted-foreground px-1">
+                          <span className="opacity-60">ID:</span>{" "}
+                          {call.phone_number}
                         </p>
                       )}
                     </div>
                   ))
                 ) : (
-                  <div className="text-sm text-muted-foreground text-center py-10">
-                    No call activity yet for this session.
+                  <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
+                    <Phone className="h-10 w-10 mb-4" />
+                    <p className="text-sm font-medium">No activity yet</p>
                   </div>
                 )}
               </div>
