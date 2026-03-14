@@ -7,6 +7,13 @@ from app.api.v1.sessions import router as sessions_router
 import asyncio
 from contextlib import asynccontextmanager
 from app.crud import crud
+import logging
+
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/typing") == -1
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
 
 async def session_cleanup_task():
     """Periodic task to close inactive sessions"""

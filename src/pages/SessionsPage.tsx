@@ -90,6 +90,11 @@ export default function SessionsPage() {
   );
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const selectedSessionIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSession?.id || null;
+  }, [selectedSession?.id]);
 
   const scrollToChat = () => {
     if (chatContainerRef.current) {
@@ -226,8 +231,11 @@ export default function SessionsPage() {
 
   // Real-time subscription for active sessions
   useEffect(() => {
-    const channel = supabase
-      .channel("sessions-changes")
+    console.log("Setting up global sessions & messages subscription");
+
+    // Subscribe to session changes (status, agent, etc.)
+    const sessionChannel = supabase
+      .channel("sessions-global-changes")
       .on(
         "postgres_changes",
         {
@@ -235,14 +243,58 @@ export default function SessionsPage() {
           schema: "public",
           table: "sessions",
         },
-        () => {
+        (payload) => {
+          console.log("Sessions change received:", payload);
           refetch();
         },
       )
       .subscribe();
 
+    // Subscribe to NEW messages globally to refresh the sidebar snippets
+    const messageChannel = supabase
+      .channel("messages-global-refresh")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          console.log("Global message received, refreshing list:", payload);
+          refetch(); // Refresh sessions list (sidebar)
+
+          // If the message is for the currently selected session, refresh its messages
+          const newMessage = payload.new as Message;
+          if (
+            selectedSessionIdRef.current &&
+            newMessage.session_id === selectedSessionIdRef.current
+          ) {
+            console.log("New message for active session, refreshing ChatView");
+            refetchMessages();
+
+            // Proactively update cache for smoothness
+            queryClient.setQueryData(
+              ["session-messages", selectedSessionIdRef.current],
+              (old: Message[] | undefined) => {
+                if (!old) return [newMessage];
+                if (old.find((m) => m.id === newMessage.id)) return old;
+                return [...old, newMessage].sort(
+                  (a, b) =>
+                    new Date(a.sent_at).valueOf() -
+                    new Date(b.sent_at).valueOf(),
+                );
+              },
+            );
+          }
+        },
+      )
+      .subscribe();
+
     return () => {
-      supabase.removeChannel(channel);
+      console.log("Removing global subscriptions");
+      supabase.removeChannel(sessionChannel);
+      supabase.removeChannel(messageChannel);
     };
   }, [refetch]);
 
@@ -312,22 +364,23 @@ export default function SessionsPage() {
     enabled: !!selectedSession?.id,
   });
 
-  // Realtime updates for the selected session (messages + calls)
+  // Realtime updates for the selected session (calls + updates)
   useEffect(() => {
     if (!selectedSession?.id) return;
 
+    console.log(`Monitoring session status/calls for: ${selectedSession.id}`);
     const channel = supabase
-      .channel(`session-${selectedSession.id}-stream`)
+      .channel(`session-${selectedSession.id}-monitor`)
       .on(
         "postgres_changes",
         {
-          event: "*",
+          event: "UPDATE",
           schema: "public",
           table: "messages",
           filter: `session_id=eq.${selectedSession.id}`,
         },
         () => {
-          refetchMessages();
+          refetchMessages(); // For status updates (delivered/read)
         },
       )
       .on(
@@ -338,7 +391,8 @@ export default function SessionsPage() {
           table: "calls",
           filter: `session_id=eq.${selectedSession.id}`,
         },
-        () => {
+        (payload) => {
+          console.log("Call change received:", payload);
           refetchCalls();
         },
       )
@@ -466,19 +520,20 @@ export default function SessionsPage() {
 
       // Success
       toast.success("Message sent");
-      refetchMessages();
-      // Also invalidate sessions to get updated wait_time_seconds
-      queryClient.invalidateQueries({ queryKey: ["sessions"] });
+
+      // Await refetches and invalidation to ensure UI is in sync
+      await refetchMessages();
+      await queryClient.invalidateQueries({ queryKey: ["sessions"] });
+      const { data: refreshedSessions } = await refetch();
 
       // Update the selected session from the freshly fetched list
-      const updatedSessions = queryClient.getQueryData<FullSession[]>([
-        "sessions",
-      ]);
-      if (updatedSessions) {
-        const updated = updatedSessions.find(
+      if (refreshedSessions) {
+        const updated = refreshedSessions.find(
           (s) => s.id === selectedSession.id,
         );
-        if (updated) setSelectedSession(updated);
+        if (updated) {
+          setSelectedSession(updated);
+        }
       }
     } catch (err) {
       const error = err as Error;
@@ -750,19 +805,18 @@ export default function SessionsPage() {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-yellow-500/5 border-yellow-500/10">
+          <Card className="bg-orange-500/5 border-orange-500/10">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-xs text-muted-foreground font-medium">
-                  Waiting Queue
+                  Escalated
                 </p>
-                <h4 className="text-xl font-bold text-yellow-600">
-                  {sessions?.filter(
-                    (s) => s.status === "waiting" || s.status === "missed",
-                  ).length || 0}
+                <h4 className="text-xl font-bold text-orange-600">
+                  {sessions?.filter((s) => s.status === "escalated").length ||
+                    0}
                 </h4>
               </div>
-              <div className="p-2 bg-yellow-500/10 rounded-lg text-yellow-600">
+              <div className="p-2 bg-orange-500/10 rounded-lg text-orange-600">
                 <Clock className="h-4 w-4" />
               </div>
             </CardContent>

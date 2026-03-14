@@ -20,7 +20,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { format, subDays, startOfMonth } from "date-fns";
 
 export default function Index() {
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    refetch: refetchStats,
+  } = useQuery({
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
       const now = new Date();
@@ -53,11 +57,11 @@ export default function Index() {
         .gte("created_at", lastMonthStart.toISOString())
         .lt("created_at", monthStart.toISOString());
 
-      // Active Sessions
+      // Active Sessions (Live)
       const { count: activeSessions } = await supabase
         .from("sessions")
         .select("*", { count: "exact", head: true })
-        .eq("status", "active");
+        .in("status", ["active", "waiting", "escalated"]);
 
       // Active Agents
       const { count: activeAgents } = await supabase
@@ -68,11 +72,18 @@ export default function Index() {
       // Avg Response Time (today)
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const { data: todayAnalytics } = await supabase
+      const { data: todayAnalyticsData } = await supabase
         .from("analytics_daily")
         .select("avg_response_time_seconds")
-        .eq("date", format(todayStart, "yyyy-MM-dd"))
-        .single();
+        .eq("date", format(todayStart, "yyyy-MM-dd"));
+
+      const avgResponseTimeSeconds =
+        todayAnalyticsData && todayAnalyticsData.length > 0
+          ? todayAnalyticsData.reduce(
+              (sum, a) => sum + (a.avg_response_time_seconds || 0),
+              0,
+            ) / todayAnalyticsData.length
+          : 0;
 
       // Resolution Rate (this week)
       const weekStart = subDays(now, 7);
@@ -116,8 +127,8 @@ export default function Index() {
         },
         activeSessions: activeSessions || 0,
         activeAgents: activeAgents || 0,
-        avgResponseTime: todayAnalytics?.avg_response_time_seconds
-          ? `${(todayAnalytics.avg_response_time_seconds / 60).toFixed(1)}m`
+        avgResponseTime: avgResponseTimeSeconds
+          ? `${(avgResponseTimeSeconds / 60).toFixed(1)}m`
           : "0m",
         resolutionRate,
       };
@@ -197,7 +208,11 @@ export default function Index() {
     },
   });
 
-  const { data: activeSessions } = useQuery({
+  const {
+    data: activeSessions,
+    isLoading: activeSessionsLoading,
+    refetch: refetchActiveSessions,
+  } = useQuery({
     queryKey: ["dashboard-active-sessions"],
     queryFn: async () => {
       const { data } = await supabase
@@ -205,13 +220,53 @@ export default function Index() {
         .select(
           "*, customer:customers(*), employee:employees(*, profile:profiles(*))",
         )
-        .eq("status", "active")
+        .in("status", ["active", "waiting", "escalated"])
         .order("started_at", { ascending: false })
         .limit(5);
 
       return data || [];
     },
   });
+
+  useEffect(() => {
+    // Real-time subscription to the sessions table
+    const sessionChannel = supabase
+      .channel("dashboard-sessions-sync")
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "sessions",
+        },
+        () => {
+          refetchStats();
+          refetchActiveSessions();
+        },
+      )
+      .subscribe();
+
+    // Also update when messages arrive (if you want real-time stat updates for message counts)
+    const messageChannel = supabase
+      .channel("dashboard-messages-sync")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        () => {
+          refetchStats();
+        },
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sessionChannel);
+      supabase.removeChannel(messageChannel);
+    };
+  }, [refetchStats, refetchActiveSessions]);
 
   const { data: employees } = useQuery({
     queryKey: ["dashboard-employees"],
@@ -273,12 +328,6 @@ export default function Index() {
           <h1 className="text-2xl font-display font-bold tracking-tight">
             Dashboard
           </h1>
-          <p className="text-muted-foreground">
-            Welcome back! Here's an overview of your communication center.
-          </p>
-          <p className="text-muted-foreground">
-            Welcome back! Here's an overview of your communication center.
-          </p>
         </div>
 
         {/* Stats Grid */}

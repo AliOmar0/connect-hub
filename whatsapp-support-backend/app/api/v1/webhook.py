@@ -270,33 +270,46 @@ async def process_ai_response(
         ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
 
         # --- Intent Detection (Bank & Critical) ---
-        account_keywords = ["رصيدي", "حسابي", "balance", "account", "بياناتي", "حساب"]
-        critical_keywords = ["تحويل", "تعديل", "حذف", "تغيير", "إيقاف", "transfer", "change", "delete", "stop", "critical"]
+        # Refined keywords to avoid general inquiries like "how to open an account"
+        account_keywords = ["رصيدي", "رصيد حسابي", "كشف حساب", "حسابي الشخصي", "my balance", "account balance"]
+        critical_keywords = ["تحويل أموال", "تغيير كلمة المرور", "إغلاق حسابي", "money transfer", "reset password"]
         
-        is_asking_account = any(k in user_message.lower() for k in account_keywords)
+        is_asking_private = any(k in user_message.lower() for k in account_keywords)
         is_critical = any(k in user_message.lower() for k in critical_keywords)
         
-        if (is_asking_account or is_critical) and not state:
-            intent = "BANK_ACCOUNT" if is_asking_account else "CRITICAL_ACTION"
-            otp = await send_whatsapp_otp(customer_phone, intent=intent)
+        # Check if AI itself decided an OTP is needed (from SYSTEM_PROMPT instructions)
+        ai_mentions_otp = "رمز تحقق" in ai_text or "OTP" in ai_text
+        
+        if (is_asking_private or is_critical or ai_mentions_otp) and not state:
+            # Determine intent
+            intent = "BANK_ACCOUNT" if (is_asking_private or "رصيد" in user_message or "حساب" in user_message) else "CRITICAL_ACTION"
             
-            if otp:
-                otp_sessions[str(db_session_id)] = {
-                    "type": "WAITING_OTP", 
-                    "otp": otp, 
-                    "phone": customer_phone,
-                    "intent": intent
-                }
-                if intent == "BANK_ACCOUNT":
-                    ai_text = "لقد قمت بإرسال رمز تحقق (OTP) عبر واتساب من رقم الحماية الخاص بنا. يرجى تزويدي بالرمز لنتمكن من عرض بيانات حسابك بأمان."
+            # Additional check: If it's a general question about opening accounts or locations, ignore
+            general_inquiry_keywords = ["كيف", "اين", "طريقة", "شروط", "how", "where", "location"]
+            is_general = any(k in user_message.lower() for k in general_inquiry_keywords) and not is_asking_private
+            
+            if not is_general or ai_mentions_otp:
+                otp = await send_whatsapp_otp(customer_phone, intent=intent)
+                
+                if otp:
+                    otp_sessions[str(db_session_id)] = {
+                        "type": "WAITING_OTP", 
+                        "otp": otp, 
+                        "phone": customer_phone,
+                        "intent": intent
+                    }
+                    # Ensure AI response correctly explains the OTP wait
+                    if "رمز تحقق" not in ai_text:
+                        if intent == "BANK_ACCOUNT":
+                            ai_text = "للقيام بذلك بأمان، سأقوم بإرسال رمز تحقق (OTP) الآن إلى رقمك المسجل. يرجى تزويدي بالرمز بمجرد وصوله لنتمكن من عرض بيانات حسابك."
+                        else:
+                            ai_text = "يتطلب هذا الإجراء الحساس عملية تحقق. لقد أرسلنا رمز (OTP) إلى هاتفك لضمان هويتك. يرجى تزويدي بالرمز للمتابعة."
                 else:
-                    ai_text = "هذا الطلب يتضمن إجراءً حساساً. لقد أرسلنا رمز تحقق (OTP) إلى هاتفك لضمان هويتك. يرجى تزويدي بالرمز للمتابعة."
-            else:
-                ai_text = "عذراً، واجهنا مشكلة في إرسال رمز التحقق. يرجى المحاولة لاحقاً."
-            
-            await client.send_text_message(customer_phone, ai_text)
-            await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
-            return
+                    ai_text = "عذراً، واجهنا مشكلة في إرسال رمز التحقق حالياً. يرجى المحاولة لاحقاً."
+                
+                await client.send_text_message(customer_phone, ai_text)
+                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                return
         # --- End Intent Detection ---
         
         # 2.5 Classify session (Understanding Required)

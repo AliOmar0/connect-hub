@@ -21,18 +21,26 @@ interface ActiveSessionsPanelProps {
   >;
 }
 
-const statusConfig = {
+const statusConfig: Record<string, { label: string; className: string }> = {
   active: {
     label: "Active",
     className: "bg-chart-success/10 text-chart-success border-chart-success/20",
   },
-  "on-hold": {
-    label: "On Hold",
+  escalated: {
+    label: "Escalated",
     className: "bg-chart-warning/10 text-chart-warning border-chart-warning/20",
   },
   transferring: {
     label: "Transferring",
     className: "bg-chart-info/10 text-chart-info border-chart-info/20",
+  },
+  waiting: {
+    label: "Waiting",
+    className: "bg-chart-info/10 text-chart-info border-chart-info/20",
+  },
+  "on-hold": {
+    label: "On Hold",
+    className: "bg-muted text-muted-foreground border-muted/20",
   },
 };
 
@@ -54,11 +62,19 @@ function formatDurationFromSeconds(seconds: number | null): string {
   );
 }
 
+import { useState, useEffect } from "react";
+
 export default function ActiveSessionsPanel({
   sessions = [],
 }: ActiveSessionsPanelProps) {
   const navigate = useNavigate();
   const displaySessions = sessions.slice(0, 5);
+
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
     <Card className="shadow-card">
@@ -96,9 +112,12 @@ export default function ActiveSessionsPanel({
               : "Unassigned";
             const duration = session.duration_seconds
               ? formatDurationFromSeconds(session.duration_seconds)
-              : formatDistanceToNow(new Date(session.started_at), {
-                  addSuffix: false,
-                });
+              : formatDurationFromSeconds(
+                  Math.floor(
+                    (Date.now() - new Date(session.started_at).getTime()) /
+                      1000,
+                  ),
+                );
             const isCall = session.channel === "voice";
 
             return (
