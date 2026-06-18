@@ -46,7 +46,7 @@ describe("useAuth", () => {
     }));
   });
 
-  it("provides auth context", () => {
+  it("provides auth context", async () => {
     const wrapper = ({ children }: { children: ReactNode }) => (
       <AuthProvider>{children}</AuthProvider>
     );
@@ -54,7 +54,7 @@ describe("useAuth", () => {
     const { result } = renderHook(() => useAuth(), { wrapper });
 
     expect(result.current).toBeDefined();
-    waitFor(() => expect(result.current.loading).toBe(false));
+    await waitFor(() => expect(result.current.loading).toBe(false));
   });
 
   it("signIn calls supabase.auth.signInWithPassword", async () => {
