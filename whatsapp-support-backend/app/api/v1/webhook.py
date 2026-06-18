@@ -8,16 +8,104 @@ from app.core.stt import stt_service
 from app.core.whatsapp import WhatsAppClient
 from app.core.notifications import NotificationService
 from app.core.message_buffer import message_buffer
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 import logging
 import httpx
+import hashlib
+import secrets
+import time
 from uuid import UUID
 
 router = APIRouter()
 logger = logging.getLogger("webhook")
 
-# In-memory store for OTP sessions (Similar to Node.js backend)
-otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
+
+# ============================================================
+# SECURE OTP STATE MACHINE
+# Uses SHA-256 hashes instead of plain OTP strings.
+# Features: Attempt counting (max 3), 5-min expiry, replay prevention.
+# ============================================================
+OTP_MAX_ATTEMPTS = 3
+OTP_EXPIRY_SECONDS = 300  # 5 minutes
+
+# In-memory store: {session_id: {otp_hash, phone, intent, attempts, created_at, used}}
+otp_sessions: Dict[str, Dict] = {}
+
+def _hash_otp(otp: str, salt: str = None) -> str:
+    """Generate SHA-256 hash of OTP with salt for security."""
+    if salt is None:
+        salt = secrets.token_hex(8)
+    return hashlib.sha256(f"{otp}{salt}".encode()).hexdigest() + f":{salt}"
+
+def _verify_otp_hash(otp: str, stored_hash: str) -> bool:
+    """Verify OTP against stored hash."""
+    try:
+        hash_part, salt = stored_hash.rsplit(":", 1)
+        computed = hashlib.sha256(f"{otp}{salt}".encode()).hexdigest()
+        return secrets.compare_digest(hash_part, computed)
+    except (ValueError, TypeError):
+        return False
+
+def _is_otp_expired(session_data: Dict) -> bool:
+    """Check if OTP session has expired (5 minutes)."""
+    created_at = session_data.get("created_at", 0)
+    return (time.time() - created_at) > OTP_EXPIRY_SECONDS
+
+def _is_otp_locked(session_data: Dict) -> bool:
+    """Check if OTP session is locked due to too many attempts."""
+    return session_data.get("attempts", 0) >= OTP_MAX_ATTEMPTS
+
+def _store_otp_session(session_id: str, otp: str, phone: str, intent: str = "BANK_ACCOUNT"):
+    """Store OTP session with secure hash."""
+    otp_sessions[str(session_id)] = {
+        "otp_hash": _hash_otp(otp),
+        "phone": phone,
+        "intent": intent,
+        "attempts": 0,
+        "created_at": time.time(),
+        "used": False
+    }
+    logger.info(f"[OTP] Stored secure session for {session_id}")
+
+def _validate_otp(session_id: str, user_input: str) -> tuple:
+    """
+    Validate OTP input against stored session.
+    Returns: (success, message, session_data or None)
+    """
+    session_data = otp_sessions.get(str(session_id))
+    
+    if not session_data:
+        return False, "NO_SESSION", None
+    
+    # Check expiry
+    if _is_otp_expired(session_data):
+        otp_sessions.pop(str(session_id), None)
+        return False, "EXPIRED", None
+    
+    # Check if already used (replay prevention)
+    if session_data.get("used"):
+        return False, "ALREADY_USED", None
+    
+    # Check lockout
+    if _is_otp_locked(session_data):
+        return False, "LOCKED", session_data
+    
+    # Verify OTP
+    if _verify_otp_hash(user_input, session_data["otp_hash"]):
+        # Mark as used (replay prevention)
+        session_data["used"] = True
+        otp_sessions.pop(str(session_id), None)  # Clean up
+        return True, "VALID", session_data
+    else:
+        # Increment attempts
+        session_data["attempts"] = session_data.get("attempts", 0) + 1
+        remaining = OTP_MAX_ATTEMPTS - session_data["attempts"]
+        
+        if remaining <= 0:
+            otp_sessions.pop(str(session_id), None)
+            return False, "LOCKED", None
+        else:
+            return False, f"WRONG_{remaining}", session_data
 
 # Track processed WhatsApp message IDs to prevent duplicate webhook processing
 _processed_message_ids: set = set()
@@ -214,17 +302,16 @@ async def process_ai_response(
             await client.mark_message_as_read(message_id)
         await client.send_typing_indicator(customer_phone)
 
-        # --- Bank & Critical Verification Logic ---
-        state = otp_sessions.get(str(db_session_id))
-        
-        # Scenario: User provided OTP (digits only)
+        # --- Bank & Critical Verification Logic (SECURE OTP) ---
         import re
-        if state and state.get("type") == "WAITING_OTP":
-            digits = "".join(re.findall(r'\d+', user_message))
-            if digits and digits == state.get("otp"):
-                intent = state.get("intent", "BANK_ACCOUNT")
-                # Cleanup state
-                otp_sessions.pop(str(db_session_id), None)
+        digits = "".join(re.findall(r'\d+', user_message))
+        
+        if digits:
+            # Use secure OTP validation
+            is_valid, status_msg, state = _validate_otp(db_session_id, digits)
+            
+            if is_valid:
+                intent = state.get("intent", "BANK_ACCOUNT") if state else "BANK_ACCOUNT"
                 
                 if intent == "BANK_ACCOUNT":
                     account = await crud.get_bank_account(customer_phone)
@@ -240,13 +327,37 @@ async def process_ai_response(
                 await client.send_text_message(customer_phone, ai_text)
                 await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
                 return
-            elif digits:
-                # User sent digits but they were wrong
+            
+            elif status_msg == "EXPIRED":
+                ai_text = "انتهت صلاحية رمز التحقق. يرجى طلب رمز جديد."
+                await client.send_text_message(customer_phone, ai_text)
+                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                return
+            
+            elif status_msg == "LOCKED":
+                ai_text = "تم تجاوز الحد الأقصى من المحاولات. يرجى المحاولة لاحقاً أو التواصل مع الدعم."
+                await client.send_text_message(customer_phone, ai_text)
+                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                return
+            
+            elif status_msg == "ALREADY_USED":
+                ai_text = "تم استخدام هذا الرمز مسبقاً. يرجى طلب رمز جديد."
+                await client.send_text_message(customer_phone, ai_text)
+                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                return
+            
+            elif status_msg.startswith("WRONG_"):
+                # Extract remaining attempts from status message
+                try:
+                    remaining = int(status_msg.split("_")[1])
+                except (IndexError, ValueError):
+                    remaining = OTP_MAX_ATTEMPTS
+                
                 if "إلغاء" in user_message or "cancel" in user_message.lower():
                     otp_sessions.pop(str(db_session_id), None)
                     ai_text = "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟"
                 else:
-                    ai_text = "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'."
+                    ai_text = f"رمز التحقق غير صحيح. لديك {remaining} محاولة(s) متبقية."
                 
                 await client.send_text_message(customer_phone, ai_text)
                 await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
@@ -257,115 +368,82 @@ async def process_ai_response(
         # 1. Get History (last 5 messages for context)
         msgs = await crud.get_messages_for_session(None, db_session_id)
         history = []
-        # Take the last 5 messages for context, excluding the current one
         for m in msgs[-5:]:
             role = "user" if m.direction == MessageDirection.inbound else "assistant"
             history.append({"role": role, "content": m.content})
-        
-        # 1.5 Get Session Types for awareness
-        session_types = await crud.get_session_main_types(None)
-
-        # 2. Call LLM with the combined message
-        logger.info(f"[AI] Sending combined message to LLM for session {db_session_id}: '{user_message[:100]}...'")
-        ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
-
-        # --- Intent Detection (Bank & Critical) ---
-        # Refined keywords to avoid general inquiries like "how to open an account"
-        account_keywords = ["رصيدي", "رصيد حسابي", "كشف حساب", "حسابي الشخصي", "my balance", "account balance"]
-        critical_keywords = ["تحويل أموال", "تغيير كلمة المرور", "إغلاق حسابي", "money transfer", "reset password"]
-        
-        is_asking_private = any(k in user_message.lower() for k in account_keywords)
-        is_critical = any(k in user_message.lower() for k in critical_keywords)
-        
-        # Check if AI itself decided an OTP is needed (from SYSTEM_PROMPT instructions)
-        ai_mentions_otp = "رمز تحقق" in ai_text or "OTP" in ai_text
-        
-        if (is_asking_private or is_critical or ai_mentions_otp) and not state:
-            # Determine intent
-            intent = "BANK_ACCOUNT" if (is_asking_private or "رصيد" in user_message or "حساب" in user_message) else "CRITICAL_ACTION"
             
-            # Additional check: If it's a general question about opening accounts or locations, ignore
-            general_inquiry_keywords = ["كيف", "اين", "طريقة", "شروط", "how", "where", "location"]
-            is_general = any(k in user_message.lower() for k in general_inquiry_keywords) and not is_asking_private
-            
-            if not is_general or ai_mentions_otp:
-                otp = await send_whatsapp_otp(customer_phone, intent=intent)
-                
-                if otp:
-                    otp_sessions[str(db_session_id)] = {
-                        "type": "WAITING_OTP", 
-                        "otp": otp, 
-                        "phone": customer_phone,
-                        "intent": intent
-                    }
-                    # Ensure AI response correctly explains the OTP wait
-                    if "رمز تحقق" not in ai_text:
-                        if intent == "BANK_ACCOUNT":
-                            ai_text = "للقيام بذلك بأمان، سأقوم بإرسال رمز تحقق (OTP) الآن إلى رقمك المسجل. يرجى تزويدي بالرمز بمجرد وصوله لنتمكن من عرض بيانات حسابك."
-                        else:
-                            ai_text = "يتطلب هذا الإجراء الحساس عملية تحقق. لقد أرسلنا رمز (OTP) إلى هاتفك لضمان هويتك. يرجى تزويدي بالرمز للمتابعة."
-                else:
-                    ai_text = "عذراً، واجهنا مشكلة في إرسال رمز التحقق حالياً. يرجى المحاولة لاحقاً."
-                
-                await client.send_text_message(customer_phone, ai_text)
-                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
-                return
-        # --- End Intent Detection ---
+        # 2. Evaluate Decision Engine
+        from app.core.decision_engine import decision_engine
+        from app.models.decision import ActionDecision
         
-        # 2.5 Classify session (Understanding Required)
-        if session.main_type_id is None:
-            await auto_classify_session(db_session_id, user_message)
-
-        # 3. Handle Escalation or Send Response
-        if "[ESCALATE]" in ai_text:
-            # Extract clean message
-            clean_text = ai_text.replace("[ESCALATE]:", "").replace("[ESCALATE]", "").strip()
+        decision_res = await decision_engine.evaluate(user_message, session_id=str(db_session_id))
+        
+        if decision_res.decision == ActionDecision.CLARIFY_LANGUAGE:
+            await client.send_text_message(customer_phone, decision_res.localized_message)
+            await crud.create_message(None, session_id=db_session_id, content=decision_res.localized_message, direction=MessageDirection.outbound)
+            return
             
-            # Send the handover message
+        elif decision_res.decision == ActionDecision.ESCALATE:
+            clean_text = decision_res.localized_message
             await client.send_text_message(customer_phone, clean_text)
+            await crud.create_message(None, session_id=db_session_id, content=clean_text, direction=MessageDirection.outbound)
             
             await crud.update_session_status(None, db_session_id, SessionStatus.escalated)
-
-            # Clear the buffer for this session since it's escalated
             message_buffer.clear_session_buffer(db_session_id)
-
-            # Classification at Escalation
-            session = await crud.get_session_by_id(None, db_session_id)
-            if session and session.main_type_id is None:
+            
+            if session.main_type_id is None:
                 await auto_classify_session(db_session_id, user_message)
-
-            # Create Database Notifications
+                
             try:
                 await crud.create_notification(
-                    None,
-                    user_id=None,
-                    title="⚠️ New Escalation Request",
-                    message=f"Customer {customer_phone} requires human assistance.",
-                    type="escalation",
-                    action_url=f"/sessions/{db_session_id}"
+                    None, user_id=None, title="⚠️ Escalation Request",
+                    message=decision_res.escalation_summary or "Customer requires human assistance.",
+                    type="escalation", action_url=f"/sessions/{db_session_id}"
                 )
             except Exception as e:
                 logger.error(f"Failed to create broadcast notification: {e}")
-
-            logger.info(f"Session {db_session_id} escalated to human agent. Broadcast notification created.")
-            
-            # Send Notification
+                
             await NotificationService.send_escalation_email(
-                str(db_session_id), 
-                customer_phone, 
-                clean_text if clean_text else "AI decided to escalate"
+                str(db_session_id), customer_phone, decision_res.escalation_summary or clean_text
             )
-        else:
-            # Send normal response
-            await client.send_text_message(customer_phone, ai_text)
+            return
+
+        elif decision_res.decision == ActionDecision.MOCK_TRANSACTION:
+            await client.send_text_message(customer_phone, decision_res.localized_message)
+            await crud.create_message(None, session_id=db_session_id, content=decision_res.localized_message, direction=MessageDirection.outbound)
+            return
+
+        elif decision_res.decision == ActionDecision.RESPOND:
+            # OTP trap check removed - handled at top of function
             
-            # 4. Save Outbound Message
-            await crud.create_message(
-                None,
-                session_id=db_session_id,
-                content=ai_text,
-                direction=MessageDirection.outbound
+            # Ask for OTP if LLM dictates it, OR use LLM to respond
+            structured_context = f"\n[NLP System Output: Intent={decision_res.intent.value}]"
+            enhanced_user_message = user_message + structured_context
+            
+            session_types = await crud.get_session_main_types(None)
+            logger.info(f"[AI] Generating response for session {db_session_id}")
+            
+            ai_text = await llm_service.get_ai_response(
+                enhanced_user_message, history, session_types, 
+                current_type_id=session.main_type_id,
+                top_documents=decision_res.top_documents
             )
+            
+            # Secure OTP storage when LLM triggers verification
+            if "رمز تحقق" in ai_text or "OTP" in ai_text:
+                existing = otp_sessions.get(str(db_session_id))
+                if not existing:
+                    otp = await send_whatsapp_otp(customer_phone, intent="BANK_ACCOUNT")
+                    if otp:
+                        _store_otp_session(str(db_session_id), otp, customer_phone, "BANK_ACCOUNT")
+                    else:
+                        ai_text = "عذراً، واجهنا مشكلة في إرسال رمز التحقق حالياً."
+                        
+            await client.send_text_message(customer_phone, ai_text)
+            await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+            
+            if session.main_type_id is None:
+                await auto_classify_session(db_session_id, user_message)
     except Exception as e:
         logger.error(f"Error in background AI response: {e}")
 

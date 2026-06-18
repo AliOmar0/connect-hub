@@ -40,6 +40,19 @@ class Settings(BaseSettings):
     NGROK_URL: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_URL", "URL"))
     OTP_SERVICE_URL: str = "https://cupulate-azaria-tented.ngrok-free.dev/generate"
 
+    # ─── RAG / Qdrant ────────────────────────────────────────────────────────
+    # Set QDRANT_URL for a remote/cloud Qdrant instance; leave blank for local
+    # in-process storage (development default).
+    QDRANT_URL: Optional[str] = None
+    QDRANT_API_KEY: Optional[str] = None
+    QDRANT_COLLECTION: str = "pib_knowledge"
+    QDRANT_STORAGE_PATH: str = "./qdrant_storage"
+    EMBEDDING_MODEL: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    RAG_TOP_K: int = 3
+    RAG_SIMILARITY_THRESHOLD: float = 0.75
+    RAG_MAX_RESPONSE_WORDS: int = 150   # enforced in Python after LLM call
+    RAG_MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024  # 5 MB
+
 # Initialize settings
 try:
     settings = Settings()

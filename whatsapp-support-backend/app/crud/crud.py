@@ -1,6 +1,7 @@
 from app.database import supabase
 from app.models.models import Session, Message, Customer, ApiConfiguration, Notification, SessionMainType
 from app.models.enums import SessionStatus, ChannelType, MessageDirection
+from app.core.pii import redact_pii
 from typing import Optional, List, Any
 from uuid import UUID
 from datetime import datetime
@@ -127,6 +128,10 @@ async def create_message(
     media_type: Optional[str] = None
 ) -> Message:
     now = datetime.utcnow()
+    
+    # PII REDACTION: Mask sensitive data before persistence
+    # This is PERMANENT - raw data will never be stored in the database
+    content = redact_pii(content)
     
     # 1. Update Session Metrics Dynamically
     session = await get_session_by_id(db, session_id)

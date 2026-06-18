@@ -384,93 +384,6 @@ SYSTEM_PROMPT += """
 5. إذا سُئلت عن شيء غير متوفر في الـ Knowledge Base أو التعليمات، اعتذر بلطف ووجه العميل للقنوات الرسمية.
 """
 
-class LLMService:
-    _dataset = None
-
-    @staticmethod
-    def _get_dataset():
-        if LLMService._dataset is None:
-            try:
-                # Resolve path relative to app root
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                dataset_path = os.path.join(os.path.dirname(current_dir), "dataset", "bank_dataset_web.json")
-                
-                if os.path.exists(dataset_path):
-                    with open(dataset_path, "r", encoding="utf-8") as f:
-                        LLMService._dataset = json.load(f)
-                    logger.info(f"Loaded bank knowledge base: {len(LLMService._dataset)} pages.")
-                else:
-                    logger.warning(f"Dataset not found at {dataset_path}")
-                    LLMService._dataset = []
-            except Exception as e:
-                logger.error(f"Error loading dataset: {e}")
-                LLMService._dataset = []
-        return LLMService._dataset
-
-    @staticmethod
-    def _find_context(query: str, top_n: int = 3) -> str:
-        dataset = LLMService._get_dataset()
-        if not dataset or not query:
-            return ""
-        
-        query = query.lower().strip()
-        matches = []
-        
-        # Simple heuristic search
-        for item in dataset:
-            score = 0
-            title = item.get("title", "").lower()
-            content = item.get("content", "").lower()
-            
-            # 1. Exact phrase match in title (Highest boost)
-            if query in title:
-                score += 100
-            
-            # 2. Exact phrase match in content
-            if query in content:
-                score += 50
-            
-            # 3. Individual word matches
-            words = query.split()
-            for word in words:
-                if len(word) < 2: continue # ignore single characters
-                
-                if word in title:
-                    score += 20
-                if word in content:
-                    score += 10
-            
-            if score > 0:
-                matches.append((score, item))
-        
-        if not matches:
-            return ""
-            
-        # Sort by score descending
-        matches.sort(key=lambda x: x[0], reverse=True)
-        
-        # Deduplicate matches by URL to avoid redundant snippets
-        seen_urls = set()
-        unique_matches = []
-        for score, item in matches:
-            url = item.get("url")
-            if url not in seen_urls:
-                seen_urls.add(url)
-                unique_matches.append(item)
-                if len(unique_matches) >= top_n:
-                    break
-        
-        context_block = "\n\n=== معلومات إضافية من موقع البنك (Knowledge Base) ===\n"
-        for i, item in enumerate(unique_matches):
-            title = item.get('title', 'معلومات')
-            url = item.get('url', '')
-            clean_content = item.get('content', '').replace('\n', ' ').strip()
-            # Limit each snippet to avoid context overflow
-            snippet = clean_content[:1200]
-            context_block += f"المقال {i+1}: {title}\nالرابط: {url}\nالمحتوى: {snippet}...\n\n"
-            
-        return context_block
-
     @staticmethod
     def sanitize_input(text: str) -> str:
         """Strip potentially hazardous control tokens and normalize text"""
@@ -552,7 +465,8 @@ class LLMService:
         user_message: str, 
         history: List[Dict[str, str]] = None, 
         session_types: List[Dict[str, Any]] = None,
-        current_type_id: Optional[str] = None
+        current_type_id: Optional[str] = None,
+        top_documents: List[Dict[str, Any]] = None
     ) -> str:
         if history is None:
             history = []
@@ -567,10 +481,13 @@ class LLMService:
             
         dynamic_prompt = SYSTEM_PROMPT
         
-        # 0. Augment with external knowledge base (bank_dataset_web.json)
-        knowledge_context = LLMService._find_context(user_message)
-        if knowledge_context:
-            dynamic_prompt += knowledge_context
+        # 0. Augment with semantic RAG documents passed from Decision Engine
+        if top_documents:
+            context_block = "\n\n=== معلومات إضافية من موقع البنك (Knowledge Base) ===\n"
+            for i, item in enumerate(top_documents):
+                snippet = item.get('content', '')[:1200]
+                context_block += f"المقال {i+1}:\nالمحتوى: {snippet}...\n\n"
+            dynamic_prompt += context_block
         
         # 1. Look for specific instructions for REALLY current type if known
         current_type_instructions = ""
@@ -643,7 +560,9 @@ class LLMService:
                 
                 if 'choices' in data and len(data['choices']) > 0:
                     raw_content = data['choices'][0]['message'].get('content', "نعتذر، لم أتمكن من معالجة طلبك حالياً.")
-                    return LLMService.sanitize_output(raw_content)
+                    sanitized = LLMService.sanitize_output(raw_content)
+                    from app.core.rag import enforce_word_limit
+                    return enforce_word_limit(sanitized) # FR-03.03 Word limit enforcement
                 else:
                     logger.error(f"AI API unexpected response: {data}")
                     return "نعتذر، حدث خطأ في النظام."
