@@ -1,0 +1,19 @@
+# Node voice/API server (G18)
+FROM node:20-alpine AS base
+WORKDIR /app
+
+# Install production dependencies only.
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# Copy server source.
+COPY server ./server
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+# Basic container healthcheck hitting the liveness endpoint.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3001/health || exit 1
+
+CMD ["node", "server/index.js"]

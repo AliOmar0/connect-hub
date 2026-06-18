@@ -12,6 +12,8 @@ import {
   Bell,
   LogOut,
   Zap,
+  Inbox,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -188,6 +190,12 @@ export default function DashboardSidebar() {
       roles: ["admin", "supervisor", "manager", "agent", "viewer"],
     },
     {
+      to: "/queue",
+      icon: Inbox,
+      label: "Escalation Queue",
+      roles: ["admin", "supervisor", "manager", "agent"],
+    },
+    {
       to: "/employees",
       icon: Users,
       label: "Employees",
@@ -214,6 +222,12 @@ export default function DashboardSidebar() {
       icon: Zap,
       label: "Chat Shortcuts",
       roles: ["admin", "supervisor", "manager", "agent"],
+    },
+    {
+      to: "/knowledge",
+      icon: BookOpen,
+      label: "Knowledge Base",
+      roles: ["admin", "supervisor", "manager"],
     },
     {
       to: "/settings",

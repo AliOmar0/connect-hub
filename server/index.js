@@ -4,20 +4,49 @@ import { createServer } from 'http';
 import { WebSocketServer } from 'ws';
 import twilio from 'twilio';
 import cors from 'cors';
+import helmet from 'helmet';
 import axios from 'axios';
 import { Buffer } from 'buffer';
 import { createClient } from '@supabase/supabase-js';
 
+import { logger, correlationMiddleware } from './lib/logger.js';
+import { requireAuth, requireRole } from './lib/auth.js';
+import {
+    buildCorsOptions,
+    ipRateLimiter,
+    sessionRateLimiter,
+    validateTwilioSignature,
+    verifyWhatsAppSignature,
+} from './lib/security.js';
+import {
+    metricsMiddleware,
+    registerObservabilityRoutes,
+    escalationsTotal,
+} from './lib/metrics.js';
+import {
+    getSession,
+    saveSession,
+    deleteSession,
+    appendTurn,
+    isDuplicate,
+} from './lib/redis.js';
+import { synthesize, getTtsProvider } from './lib/tts.js';
+import { uploadAndSign, signExistingPath, isMediaConfigured } from './lib/media.js';
+import { attachVoiceStream } from './lib/voiceStream.js';
+
 const app = express();
+app.set('trust proxy', 1); // accurate req.ip behind reverse proxy / load balancer
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 
 // Prefer dedicated env var to avoid conflicts with generic PORT in some environments
 const port = Number(process.env.TWILIO_SERVER_PORT || process.env.PORT || 3001);
 
-const FALLBACK_OPENROUTER_KEY = "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";
-const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY || FALLBACK_OPENROUTER_KEY;
-const MODEL_NAME = "arcee-ai/trinity-large-preview:free"; // Fast model for voice calls
+const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+if (!OPENROUTER_KEY) {
+    console.warn("[Config] OPENROUTER_API_KEY is not set. AI responses will fail until it is configured in the environment.");
+}
+const MODEL_NAME = process.env.OPENROUTER_MODEL || "arcee-ai/trinity-large-preview:free"; // Fast model for voice calls
 
 const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي يمثل البنك الإسلامي الفلسطيني (PIB) وتعمل كقناة رسمية رقمية لخدمة عملاء البنك. يجب أن تعكس جميع ردودك هوية البنك، ومبادئه الشرعية، وثقافته المؤسسية، ومعاييره المهنية. هدفك هو تقديم معلومات مصرفية إسلامية دقيقة، واضحة، وموثوقة، مع الالتزام التام بأحكام الشريعة الإسلامية والسياسات العامة للبنك.
 
@@ -282,18 +311,25 @@ const VOICE_LIMIT_PROMPT = "\n\n(ملاحظة هامة جداً: أنت الآن
 
 const supabase = createClient(process.env.VITE_SUPABASE_URL, process.env.VITE_SUPABASE_PUBLISHABLE_KEY);
 
-// Memory store for OTP sessions
-const sessionStore = new Map();
+// Memory store removed: session/dedup state now lives in Redis (server/lib/redis.js)
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// --- Security & observability middleware ---
+app.use(helmet());
+app.use(cors(buildCorsOptions()));
 
-// Debug Logger Middleware
-app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    next();
-});
+// Capture the raw body so webhook signatures can be verified before parsing.
+const rawBodySaver = (req, res, buf) => {
+    if (buf && buf.length) req.rawBody = buf;
+};
+app.use(express.json({ limit: '1mb', verify: rawBodySaver }));
+app.use(express.urlencoded({ extended: true, limit: '1mb', verify: rawBodySaver }));
+
+app.use(correlationMiddleware);
+app.use(metricsMiddleware);
+
+// Global IP rate limit (G14). Health/metrics are exempted below by ordering.
+registerObservabilityRoutes(app);
+app.use(ipRateLimiter);
 
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
@@ -398,16 +434,17 @@ async function sendOTP(phone) {
     return otp;
 }
 
-// Modified Message Handler with Verification State
+// Modified Message Handler with Verification State (Redis-backed)
 async function processMessage(userMessage, sessionId, phone = null, history = []) {
-    const state = sessionStore.get(sessionId);
+    const session = (await getSession(sessionId)) || {};
+    const state = session.otpState;
 
     // Case 1: Waiting for OTP
     if (state && state.type === 'WAITING_OTP') {
         const digits = userMessage.replace(/\D/g, '');
         if (digits === state.otp) {
             const account = await getBankAccount(state.phone);
-            sessionStore.delete(sessionId);
+            await deleteSession(sessionId);
             if (account) {
                 return `تم التحقق بنجاح! سيد ${account.owner_name}، رصيد حسابك هو ${account.balance} ${account.currency}. رقم حسابك: ${account.account_number}. هل هناك شيء آخر؟`;
             }
@@ -415,7 +452,7 @@ async function processMessage(userMessage, sessionId, phone = null, history = []
         } else {
             // Check if user wants to cancel
             if (userMessage.includes("الغاء") || userMessage.includes("cancel")) {
-                sessionStore.delete(sessionId);
+                await deleteSession(sessionId);
                 return "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟";
             }
             return "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'.";
@@ -438,7 +475,10 @@ async function processMessage(userMessage, sessionId, phone = null, history = []
         if (account) {
             const otp = await sendOTP(phone);
             if (otp) {
-                sessionStore.set(sessionId, { type: 'WAITING_OTP', otp, phone, timestamp: Date.now() });
+                await saveSession(sessionId, {
+                    ...session,
+                    otpState: { type: 'WAITING_OTP', otp, phone, timestamp: Date.now() },
+                });
                 return "لقد قمت بإرسال رمز تحقق (OTP) إلى هاتفك المسجل لدينا. يرجى تزويدي بالرمز لنتمكن من عرض بيانات حسابك بأمان.";
             } else {
                 return "عذراً، واجهت مشكلة في إرسال رمز التحقق. يرجى المحاولة لاحقاً.";
@@ -451,14 +491,36 @@ async function processMessage(userMessage, sessionId, phone = null, history = []
     return aiResponse;
 }
 
+// Speak text into a TwiML node using the configured TTS provider.
+// Generates audio -> stores in a PRIVATE bucket -> plays via a short-lived signed
+// URL (G27). Falls back to Twilio's built-in Polly.Zeina <Say> if TTS/media is
+// unavailable (G4 safe fallback). Returns the stored private path (or null).
+async function sayOrPlay(node, text) {
+    try {
+        const audio = await synthesize(text, { lang: 'ar' });
+        if (audio && isMediaConfigured()) {
+            const stored = await uploadAndSign(audio.buffer, audio.contentType, 'tts');
+            if (stored?.signedUrl) {
+                node.play(stored.signedUrl);
+                return stored.path;
+            }
+        }
+    } catch (e) {
+        logger.error({ err: e.message }, 'sayOrPlay TTS error; using Polly fallback');
+    }
+    node.say({ voice: 'Polly.Zeina', language: 'arb' }, text);
+    return null;
+}
+
 // Log Call to Supabase
-async function saveCallLog(callSid, userText, aiText, audioUrl, ttsProvider) {
+async function saveCallLog(callSid, userText, aiText, audioPath, ttsProvider) {
     try {
         await supabase.from('call_logs').insert({
             call_sid: callSid,
             user_text: userText,
             ai_text: aiText,
-            ai_audio_url: audioUrl || `tts://${ttsProvider}`
+            // Store the PRIVATE storage path (not a public URL). Access via signed URL.
+            ai_audio_url: audioPath || `tts://${ttsProvider}`
         });
     } catch (e) {
         console.error("Supabase Log Error:", e.message);
@@ -471,7 +533,7 @@ async function saveCallLog(callSid, userText, aiText, audioUrl, ttsProvider) {
 app.get('/', (req, res) => res.send('Bank AI v35 (Polly Only Flow)'));
 app.get('/voice', (req, res) => res.send("Active at +19166596816"));
 
-app.post('/voice', (req, res) => {
+app.post('/voice', validateTwilioSignature, (req, res) => {
     console.log("[Twilio] Inbound Call Handled");
     const twiml = new twilio.twiml.VoiceResponse();
 
@@ -493,7 +555,7 @@ app.post('/voice', (req, res) => {
     res.type('text/xml').send(twiml.toString());
 });
 
-app.post('/handle-speech', async (req, res) => {
+app.post('/handle-speech', validateTwilioSignature, async (req, res) => {
     const userSpeech = req.body.SpeechResult;
     const callSid = req.body.CallSid;
     const fromPhone = req.body.From;
@@ -514,8 +576,9 @@ app.post('/handle-speech', async (req, res) => {
             interruptible: true
         });
 
-        gather.say({ voice: 'Polly.Zeina', language: 'arb' }, aiText);
-        saveCallLog(callSid, userSpeech, aiText, null, 'polly-zeina');
+        // Use the configured TTS provider (Azure by default); private signed-URL playback.
+        const audioPath = await sayOrPlay(gather, aiText);
+        saveCallLog(callSid, userSpeech, aiText, audioPath, getTtsProvider());
 
         twiml.redirect('/voice');
     } else {
@@ -526,7 +589,7 @@ app.post('/handle-speech', async (req, res) => {
 });
 
 // Outbound / Mobile SDK Handlers
-app.post('/api/voice-sdk', (req, res) => {
+app.post('/api/voice-sdk', validateTwilioSignature, (req, res) => {
     const twiml = new twilio.twiml.VoiceResponse();
     const to = req.body.To;
 
@@ -541,7 +604,7 @@ app.post('/api/voice-sdk', (req, res) => {
     res.type('text/xml').send(twiml.toString());
 });
 
-app.post('/api/make-call', async (req, res) => {
+app.post('/api/make-call', requireAuth, requireRole('agent'), async (req, res) => {
     const { to } = req.body;
     if (!to) return res.status(400).json({ error: "Missing 'to' phone number" });
 
@@ -559,7 +622,7 @@ app.post('/api/make-call', async (req, res) => {
     }
 });
 
-app.get('/api/token', (req, res) => {
+app.get('/api/token', requireAuth, requireRole('agent'), (req, res) => {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const apiKey = process.env.TWILIO_API_KEY;
     const apiSecret = process.env.TWILIO_API_SECRET;
@@ -591,22 +654,24 @@ app.get('/api/token', (req, res) => {
     }
 });
 
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', sessionRateLimiter, async (req, res) => {
     const { message, history, sessionId, phone } = req.body;
     if (!message) return res.status(400).json({ error: "Missing 'message' field" });
 
     const sessionKey = sessionId || 'web-chat-default';
 
     try {
+        await appendTurn(sessionKey, 'user', message);
         const response = await processMessage(message, sessionKey, phone, history || []);
+        await appendTurn(sessionKey, 'assistant', response);
         res.json({ content: response });
     } catch (error) {
-        console.error("Chat Error:", error);
-        res.status(500).json({ error: error.message });
+        req.log?.error({ err: error.message }, 'Chat error');
+        res.status(500).json({ error: 'Failed to process message.' });
     }
 });
 
-app.post('/api/sms', async (req, res) => {
+app.post('/api/sms', requireAuth, requireRole('agent'), async (req, res) => {
     const { to, message } = req.body;
     if (!to || !message) {
         return res.status(400).json({ error: "Missing 'to' or 'message' field." });
@@ -625,4 +690,107 @@ app.post('/api/sms', async (req, res) => {
     }
 });
 
-httpServer.listen(port, '0.0.0.0', () => console.log(`Server v35 (Polly Only Flow) on ${port}`));
+// --- Private media access via short-lived signed URLs (G27) ---
+// Role check happens BEFORE signing, so only authorized agents can read media.
+app.get('/api/media/sign', requireAuth, requireRole('agent'), async (req, res) => {
+    const path = req.query.path;
+    if (!path || typeof path !== 'string') {
+        return res.status(400).json({ error: "Missing 'path' query parameter." });
+    }
+    if (!isMediaConfigured()) {
+        return res.status(503).json({ error: 'Media storage is not configured.' });
+    }
+    const signedUrl = await signExistingPath(path);
+    if (!signedUrl) {
+        return res.status(404).json({ error: 'Could not sign the requested object.' });
+    }
+    return res.json({ url: signedUrl });
+});
+
+// --- WhatsApp Cloud API webhook (G23) ---
+// GET: Meta verification handshake.
+app.get('/webhook/whatsapp', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+    if (mode === 'subscribe' && token && token === process.env.WHATSAPP_VERIFY_TOKEN) {
+        return res.status(200).send(challenge);
+    }
+    return res.sendStatus(403);
+});
+
+// POST: signature is verified against the raw body BEFORE any processing.
+app.post('/webhook/whatsapp', verifyWhatsAppSignature, async (req, res) => {
+    // Respond 200 quickly so Meta does not retry; process asynchronously.
+    res.sendStatus(200);
+    try {
+        const entry = req.body?.entry?.[0]?.changes?.[0]?.value;
+        const msg = entry?.messages?.[0];
+        if (!msg || msg.type !== 'text') return;
+
+        // Deduplicate by WhatsApp message id (state lives in Redis, not memory).
+        if (await isDuplicate('whatsapp', msg.id)) {
+            req.log?.info({ messageId: msg.id }, 'Duplicate WhatsApp message ignored');
+            return;
+        }
+
+        const from = msg.from;
+        const text = msg.text?.body || '';
+        await appendTurn(from, 'user', text);
+        const reply = await processMessage(text, from, from);
+        await appendTurn(from, 'assistant', reply);
+
+        if (process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID && process.env.SECURITY_WHATSAPP_ACCESS_TOKEN) {
+            const url = `https://graph.facebook.com/v24.0/${process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID}/messages`;
+            await fetch(url, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Bearer ${process.env.SECURITY_WHATSAPP_ACCESS_TOKEN}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    messaging_product: 'whatsapp',
+                    to: from,
+                    type: 'text',
+                    text: { body: reply },
+                }),
+            });
+        }
+    } catch (err) {
+        req.log?.error({ err: err.message }, 'WhatsApp webhook processing error');
+    }
+});
+
+// --- Streaming voice path with barge-in (G4, experimental) ---
+// TwiML that hands the call audio to our WebSocket via Twilio Media Streams.
+app.post('/voice/stream', validateTwilioSignature, (req, res) => {
+    const twiml = new twilio.twiml.VoiceResponse();
+    const host = (process.env.NGROK_URL || '').replace(/^https?:\/\//, '');
+    if (!host) {
+        // No public host configured; fall back to the stable gather flow.
+        twiml.redirect('/voice');
+        return res.type('text/xml').send(twiml.toString());
+    }
+    twiml.say({ voice: 'Polly.Zeina', language: 'arb' }, 'أهلاً بك في البنك الإسلامي الفلسطيني.');
+    const connect = twiml.connect();
+    connect.stream({ url: `wss://${host}/voice/stream` });
+    res.type('text/xml').send(twiml.toString());
+});
+
+// Bridge the dead WebSocketServer to Twilio Media Streams.
+attachVoiceStream(wss, processMessage);
+httpServer.on('upgrade', (request, socket, head) => {
+    let pathname = '';
+    try {
+        pathname = new URL(request.url, 'http://localhost').pathname;
+    } catch {
+        pathname = request.url || '';
+    }
+    if (pathname === '/voice/stream') {
+        wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws, request));
+    } else {
+        socket.destroy();
+    }
+});
+
+httpServer.listen(port, '0.0.0.0', () => logger.info({ port, tts: getTtsProvider() }, 'Node voice/API server started'));

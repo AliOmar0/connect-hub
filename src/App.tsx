@@ -14,6 +14,8 @@ import AnalyticsPage from "./pages/AnalyticsPage";
 import SettingsPage from "./pages/SettingsPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
+import QueuePage from "./pages/QueuePage";
+import KnowledgePage from "./pages/KnowledgePage";
 import NotFound from "./pages/NotFound";
 
 import EscalationListener from "@/components/EscalationListener";
@@ -63,6 +65,26 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <SessionsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/queue"
+              element={
+                <ProtectedRoute
+                  allowedRoles={["admin", "supervisor", "manager", "agent"]}
+                >
+                  <QueuePage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/knowledge"
+              element={
+                <ProtectedRoute
+                  allowedRoles={["admin", "supervisor", "manager"]}
+                >
+                  <KnowledgePage />
                 </ProtectedRoute>
               }
             />

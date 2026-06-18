@@ -1,0 +1,103 @@
+# Basic Kubernetes manifests for the Node voice/API service (G18).
+# Apply with: kubectl apply -f k8s/
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: node-api-config
+data:
+  NODE_ENV: "production"
+  REDIS_URL: "redis://redis:6379"
+  SESSION_TTL_SECONDS: "1800"
+  RATE_LIMIT_IP_PER_MIN: "60"
+  RATE_LIMIT_SESSION_PER_MIN: "10"
+  TWILIO_VALIDATE_SIGNATURE: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: node-api-secrets
+type: Opaque
+stringData:
+  # Populate these from your secret manager; never commit real values.
+  SUPABASE_JWT_SECRET: "REPLACE_ME"
+  OPENROUTER_API_KEY: "REPLACE_ME"
+  TWILIO_ACCOUNT_SID: "REPLACE_ME"
+  TWILIO_AUTH_TOKEN: "REPLACE_ME"
+  WHATSAPP_APP_SECRET: "REPLACE_ME"
+  WHATSAPP_VERIFY_TOKEN: "REPLACE_ME"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: node-api
+  labels:
+    app: node-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: node-api
+  template:
+    metadata:
+      labels:
+        app: node-api
+    spec:
+      containers:
+        - name: node-api
+          image: connect-hub/node-api:latest
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: node-api-config
+            - secretRef:
+                name: node-api-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: node-api
+spec:
+  selector:
+    app: node-api
+  ports:
+    - port: 3001
+      targetPort: 3001
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: node-api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: node-api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -1,0 +1,88 @@
+{
+  "common": {
+    "appName": "Connect Hub",
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "search": "Search",
+    "accessDenied": "Access Denied",
+    "noPermission": "You don't have permission to access this page."
+  },
+  "language": {
+    "label": "Language",
+    "english": "English",
+    "arabic": "Arabic"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "sessions": "Sessions",
+    "employees": "Employees",
+    "analytics": "Analytics",
+    "settings": "Settings",
+    "notifications": "Notifications",
+    "shortcuts": "Shortcuts"
+  },
+  "quickActions": {
+    "branchLocator": "Branch Locator",
+    "cardLimits": "Card Limits",
+    "faq": "FAQ",
+    "contactAgent": "Contact Agent"
+  },
+  "chat": {
+    "placeholder": "Type your message...",
+    "send": "Send",
+    "languageSwitched": "Language switched to English.",
+    "sessionExpired": "Your session expired. Would you like to start a new one?",
+    "startNewSession": "Start new session"
+  },
+  "handoff": {
+    "title": "Human Handoff",
+    "waitTime": "Estimated wait time",
+    "requestCallback": "Request a callback",
+    "noAgentAvailable": "No agent is available right now.",
+    "status": "Status",
+    "transcript": "Transcript",
+    "summary": "Summary"
+  },
+  "queue": {
+    "title": "Escalation Queue",
+    "subtitle": "Sessions waiting for a human agent",
+    "empty": "No sessions are waiting for handoff.",
+    "sla": "SLA",
+    "slaBreached": "SLA breached",
+    "slaRemaining": "SLA remaining",
+    "waiting": "Waiting",
+    "accept": "Accept",
+    "accepted": "Accepted",
+    "offerCallback": "Offer callback",
+    "callbackRequested": "Callback requested",
+    "detectedIntent": "Detected intent",
+    "channel": "Channel",
+    "maskedNotice": "Sensitive values are masked. Open the session for full context.",
+    "acceptedToast": "You accepted the session.",
+    "callbackToast": "Callback offered to the customer."
+  },
+  "kb": {
+    "title": "Knowledge Base",
+    "subtitle": "Manage documents the assistant uses to answer questions",
+    "upload": "Upload document",
+    "uploading": "Uploading...",
+    "reindex": "Re-index",
+    "reindexing": "Re-indexing...",
+    "rollback": "Rollback",
+    "versionHistory": "Version history",
+    "status": "Status",
+    "name": "Name",
+    "version": "Version",
+    "updated": "Updated",
+    "actions": "Actions",
+    "statusIndexed": "Indexed",
+    "statusProcessing": "Processing",
+    "statusFailed": "Failed",
+    "empty": "No documents yet. Upload one to get started.",
+    "backendMissing": "Knowledge-base backend is not reachable. Configure VITE_KB_API_URL.",
+    "uploadSuccess": "Document uploaded and queued for indexing.",
+    "rollbackSuccess": "Rolled back to the selected version.",
+    "reindexSuccess": "Re-index started."
+  }
+}

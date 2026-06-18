@@ -1,0 +1,88 @@
+{
+  "common": {
+    "appName": "كونكت هب",
+    "loading": "جارٍ التحميل...",
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "search": "بحث",
+    "accessDenied": "تم رفض الوصول",
+    "noPermission": "ليس لديك إذن للوصول إلى هذه الصفحة."
+  },
+  "language": {
+    "label": "اللغة",
+    "english": "الإنجليزية",
+    "arabic": "العربية"
+  },
+  "nav": {
+    "dashboard": "لوحة التحكم",
+    "sessions": "الجلسات",
+    "employees": "الموظفون",
+    "analytics": "التحليلات",
+    "settings": "الإعدادات",
+    "notifications": "الإشعارات",
+    "shortcuts": "الاختصارات"
+  },
+  "quickActions": {
+    "branchLocator": "محدد موقع الفروع",
+    "cardLimits": "حدود البطاقة",
+    "faq": "الأسئلة الشائعة",
+    "contactAgent": "التواصل مع موظف"
+  },
+  "chat": {
+    "placeholder": "اكتب رسالتك...",
+    "send": "إرسال",
+    "languageSwitched": "تم تغيير اللغة إلى العربية.",
+    "sessionExpired": "انتهت صلاحية جلستك. هل ترغب في بدء جلسة جديدة؟",
+    "startNewSession": "بدء جلسة جديدة"
+  },
+  "handoff": {
+    "title": "التحويل إلى موظف",
+    "waitTime": "الوقت المتوقع للانتظار",
+    "requestCallback": "طلب معاودة الاتصال",
+    "noAgentAvailable": "لا يوجد موظف متاح حالياً.",
+    "status": "الحالة",
+    "transcript": "المحادثة",
+    "summary": "الملخص"
+  },
+  "queue": {
+    "title": "قائمة انتظار التحويل",
+    "subtitle": "الجلسات التي تنتظر موظفاً بشرياً",
+    "empty": "لا توجد جلسات تنتظر التحويل.",
+    "sla": "اتفاقية مستوى الخدمة",
+    "slaBreached": "تم تجاوز مستوى الخدمة",
+    "slaRemaining": "الوقت المتبقي لمستوى الخدمة",
+    "waiting": "في الانتظار",
+    "accept": "قبول",
+    "accepted": "تم القبول",
+    "offerCallback": "عرض معاودة الاتصال",
+    "callbackRequested": "تم طلب معاودة الاتصال",
+    "detectedIntent": "النية المكتشفة",
+    "channel": "القناة",
+    "maskedNotice": "القيم الحساسة مخفية. افتح الجلسة لعرض السياق الكامل.",
+    "acceptedToast": "لقد قبلت الجلسة.",
+    "callbackToast": "تم عرض معاودة الاتصال على العميل."
+  },
+  "kb": {
+    "title": "قاعدة المعرفة",
+    "subtitle": "إدارة المستندات التي يستخدمها المساعد للإجابة على الأسئلة",
+    "upload": "رفع مستند",
+    "uploading": "جارٍ الرفع...",
+    "reindex": "إعادة الفهرسة",
+    "reindexing": "جارٍ إعادة الفهرسة...",
+    "rollback": "استرجاع",
+    "versionHistory": "سجل الإصدارات",
+    "status": "الحالة",
+    "name": "الاسم",
+    "version": "الإصدار",
+    "updated": "آخر تحديث",
+    "actions": "إجراءات",
+    "statusIndexed": "مفهرس",
+    "statusProcessing": "قيد المعالجة",
+    "statusFailed": "فشل",
+    "empty": "لا توجد مستندات بعد. ارفع مستنداً للبدء.",
+    "backendMissing": "خدمة قاعدة المعرفة غير متاحة. يرجى ضبط VITE_KB_API_URL.",
+    "uploadSuccess": "تم رفع المستند وإدراجه في قائمة الفهرسة.",
+    "rollbackSuccess": "تم الاسترجاع إلى الإصدار المحدد.",
+    "reindexSuccess": "بدأت إعادة الفهرسة."
+  }
+}

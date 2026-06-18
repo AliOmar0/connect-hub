@@ -1,0 +1,23 @@
+# Gitleaks configuration for connect-hub
+# Extends the default ruleset and adds project-specific allowlisting.
+title = "connect-hub gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlist for placeholders and templates"
+paths = [
+  '''\.env\.example$''',
+  '''.*\.env\.example$''',
+  '''bun\.lockb$''',
+  '''package-lock\.json$''',
+]
+regexes = [
+  # Placeholder values used in templates and docs
+  '''your[-_].*''',
+  '''ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''',
+  '''SKxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''',
+  '''APxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx''',
+  '''sk-or-your-openrouter-key''',
+]
