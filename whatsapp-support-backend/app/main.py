@@ -24,7 +24,7 @@ async def session_cleanup_task():
             await crud.delete_old_notifications(None, hours=24)
         except Exception as e:
             print(f"Error in session cleanup task: {e}")
-        await asyncio.sleep(300) # Run every 5 minutes
+        await asyncio.sleep(120) # Run every 2 minutes — keeps race window tight vs 10-min session timeout
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

@@ -147,17 +147,17 @@ async def generate_otp(request: OtpRequest):
         logger.error(f"Failed to send WhatsApp message: {e}")
         # We don't fail the whole request as the OTP is still valid in DB
     
-    # 3. Create In-app notification for redundancy (optional but keeping it for now)
+    # 3. Create in-app notification for audit trail (OTP value intentionally omitted)
     try:
         supabase.table("notifications").insert({
             "title": "🔑 PIB WhatsApp OTP",
-            "message": f"The WhatsApp OTP for {phone} is: {otp}",
+            "message": f"A verification OTP was sent to {phone}.",
             "type": "info"
         }).execute()
     except:
         pass
 
-    return {"status": "sent", "phone": phone, "otp": otp}
+    return {"status": "sent", "phone": phone}
 
 @app.post("/verify")
 async def verify_otp(request: VerifyRequest):

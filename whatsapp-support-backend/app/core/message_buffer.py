@@ -26,9 +26,9 @@ from datetime import datetime
 logger = logging.getLogger("message_buffer")
 
 # Buffer wait times in seconds
-BUFFER_WAIT_SECONDS = 15         # Default wait when only 1 message received
-RAPID_TYPING_WAIT_SECONDS = 15   # Shorter wait when rapid typing is detected
-RAPID_TYPING_THRESHOLD = 5       # If messages arrive within this many seconds, it's rapid typing
+BUFFER_WAIT_SECONDS = 30        # Default wait when message cadence is slow (1 message, or slow typist)
+RAPID_TYPING_WAIT_SECONDS = 15  # Shorter wait when rapid typing is detected (faster AI response)
+RAPID_TYPING_THRESHOLD = 5      # If messages arrive within this many seconds, it's rapid typing
 
 
 @dataclass
