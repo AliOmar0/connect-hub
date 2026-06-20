@@ -1,8 +1,17 @@
-Write-Host "Starting backend..."
-cd whatsapp-support-backend
-.venv\Scripts\Activate.ps1
-Start-Process powershell -ArgumentList "python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+# Quick start for local development (Windows / PowerShell).
+# Runs the backend stack (Node API + free edge TTS) AND the Vite frontend together.
+#
+# First time only:  ./scripts/setup-backend.ps1
+#
+# Backend-only (frontend is on Vercel):  npm run backend
 
-Write-Host "Starting frontend..."
-cd ../whatsapp-support-frontend
-npm run dev
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+
+Write-Host "Starting backend (Node API + edge TTS) and frontend..." -ForegroundColor Cyan
+Push-Location $root
+# concurrently is already a dev dependency; run both with prefixed output.
+npx concurrently -n backend,web -c cyan,green `
+    "node scripts/dev-backend.mjs node tts" `
+    "npm run dev"
+Pop-Location

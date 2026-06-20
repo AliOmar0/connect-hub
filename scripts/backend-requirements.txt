@@ -1,0 +1,20 @@
+# Shared Python deps for the LIGHTWEIGHT backend dev stack:
+#   - edge_tts_server.py  (free Arabic TTS)
+#   - otp-service/main.py (WhatsApp OTP microservice)
+#
+# The heavy whatsapp-support-backend (torch / Whisper) keeps its own
+# requirements at whatsapp-support-backend/requirements.txt and is installed
+# separately by the setup script only when you opt in.
+
+# Edge TTS (free Microsoft online voices, no API key)
+edge-tts
+flask
+
+# OTP microservice
+fastapi
+uvicorn
+httpx
+supabase
+python-dotenv
+pydantic
+pyngrok

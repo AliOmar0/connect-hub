@@ -30,17 +30,22 @@ async function azureSynthesize(text, lang = 'ar') {
         return null;
     }
     const locale = AZURE_VOICE.split('-').slice(0, 2).join('-') || 'ar-JO';
+    // A slightly slower rate + gentle pitch makes the neural voice sound warmer
+    // and more natural (less clipped/robotic) on phone audio.
+    const rate = process.env.AZURE_TTS_RATE || '-4%';
+    const pitch = process.env.AZURE_TTS_PITCH || '+2%';
     const ssml =
-        `<speak version='1.0' xml:lang='${locale}'>` +
-        `<voice xml:lang='${locale}' name='${AZURE_VOICE}'>${escapeXml(text)}</voice>` +
-        `</speak>`;
+        `<speak version='1.0' xmlns:mstts='https://www.w3.org/2001/mstts' xml:lang='${locale}'>` +
+        `<voice xml:lang='${locale}' name='${AZURE_VOICE}'>` +
+        `<prosody rate='${rate}' pitch='${pitch}'>${escapeXml(text)}</prosody>` +
+        `</voice></speak>`;
     const url = `https://${AZURE_REGION}.tts.speech.microsoft.com/cognitiveservices/v1`;
     const res = await axios.post(url, ssml, {
         headers: {
             'Ocp-Apim-Subscription-Key': AZURE_KEY,
             'Content-Type': 'application/ssml+xml',
-            // MP3 plays directly via Twilio <Play>.
-            'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3',
+            // Higher-fidelity MP3 for more natural audio; plays directly via Twilio <Play>.
+            'X-Microsoft-OutputFormat': 'audio-24khz-96kbitrate-mono-mp3',
             'User-Agent': 'connect-hub',
         },
         responseType: 'arraybuffer',
@@ -116,6 +121,24 @@ export async function synthesize(text, { lang = 'ar' } = {}) {
 
 export function getTtsProvider() {
     return PROVIDER;
+}
+
+// Prefer a natural neural voice everywhere: try the configured provider first,
+// then fall back to the free edge-tts neural voice, and only then let the caller
+// drop to Twilio's robotic <Say> Polly.Zeina as a last resort.
+export async function synthesizeNatural(text, { lang = 'ar' } = {}) {
+    if (!text) return null;
+    const primary = await synthesize(text, { lang });
+    if (primary?.buffer) return primary;
+    if (PROVIDER !== 'edge') {
+        try {
+            const edge = await edgeSynthesize(text);
+            if (edge?.buffer) return edge;
+        } catch (err) {
+            logger.warn({ err: err.message }, 'edge-tts fallback failed');
+        }
+    }
+    return null;
 }
 
 // Telephony-grade synthesis: returns raw 8kHz 8-bit mono μ-law bytes, the exact

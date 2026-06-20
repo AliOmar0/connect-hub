@@ -1,5 +1,12 @@
 # Connect-Hub full stack (G18, G35).
 # Secrets are read from a local .env file (never committed). Copy .env.example.
+#
+# Common commands:
+#   docker compose up --build              # core stack: redis, node-api, edge-tts, otp, web
+#   docker compose --profile monitoring up # also start Prometheus + Grafana
+#
+# TTS defaults to the FREE edge-tts service so no paid TTS credits are used.
+# Override by setting TTS_PROVIDER (e.g. azure) in your .env.
 services:
   redis:
     image: redis:7-alpine
@@ -14,6 +21,15 @@ services:
       timeout: 3s
       retries: 5
 
+  # Free Arabic TTS (Microsoft Edge online voices, no API key, no credits).
+  edge-tts:
+    build:
+      context: .
+      dockerfile: Dockerfile.tts
+    ports:
+      - "5070:5070"
+    restart: unless-stopped
+
   node-api:
     build:
       context: .
@@ -22,11 +38,16 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       NODE_ENV: production
+      # Default to the free local TTS provider; override via .env if desired.
+      TTS_PROVIDER: ${TTS_PROVIDER:-edge}
+      EDGE_TTS_URL: http://edge-tts:5070
     ports:
       - "3001:3001"
     depends_on:
       redis:
         condition: service_healthy
+      edge-tts:
+        condition: service_started
     restart: unless-stopped
 
   otp-service:
@@ -51,8 +72,10 @@ services:
     depends_on:
       - node-api
 
+  # Optional observability stack. Start with: docker compose --profile monitoring up
   prometheus:
     image: prom/prometheus:latest
+    profiles: ["monitoring"]
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
@@ -62,6 +85,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    profiles: ["monitoring"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: "false"

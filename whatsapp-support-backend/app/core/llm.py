@@ -10,7 +10,16 @@ logger = logging.getLogger(__name__)
 
 # LLM configurations from settings
 API_KEY = settings.OPENROUTER_API_KEY
-MODEL_NAME = settings.OPENROUTER_MODEL
+MODEL_NAME = settings.OPENROUTER_MODEL or "google/gemma-4-31b-it:free"
+# Capable, free, Arabic-strong models. Sent as a `models` array so OpenRouter
+# automatically fails over when one is rate-limited (max 3 accepted by the API).
+_FALLBACKS = [
+    m.strip()
+    for m in (os.getenv("OPENROUTER_FALLBACK_MODELS") or
+              "meta-llama/llama-3.3-70b-instruct:free,qwen/qwen3-next-80b-a3b-instruct:free").split(",")
+    if m.strip()
+]
+MODEL_LIST = ([MODEL_NAME] + _FALLBACKS)[:3]
 
 SYSTEM_PROMPT = r"""أنت مساعد ذكاء اصطناعي يمثل البنك الإسلامي الفلسطيني (PIB) وتعمل كقناة رسمية رقمية لخدمة عملاء البنك. يجب أن تعكس جميع ردودك هوية البنك، ومبادئه الشرعية، وثقافته المؤسسية، ومعاييره المهنية. هدفك هو تقديم معلومات مصرفية إسلامية دقيقة، واضحة، وموثوقة، مع الالتزام التام بأحكام الشريعة الإسلامية والسياسات العامة للبنك.
 
@@ -630,9 +639,8 @@ class LLMService:
             "X-Title": "Connect Hub",
         }
         payload = {
-            "model": MODEL_NAME,
-            "messages": messages,
-            "reasoning": {"enabled": True}
+            "models": MODEL_LIST,
+            "messages": messages
         }
         
         async with httpx.AsyncClient() as client:
@@ -734,7 +742,7 @@ class LLMService:
             "X-Title": "Connect Hub",
         }
         payload = {
-            "model": MODEL_NAME,
+            "models": MODEL_LIST,
             "messages": messages,
             "temperature": 0.05
         }
@@ -798,7 +806,7 @@ class LLMService:
             "X-Title": "Connect Hub",
         }
         payload = {
-            "model": MODEL_NAME,
+            "models": MODEL_LIST,
             "messages": messages,
             "temperature": 0.1
         }

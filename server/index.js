@@ -29,8 +29,9 @@ import {
     deleteSession,
     appendTurn,
     isDuplicate,
+    isRedisHealthy,
 } from './lib/redis.js';
-import { synthesize, getTtsProvider } from './lib/tts.js';
+import { synthesize, synthesizeNatural, getTtsProvider } from './lib/tts.js';
 import { uploadAndSign, signExistingPath, isMediaConfigured } from './lib/media.js';
 import { attachVoiceStream } from './lib/voiceStream.js';
 
@@ -46,7 +47,19 @@ const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 if (!OPENROUTER_KEY) {
     console.warn("[Config] OPENROUTER_API_KEY is not set. AI responses will fail until it is configured in the environment.");
 }
-const MODEL_NAME = process.env.OPENROUTER_MODEL || "arcee-ai/trinity-large-preview:free"; // Fast model for voice calls
+// Capable, free, Arabic-strong models on OpenRouter. We send up to 3 as a
+// `models` array so OpenRouter automatically fails over when one is rate-limited
+// (the old single model `arcee-ai/trinity-large-preview:free` was discontinued -> 404).
+const PRIMARY_MODEL = process.env.OPENROUTER_MODEL || 'google/gemma-4-31b-it:free';
+const FALLBACK_MODELS = (
+    process.env.OPENROUTER_FALLBACK_MODELS ||
+    'meta-llama/llama-3.3-70b-instruct:free,qwen/qwen3-next-80b-a3b-instruct:free'
+)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+const MODEL_LIST = [PRIMARY_MODEL, ...FALLBACK_MODELS].slice(0, 3); // OpenRouter caps at 3
+const MODEL_NAME = PRIMARY_MODEL; // for display/diagnostics
 
 const SYSTEM_PROMPT = `أنت مساعد ذكاء اصطناعي يمثل البنك الإسلامي الفلسطيني (PIB) وتعمل كقناة رسمية رقمية لخدمة عملاء البنك. يجب أن تعكس جميع ردودك هوية البنك، ومبادئه الشرعية، وثقافته المؤسسية، ومعاييره المهنية. هدفك هو تقديم معلومات مصرفية إسلامية دقيقة، واضحة، وموثوقة، مع الالتزام التام بأحكام الشريعة الإسلامية والسياسات العامة للبنك.
 
@@ -338,13 +351,12 @@ async function getAIResponse(userMessage, history = []) {
         const response = await axios.post(
             "https://openrouter.ai/api/v1/chat/completions",
             {
-                model: MODEL_NAME,
+                models: MODEL_LIST,
                 messages: [
                     { role: "system", content: SYSTEM_PROMPT + VOICE_LIMIT_PROMPT },
                     ...history,
                     { role: "user", content: userMessage }
-                ],
-                provider: { allow_fallbacks: false }
+                ]
             },
             {
                 headers: {
@@ -354,13 +366,23 @@ async function getAIResponse(userMessage, history = []) {
                     "X-Title": "PIB Voice Assistant",
                     "X-Prompt-Cache": "true"
                 },
-                timeout: 10000
+                timeout: 20000
             }
         );
-        return response.data?.choices?.[0]?.message?.content || "عذراً، لم أفهم.";
+        const content = response.data?.choices?.[0]?.message?.content;
+        if (!content) {
+            logger.warn({ data: response.data }, '[LLM] Empty response from model');
+            return "عذراً، لم أتمكن من معالجة طلبك حالياً. يرجى المحاولة بعد قليل.";
+        }
+        return content;
     } catch (error) {
-        console.error("[LLM] Error:", error.response?.data || error.message);
-        return "أهلاً بك، كيف بقدر أساعدك؟";
+        const status = error.response?.status;
+        const detail = error.response?.data || error.message;
+        logger.error({ status, detail }, '[LLM] OpenRouter request failed');
+        if (status === 429) {
+            return "عذراً، الخدمة مزدحمة حالياً. يرجى المحاولة بعد لحظات قليلة.";
+        }
+        return "عذراً، أواجه صعوبة تقنية مؤقتة. يرجى المحاولة مرة أخرى.";
     }
 }
 
@@ -497,7 +519,7 @@ async function processMessage(userMessage, sessionId, phone = null, history = []
 // unavailable (G4 safe fallback). Returns the stored private path (or null).
 async function sayOrPlay(node, text) {
     try {
-        const audio = await synthesize(text, { lang: 'ar' });
+        const audio = await synthesizeNatural(text, { lang: 'ar' });
         if (audio && isMediaConfigured()) {
             const stored = await uploadAndSign(audio.buffer, audio.contentType, 'tts');
             if (stored?.signedUrl) {
@@ -533,7 +555,7 @@ async function saveCallLog(callSid, userText, aiText, audioPath, ttsProvider) {
 app.get('/', (req, res) => res.send('Bank AI v35 (Polly Only Flow)'));
 app.get('/voice', (req, res) => res.send("Active at +19166596816"));
 
-app.post('/voice', validateTwilioSignature, (req, res) => {
+app.post('/voice', validateTwilioSignature, async (req, res) => {
     console.log("[Twilio] Inbound Call Handled");
     const twiml = new twilio.twiml.VoiceResponse();
 
@@ -545,8 +567,8 @@ app.post('/voice', validateTwilioSignature, (req, res) => {
         action: '/handle-speech'
     });
 
-    // Use Polly Zeina voice to speak Arabic
-    gather.say({ voice: 'Polly.Zeina', language: 'arb' }, 'أهلاً بك في البنك الإسلامي الفلسطيني، كيف بقدر أساعدك؟');
+    // Natural neural greeting (Azure/edge), with Polly.Zeina as last-resort fallback.
+    await sayOrPlay(gather, 'أهلاً بك في البنك الإسلامي الفلسطيني، كيف بقدر أساعدك؟');
 
     // If they don't say anything, wait and redirect
     twiml.say({ voice: 'Polly.Zeina', language: 'arb' }, 'هل ما زلت هنا؟ يرجى طرح سؤالك.');
@@ -670,6 +692,92 @@ app.post('/api/chat', sessionRateLimiter, async (req, res) => {
         res.status(500).json({ error: 'Failed to process message.' });
     }
 });
+
+// --- Dev-only diagnostics & test endpoints --------------------------------
+// These bypass Twilio signature checks and auth so the frontend "Backend Tester"
+// page (and scripts/simulate-call.mjs) can exercise the chat / voice / TTS paths
+// WITHOUT placing real Twilio calls (zero credits). Enabled automatically in
+// non-production; to expose them on a deployed/production backend (e.g. so the
+// Vercel frontend can reach them), set ENABLE_TEST_ENDPOINTS=true.
+const TEST_ENDPOINTS_ENABLED =
+    process.env.NODE_ENV !== 'production' || process.env.ENABLE_TEST_ENDPOINTS === 'true';
+if (TEST_ENDPOINTS_ENABLED) {
+    if (process.env.NODE_ENV === 'production') {
+        logger.warn(
+            'ENABLE_TEST_ENDPOINTS=true in production: /api/test/* are reachable without auth. Disable when not demoing.'
+        );
+    }
+    // Config snapshot (no secret values, just whether each is configured).
+    app.get('/api/test/status', (req, res) => {
+        res.json({
+            ok: true,
+            env: process.env.NODE_ENV || 'development',
+            model: MODEL_NAME,
+            models: MODEL_LIST,
+            ttsProvider: getTtsProvider(),
+            redisHealthy: isRedisHealthy(),
+            mediaConfigured: isMediaConfigured(),
+            twilioSignatureValidation: process.env.TWILIO_VALIDATE_SIGNATURE === 'true',
+            providers: {
+                openrouter: Boolean(OPENROUTER_KEY),
+                supabase: Boolean(process.env.VITE_SUPABASE_URL),
+                twilio: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+                whatsappOtp: Boolean(
+                    process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID &&
+                        process.env.SECURITY_WHATSAPP_ACCESS_TOKEN
+                ),
+                azureTts: Boolean(process.env.AZURE_TTS_KEY && process.env.AZURE_TTS_REGION),
+                elevenlabs: Boolean(process.env.ELEVENLABS_API_KEY && process.env.ELEVENLABS_VOICE_ID),
+                edgeTts: Boolean(process.env.EDGE_TTS_URL),
+            },
+        });
+    });
+
+    // Simulate one voice turn the way Twilio would (speech -> AI reply), but over
+    // JSON and with NO signature requirement. Optionally returns synthesized audio.
+    app.post('/api/test/voice', async (req, res) => {
+        const { message, sessionId, phone, speak } = req.body || {};
+        if (!message) return res.status(400).json({ error: "Missing 'message' field" });
+        const sessionKey = sessionId || `test-voice-${Date.now()}`;
+        try {
+            const aiText = await processMessage(message, sessionKey, phone || null);
+            let audio = null;
+            if (speak) {
+                const out = await synthesize(aiText, { lang: 'ar' });
+                if (out?.buffer) {
+                    audio = {
+                        contentType: out.contentType,
+                        provider: out.provider,
+                        base64: out.buffer.toString('base64'),
+                    };
+                }
+            }
+            res.json({ userText: message, aiText, ttsProvider: getTtsProvider(), audio });
+        } catch (err) {
+            req.log?.error({ err: err.message }, 'test/voice error');
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    // Synthesize arbitrary text and stream back the audio bytes (tests TTS only).
+    app.post('/api/test/tts', async (req, res) => {
+        const { text } = req.body || {};
+        if (!text) return res.status(400).json({ error: "Missing 'text' field" });
+        try {
+            const out = await synthesize(text, { lang: 'ar' });
+            if (!out?.buffer) {
+                return res.status(503).json({
+                    error: `TTS provider "${getTtsProvider()}" returned no audio. For free local audio set TTS_PROVIDER=edge and run the edge-tts server (npm run backend).`,
+                });
+            }
+            res.type(out.contentType).send(out.buffer);
+        } catch (err) {
+            res.status(500).json({ error: err.message });
+        }
+    });
+
+    logger.info('Dev test endpoints enabled: /api/test/status, /api/test/voice, /api/test/tts');
+}
 
 app.post('/api/sms', requireAuth, requireRole('agent'), async (req, res) => {
     const { to, message } = req.body;

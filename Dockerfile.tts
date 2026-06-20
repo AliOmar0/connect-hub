@@ -1,0 +1,13 @@
+# Free edge-tts server (Microsoft online voices, no API key).
+# Used as the default TTS provider for local/dev so no paid TTS credits are spent.
+FROM python:3.12-slim
+WORKDIR /app
+
+RUN pip install --no-cache-dir edge-tts flask
+
+COPY edge_tts_server.py ./
+
+ENV PORT=5070
+EXPOSE 5070
+
+CMD ["python", "edge_tts_server.py"]

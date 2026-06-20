@@ -145,6 +145,7 @@ __pycache__/
 *$py.class
 venv/
 .venv/
+.venv-backend/
 ENV/
 env/
 .pytest_cache/

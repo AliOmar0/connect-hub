@@ -18,7 +18,13 @@
     "prepare": "husky || true",
     "start": "node server/index.js",
     "server": "nodemon server/index.js",
-    "dev:all": "concurrently -n web,api -c blue,green \"npm run dev\" \"npm run server\""
+    "dev:all": "concurrently -n web,api -c blue,green \"npm run dev\" \"npm run server\"",
+    "setup:backend": "node -e \"process.platform==='win32' ? require('child_process').execSync('powershell -ExecutionPolicy Bypass -File scripts/setup-backend.ps1',{stdio:'inherit'}) : require('child_process').execSync('bash scripts/setup-backend.sh',{stdio:'inherit'})\"",
+    "backend": "node scripts/dev-backend.mjs node tts",
+    "backend:node": "node scripts/dev-backend.mjs node",
+    "backend:otp": "node scripts/dev-backend.mjs node tts otp",
+    "backend:all": "node scripts/dev-backend.mjs all",
+    "simulate:call": "node scripts/simulate-call.mjs"
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.3",

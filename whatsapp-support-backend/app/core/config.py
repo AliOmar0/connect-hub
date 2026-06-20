@@ -24,7 +24,7 @@ class Settings(BaseSettings):
 
     # OpenRouter
     OPENROUTER_API_KEY: str
-    OPENROUTER_MODEL: str = "arcee-ai/trinity-large-preview:free"
+    OPENROUTER_MODEL: str = "google/gemma-4-31b-it:free"
 
     # WhatsApp Settings (Defaults, but usually pulled from DB)
     WHATSAPP_VERIFY_TOKEN: str = "pib_verify_token_2024"

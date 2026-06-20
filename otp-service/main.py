@@ -81,10 +81,26 @@ async def root():
 async def health():
     return {"status": "healthy", "timestamp": datetime.now(timezone.utc).isoformat()}
 
-# Supabase init
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Supabase init (accept the project's env var names as fallbacks so the service
+# runs with the shared root .env, which uses VITE_SUPABASE_URL + service-role key).
+SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
+SUPABASE_KEY = (
+    os.getenv("SUPABASE_KEY")
+    or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    or os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY")
+)
+
+supabase: Optional[Client] = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        logger.error(f"Failed to init Supabase client: {e}")
+else:
+    logger.warning(
+        "Supabase not configured (SUPABASE_URL/VITE_SUPABASE_URL + key). "
+        "OTP storage/verification will return an error until it is set."
+    )
 
 # WhatsApp settings for Security Number
 SECURITY_WHATSAPP_PHONE_NUMBER_ID = os.getenv("SECURITY_WHATSAPP_PHONE_NUMBER_ID")
@@ -118,6 +134,8 @@ async def send_whatsapp_message(phone: str, text: str):
 
 @app.post("/generate")
 async def generate_otp(request: OtpRequest):
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Supabase not configured on the OTP service")
     phone = request.phone
     otp = str(random.randint(1000, 9999))
     logger.info(f"Generating OTP {otp} for {phone}")
@@ -161,6 +179,8 @@ async def generate_otp(request: OtpRequest):
 
 @app.post("/verify")
 async def verify_otp(request: VerifyRequest):
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Supabase not configured on the OTP service")
     try:
         response = supabase.table("bank_otps")\
             .select("*")\

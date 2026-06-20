@@ -14,6 +14,7 @@ import {
   Zap,
   Inbox,
   BookOpen,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -227,6 +228,12 @@ export default function DashboardSidebar() {
       to: "/knowledge",
       icon: BookOpen,
       label: "Knowledge Base",
+      roles: ["admin", "supervisor", "manager"],
+    },
+    {
+      to: "/backend-test",
+      icon: FlaskConical,
+      label: "Backend Tester",
       roles: ["admin", "supervisor", "manager"],
     },
     {

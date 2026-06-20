@@ -43,13 +43,23 @@ if (process.env.REDIS_URL) {
         lazyConnect: false,
         retryStrategy: (times) => Math.min(times * 200, 2000),
     });
+    let warnedDown = false;
     redis.on('ready', () => {
         redisHealthy = true;
+        warnedDown = false;
         logger.info('Redis connected');
     });
     redis.on('error', (err) => {
         redisHealthy = false;
-        logger.warn({ err: err.message }, 'Redis error - falling back to in-memory store');
+        // Log only once per outage to avoid flooding the console while ioredis
+        // keeps retrying in the background (the in-memory fallback handles reads).
+        if (!warnedDown) {
+            warnedDown = true;
+            logger.warn(
+                { err: err.message },
+                'Redis unavailable - using in-memory fallback (set REDIS_URL or start Redis to enable distributed state)'
+            );
+        }
     });
     redis.on('end', () => {
         redisHealthy = false;
