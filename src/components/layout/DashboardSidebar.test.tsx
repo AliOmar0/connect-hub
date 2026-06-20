@@ -85,9 +85,9 @@ describe("DashboardSidebar", () => {
       () => {
         // User email or name should be displayed
         const userInfo =
-          screen.queryByText(/test@example.com/i) ||
-          screen.queryByText(/test/i) ||
-          screen.queryByText(/user/i);
+          screen.queryByText("test@example.com") ||
+          screen.queryByText("test") ||
+          screen.queryByText(/^user$/i);
         expect(userInfo).toBeInTheDocument();
       },
       { timeout: 5000 },
