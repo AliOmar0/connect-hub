@@ -561,7 +561,8 @@ class LLMService:
         user_message: str, 
         history: List[Dict[str, str]] = None, 
         session_types: List[Dict[str, Any]] = None,
-        current_type_id: Optional[str] = None
+        current_type_id: Optional[str] = None,
+        extra_system: Optional[str] = None
     ) -> str:
         if history is None:
             history = []
@@ -622,6 +623,10 @@ class LLMService:
             
             dynamic_prompt += f"\n\nنطاق المعلومات والخدمات التفصيلية المتوفرة لديك حالياً:\n{types_text}\nعندما تفهم طلب العميل، استخدم المعلومات أعلاه لتقديم إجابة دقيقة."
 
+        # Optional per-channel instruction (e.g. voice brevity). Additive only,
+        # so default (WhatsApp/web) behaviour is unchanged.
+        if extra_system:
+            dynamic_prompt += f"\n\n{extra_system}"
 
         messages = [{"role": "system", "content": dynamic_prompt}]
         for msg in history:

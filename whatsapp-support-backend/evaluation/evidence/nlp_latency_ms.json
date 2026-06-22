@@ -1,0 +1,27 @@
+{
+  "metric": "nlp_latency_ms",
+  "timestamp": "2026-06-22T09:35:22Z",
+  "command": "python -m evaluation.run_all latency",
+  "dataset": {
+    "name": "intents_test.jsonl",
+    "path": "app\\dataset\\nlp\\intents_test.jsonl",
+    "size": 180,
+    "description": "Latency of nlp_engine.analyze per message over the intent test set."
+  },
+  "thresholds": {
+    "p95_ms": 1500.0
+  },
+  "model_versions": {
+    "intent_model": "heuristic-intent-1.2.0"
+  },
+  "suite_version": "1.0.0",
+  "results": {
+    "mean_ms": 0.214,
+    "p50_ms": 0.203,
+    "p95_ms": 0.296,
+    "max_ms": 0.335,
+    "samples_file": "latency_samples.csv"
+  },
+  "status": "pass",
+  "limitations": "Measures the local NLP stage only (CPU). End-to-end latency including OpenRouter LLM and Qdrant RAG depends on network/model and is not captured here. Numbers vary with host hardware."
+}

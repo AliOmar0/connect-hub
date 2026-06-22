@@ -3,6 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.v1.webhook import router as webhook_router
 from app.api.v1.sessions import router as sessions_router
+from app.api.v1.knowledge_base import router as knowledge_base_router
+from app.api.v1.nlp import router as nlp_router
+from app.api.v1.decision import router as decision_router
+from app.api.v1.assistant import router as assistant_router
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -97,6 +101,10 @@ app.include_router(webhook_router, tags=["webhook"])
 
 # API V1
 app.include_router(sessions_router, prefix=settings.API_V1_STR, tags=["sessions"])
+app.include_router(knowledge_base_router, prefix=settings.API_V1_STR, tags=["knowledge-base"])
+app.include_router(nlp_router, prefix=settings.API_V1_STR, tags=["nlp"])
+app.include_router(decision_router, prefix=settings.API_V1_STR, tags=["decision"])
+app.include_router(assistant_router, prefix=settings.API_V1_STR, tags=["assistant"])
 
 @app.get("/")
 def root():

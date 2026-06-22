@@ -1,0 +1,40 @@
+{
+  "generated_at": "2026-06-22T09:35:22Z",
+  "paths": [
+    "/api/v1/assistant/reply",
+    "/api/v1/decision/evaluate",
+    "/api/v1/nlp/analyze",
+    "/api/v1/nlp/labels"
+  ],
+  "schema_examples": {
+    "DecisionRequest": [
+      {
+        "channel": "web",
+        "text": "بدي احول 500 شيكل لحساب صاحبي"
+      }
+    ],
+    "ReplyRequest": [
+      {
+        "channel": "whatsapp",
+        "history": [],
+        "session_id": "b1d3...",
+        "text": "بدي احكي مع موظف"
+      }
+    ],
+    "ReplyResponse": [
+      {
+        "decision": "ESCALATE",
+        "escalate": true,
+        "escalation_reason": "Explicit Agent Request",
+        "escalation_summary": "Explicit Agent Request: بدي احكي مع موظف",
+        "intent": "ESCALATION_REQUEST",
+        "language": "LEVANTINE_PS",
+        "message": "سأقوم بتحويلك الآن إلى أحد زملائي في خدمة العملاء...",
+        "scores": {
+          "intent_confidence": 0.97,
+          "language_confidence": 0.95
+        }
+      }
+    ]
+  }
+}

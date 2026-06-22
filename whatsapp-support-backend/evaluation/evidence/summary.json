@@ -1,0 +1,76 @@
+{
+  "generated_at": "2026-06-22T09:35:22Z",
+  "suite_version": "1.0.0",
+  "metrics": [
+    {
+      "metric": "intent_top1_accuracy",
+      "status": "pass",
+      "file": "intent_top1_accuracy.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "intents_test.jsonl",
+      "dataset_size": 180,
+      "command": "python -m evaluation.run_all intent",
+      "headline": "91.67% top-1 accuracy"
+    },
+    {
+      "metric": "entity_micro_f1",
+      "status": "pass",
+      "file": "entity_micro_f1.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "entities_test.jsonl",
+      "dataset_size": 25,
+      "command": "python -m evaluation.run_all entity",
+      "headline": "100.00% micro-F1"
+    },
+    {
+      "metric": "language_accuracy",
+      "status": "pass",
+      "file": "language_accuracy.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "language_test.jsonl",
+      "dataset_size": 45,
+      "command": "python -m evaluation.run_all language",
+      "headline": "97.78% accuracy"
+    },
+    {
+      "metric": "rag_precision_at_k",
+      "status": "unavailable",
+      "file": "rag_precision_at_k.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "rag_relevance.jsonl",
+      "dataset_size": 8,
+      "command": "python -m evaluation.run_all rag",
+      "headline": "unavailable in this environment"
+    },
+    {
+      "metric": "response_length_compliance",
+      "status": "pass",
+      "file": "response_length_compliance.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "synthetic_response_cases",
+      "dataset_size": 4,
+      "command": "python -m evaluation.run_all response_length",
+      "headline": "all cases passed"
+    },
+    {
+      "metric": "nlp_latency_ms",
+      "status": "pass",
+      "file": "nlp_latency_ms.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "intents_test.jsonl",
+      "dataset_size": 180,
+      "command": "python -m evaluation.run_all latency",
+      "headline": "p95 0.296 ms (mean 0.214 ms)"
+    },
+    {
+      "metric": "asr_wer",
+      "status": "pending",
+      "file": "asr_wer.json",
+      "timestamp": "2026-06-22T09:35:22Z",
+      "dataset": "asr_samples_template.csv",
+      "dataset_size": 9,
+      "command": "python -m evaluation.run_all asr",
+      "headline": "pending samples"
+    }
+  ]
+}

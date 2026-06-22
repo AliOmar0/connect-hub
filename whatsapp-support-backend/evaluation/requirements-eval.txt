@@ -1,0 +1,25 @@
+# Minimal, pinned dependencies to run the CORE evaluation suite and AI tests
+# (intent, entity, language, response-length, latency, ASR-WER, OpenAPI snapshot).
+# Cross-platform and lightweight: no torch/transformers/sentence-transformers.
+#
+# Versions match evaluation/requirements-lock.txt (the full environment freeze).
+# To additionally reproduce:
+#   - the fine-tuned intent model path: pip install transformers torch (see lock)
+#   - the RAG relevance metric:         pip install sentence-transformers, index the KB
+#
+#   pip install -r evaluation/requirements-eval.txt
+
+fastapi==0.137.1
+starlette==1.3.1
+pydantic==2.13.4
+pydantic-settings==2.14.1
+pydantic_core==2.46.4
+annotated-types==0.7.0
+typing_extensions==4.15.0
+python-dotenv==1.2.2
+httpx==0.28.1
+anyio==4.14.0
+certifi==2026.6.17
+qdrant-client==1.18.0
+pytest==9.1.1
+pytest-asyncio==1.4.0

@@ -1,0 +1,495 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PIB Support — AI/Policy API",
+    "description": "AI / policy surface of the PIB support backend.\n\nAuthentication: these endpoints are internal service endpoints intended to run\nbehind the API gateway / private network. They do not require a per-request\ntoken today; the public WhatsApp/Twilio webhooks (not included in this AI\nsnapshot) are authenticated via provider signature verification. Add a gateway\nAPI key before exposing publicly.\n\nErrors: 422 is returned for malformed request bodies (FastAPI validation); 500\nfor model/backend failures. Decision outputs are strongly typed (see\nActionDecision and the response schemas).",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/v1/nlp/analyze": {
+      "post": {
+        "tags": ["nlp"],
+        "summary": "Analyze",
+        "description": "Analyse a message into a masked, confidence-scored NLP result.",
+        "operationId": "analyze_api_v1_nlp_analyze_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/nlp/labels": {
+      "get": {
+        "tags": ["nlp"],
+        "summary": "Labels",
+        "description": "Return the canonical label sets used by the pipeline.",
+        "operationId": "labels_api_v1_nlp_labels_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object",
+                  "title": "Response Labels Api V1 Nlp Labels Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/decision/evaluate": {
+      "post": {
+        "tags": ["decision"],
+        "summary": "Evaluate",
+        "description": "Return the channel-agnostic policy decision for a message.\n\nThe response is masked (sensitive entity values and the escalation summary\nnever contain raw identifiers).",
+        "operationId": "evaluate_api_v1_decision_evaluate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Evaluate Api V1 Decision Evaluate Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error (malformed request body)."
+          },
+          "500": {
+            "description": "Internal error."
+          }
+        }
+      }
+    },
+    "/api/v1/assistant/reply": {
+      "post": {
+        "tags": ["assistant"],
+        "summary": "Reply",
+        "operationId": "reply_api_v1_assistant_reply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error (malformed request body)."
+          },
+          "500": {
+            "description": "Internal error (model/backend failure)."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalyzeRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Raw user message to analyse"
+          }
+        },
+        "type": "object",
+        "required": ["text"],
+        "title": "AnalyzeRequest"
+      },
+      "AnalyzeResponse": {
+        "properties": {
+          "intent": {
+            "type": "string",
+            "title": "Intent"
+          },
+          "intent_confidence": {
+            "type": "number",
+            "title": "Intent Confidence"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "language_confidence": {
+            "type": "number",
+            "title": "Language Confidence"
+          },
+          "entities": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Entities"
+          },
+          "requires_confirmation": {
+            "type": "boolean",
+            "title": "Requires Confirmation"
+          },
+          "fallback_triggered": {
+            "type": "boolean",
+            "title": "Fallback Triggered"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "language_model_version": {
+            "type": "string",
+            "title": "Language Model Version"
+          },
+          "inference_time_ms": {
+            "type": "number",
+            "title": "Inference Time Ms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "intent",
+          "intent_confidence",
+          "language",
+          "language_confidence",
+          "entities",
+          "requires_confirmation",
+          "fallback_triggered",
+          "model_version",
+          "language_model_version",
+          "inference_time_ms"
+        ],
+        "title": "AnalyzeResponse"
+      },
+      "DecisionRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Raw user message"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel",
+            "description": "whatsapp | web | voice"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          }
+        },
+        "type": "object",
+        "required": ["text"],
+        "title": "DecisionRequest",
+        "examples": [
+          {
+            "channel": "web",
+            "text": "بدي احول 500 شيكل لحساب صاحبي"
+          }
+        ]
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ReplyRequest": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "Raw user message"
+          },
+          "channel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Channel",
+            "description": "whatsapp | web | voice",
+            "default": "whatsapp"
+          },
+          "session_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Id"
+          },
+          "history": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "History"
+          }
+        },
+        "type": "object",
+        "required": ["text"],
+        "title": "ReplyRequest",
+        "examples": [
+          {
+            "channel": "whatsapp",
+            "history": [],
+            "session_id": "b1d3...",
+            "text": "بدي احكي مع موظف"
+          }
+        ]
+      },
+      "ReplyResponse": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "title": "Decision",
+            "description": "One of RESPOND, CLARIFY_LANGUAGE, CLARIFY_INTENT, MOCK_TRANSACTION, ESCALATE, BLOCK"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "Ready-to-send, validated, PII-masked text"
+          },
+          "escalate": {
+            "type": "boolean",
+            "title": "Escalate",
+            "description": "True when a human agent must take over"
+          },
+          "intent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Intent"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          },
+          "escalation_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escalation Reason",
+            "description": "Internal reason (not user-facing)"
+          },
+          "escalation_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Escalation Summary",
+            "description": "<=100 chars, PII-masked"
+          },
+          "scores": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Scores",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": ["decision", "message", "escalate"],
+        "title": "ReplyResponse",
+        "examples": [
+          {
+            "decision": "ESCALATE",
+            "escalate": true,
+            "escalation_reason": "Explicit Agent Request",
+            "escalation_summary": "Explicit Agent Request: بدي احكي مع موظف",
+            "intent": "ESCALATION_REQUEST",
+            "language": "LEVANTINE_PS",
+            "message": "سأقوم بتحويلك الآن إلى أحد زملائي في خدمة العملاء...",
+            "scores": {
+              "intent_confidence": 0.97,
+              "language_confidence": 0.95
+            }
+          }
+        ]
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": ["loc", "msg", "type"],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "x-snapshot-generated-at": "2026-06-22T09:35:22Z"
+}

@@ -1,0 +1,103 @@
+{
+  "model_version": "heuristic-intent-1.2.0",
+  "num_test": 180,
+  "top1_accuracy": 0.9167,
+  "macro_precision": 0.9353,
+  "macro_recall": 0.9167,
+  "macro_f1": 0.917,
+  "weighted_f1": 0.917,
+  "per_label": {
+    "ACCOUNT_INQUIRY": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "TRANSFER_LOCAL": {
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571,
+      "support": 12
+    },
+    "TRANSFER_INTERNATIONAL": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "CARD_SERVICES": {
+      "precision": 0.8,
+      "recall": 1.0,
+      "f1": 0.8889,
+      "support": 12
+    },
+    "CARD_LOST_STOLEN": {
+      "precision": 1.0,
+      "recall": 0.75,
+      "f1": 0.8571,
+      "support": 12
+    },
+    "STATEMENT_REQUEST": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "FINANCING_INQUIRY": {
+      "precision": 0.6875,
+      "recall": 0.9167,
+      "f1": 0.7857,
+      "support": 12
+    },
+    "EXCHANGE_RATE": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "BRANCH_ATM_INFO": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "PRODUCT_INFO": {
+      "precision": 0.875,
+      "recall": 0.5833,
+      "f1": 0.7,
+      "support": 12
+    },
+    "SHARIA_INQUIRY": {
+      "precision": 1.0,
+      "recall": 0.9167,
+      "f1": 0.9565,
+      "support": 12
+    },
+    "COMPLAINT": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "ESCALATION_REQUEST": {
+      "precision": 1.0,
+      "recall": 0.8333,
+      "f1": 0.9091,
+      "support": 12
+    },
+    "GENERAL_INFO": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "support": 12
+    },
+    "UNKNOWN": {
+      "precision": 0.6667,
+      "recall": 1.0,
+      "f1": 0.8,
+      "support": 12
+    }
+  },
+  "acceptance_threshold": 0.85,
+  "meets_threshold": true
+}

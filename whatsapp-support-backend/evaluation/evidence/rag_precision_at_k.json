@@ -1,0 +1,23 @@
+{
+  "metric": "rag_precision_at_k",
+  "timestamp": "2026-06-22T09:35:22Z",
+  "command": "python -m evaluation.run_all rag",
+  "dataset": {
+    "name": "rag_relevance.jsonl",
+    "path": "evaluation\\datasets\\rag_relevance.jsonl",
+    "size": 8,
+    "description": "Banking queries with expected-keyword relevance labels."
+  },
+  "thresholds": {
+    "precision_at_k": 0.7
+  },
+  "model_versions": {
+    "embedding_model": "paraphrase-multilingual-MiniLM-L12-v2"
+  },
+  "suite_version": "1.0.0",
+  "results": {
+    "available": false
+  },
+  "status": "unavailable",
+  "limitations": "sentence-transformers is not installed. To produce this metric: install sentence-transformers, set QDRANT_* env, ingest the KB via POST /api/v1/knowledge-base/upload (or index app/dataset/bank_dataset_web.json), then re-run."
+}

@@ -1,0 +1,10 @@
+sample_id,language,audio_file,reference_transcript,hypothesis_transcript,notes
+asr_msa_001,MSA,samples/msa/asr_msa_001.wav,"أرغب في معرفة رصيد حسابي الحالي",,"Provided by Person 2; record reference + ASR hypothesis"
+asr_msa_002,MSA,samples/msa/asr_msa_002.wav,"ما هي شروط التمويل العقاري لديكم",,
+asr_msa_003,MSA,samples/msa/asr_msa_003.wav,"أريد تفعيل بطاقتي الائتمانية",,
+asr_ps_001,LEVANTINE_PS,samples/ps/asr_ps_001.wav,"بدي اعرف رصيدي هلأ",,"Palestinian Levantine dialect"
+asr_ps_002,LEVANTINE_PS,samples/ps/asr_ps_002.wav,"بدي احكي مع موظف",,
+asr_ps_003,LEVANTINE_PS,samples/ps/asr_ps_003.wav,"ضاعت بطاقتي بدي اوقفها",,
+asr_en_001,ENGLISH,samples/en/asr_en_001.wav,"I want to check my account balance",,
+asr_en_002,ENGLISH,samples/en/asr_en_002.wav,"How can I transfer money to another account",,
+asr_en_003,ENGLISH,samples/en/asr_en_003.wav,"My card was stolen please block it",,

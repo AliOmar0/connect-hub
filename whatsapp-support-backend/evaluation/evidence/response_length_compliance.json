@@ -1,0 +1,53 @@
+{
+  "metric": "response_length_compliance",
+  "timestamp": "2026-06-22T09:35:22Z",
+  "command": "python -m evaluation.run_all response_length",
+  "dataset": {
+    "name": "synthetic_response_cases",
+    "path": "evaluation/evaluators/response_length_eval.py",
+    "size": 4,
+    "description": "Synthetic long/formatted inputs exercising the output validators (AR+EN, voice + text)."
+  },
+  "thresholds": {
+    "response_max_words": 150,
+    "response_voice_max_words": 60,
+    "kb_word_limit": 150
+  },
+  "model_versions": {
+    "validator": "prompts.validate_response",
+    "kb_limit": "rag.enforce_word_limit"
+  },
+  "suite_version": "1.0.0",
+  "results": {
+    "cases": [
+      {
+        "case": "kb_limit_ar",
+        "limit": 150,
+        "words": 151,
+        "ok": true
+      },
+      {
+        "case": "general_limit_en",
+        "limit": 150,
+        "words": 151,
+        "ok": true
+      },
+      {
+        "case": "voice_limit_ar",
+        "limit": 60,
+        "words": 61,
+        "ok": true
+      },
+      {
+        "case": "format_and_pii_strip",
+        "limit": 150,
+        "words": 10,
+        "ok": true
+      }
+    ],
+    "all_passed": true,
+    "cases_file": "response_length_cases.csv"
+  },
+  "status": "pass",
+  "limitations": "Validates the enforcement layer, not LLM verbosity directly; the LLM is also instructed to be concise but its raw output is always capped here."
+}
