@@ -30,7 +30,7 @@ export function apiFetch(
   input: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const isNgrok = /\bngrok(-free)?\.app$|\.ngrok\.io$/.test(
+  const isNgrok = /(^|\.)ngrok[\w-]*\.(app|dev|io)$/.test(
     (() => {
       try {
         return new URL(input).host;
