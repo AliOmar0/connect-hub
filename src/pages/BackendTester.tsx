@@ -23,7 +23,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { NODE_API_URL } from "@/lib/config";
+import { NODE_API_URL, apiFetch } from "@/lib/config";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 interface StatusResponse {
@@ -89,7 +89,7 @@ const BackendTester = () => {
     setLoadingStatus(true);
     setStatusError(null);
     try {
-      const res = await fetch(`${NODE_API_URL}/api/test/status`);
+      const res = await apiFetch(`${NODE_API_URL}/api/test/status`);
       if (!res.ok) throw new Error(`Server returned ${res.status}`);
       setStatus(await res.json());
     } catch (err) {
@@ -119,7 +119,7 @@ const BackendTester = () => {
     setVoiceLoading(true);
     setVoiceResult(null);
     try {
-      const res = await fetch(`${NODE_API_URL}/api/test/voice`, {
+      const res = await apiFetch(`${NODE_API_URL}/api/test/voice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -151,7 +151,7 @@ const BackendTester = () => {
     setChatMsg("");
     setChatLoading(true);
     try {
-      const res = await fetch(`${NODE_API_URL}/api/chat`, {
+      const res = await apiFetch(`${NODE_API_URL}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -180,7 +180,7 @@ const BackendTester = () => {
     if (ttsUrl) URL.revokeObjectURL(ttsUrl);
     setTtsUrl(null);
     try {
-      const res = await fetch(`${NODE_API_URL}/api/test/tts`, {
+      const res = await apiFetch(`${NODE_API_URL}/api/test/tts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: ttsText }),

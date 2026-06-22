@@ -21,3 +21,27 @@ export const SLA_BUSINESS_HOURS_SECONDS = Number(
 export const SLA_OUT_OF_HOURS_SECONDS = Number(
   import.meta.env.VITE_SLA_OUT_OF_HOURS_SECONDS || 600,
 );
+
+// Wrapper around fetch for calls to our own backends. When the target is an
+// ngrok tunnel (used for quick demos against a local backend), free ngrok shows
+// an HTML interstitial unless this header is present. The header is harmless on
+// any other host, so we add it whenever the URL points at an ngrok domain.
+export function apiFetch(
+  input: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const isNgrok = /\bngrok(-free)?\.app$|\.ngrok\.io$/.test(
+    (() => {
+      try {
+        return new URL(input).host;
+      } catch {
+        return "";
+      }
+    })(),
+  );
+  if (!isNgrok) return fetch(input, init);
+  return fetch(input, {
+    ...init,
+    headers: { ...(init.headers || {}), "ngrok-skip-browser-warning": "true" },
+  });
+}

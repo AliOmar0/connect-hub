@@ -1,0 +1,46 @@
+# Render Blueprint for the Node voice/API server (free tier).
+# Deploy: push this file, then on render.com → "New +" → "Blueprint" → pick this repo.
+# Render builds from Dockerfile.server and injects PORT automatically (the server
+# reads process.env.PORT). Secrets are marked `sync: false` so you enter them in
+# the Render dashboard and they are never stored in git.
+#
+# NOTE: the free web service sleeps after ~15 min idle and cold-starts on the next
+# request (first hit can take 30-60s). Fine for demos/testing.
+services:
+  - type: web
+    name: connect-hub-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile.server
+    plan: free
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # --- Non-secret config (safe to commit) ---
+      - key: NODE_ENV
+        value: production
+      # Exposes /api/test/* for the Backend Tester page. These bypass auth, so
+      # set this to "false" again once you are done demoing.
+      - key: ENABLE_TEST_ENDPOINTS
+        value: "true"
+      # Browser origins allowed to call this API. Add every Vercel domain you use.
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://connect-hub-one-beta.vercel.app,https://connect-hub-git-version2-alis-projects-bf946935.vercel.app"
+      - key: TTS_PROVIDER
+        value: azure
+
+      # --- Secrets: set these in the Render dashboard (sync: false) ---
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: AZURE_TTS_KEY
+        sync: false
+      - key: AZURE_TTS_REGION
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
