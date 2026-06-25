@@ -172,6 +172,15 @@ async def create_message(
         return Message(**response.data[0])
     raise Exception("Failed to create message")
 
+async def get_message_by_external_id(db: Any, external_id: str) -> Optional[Message]:
+    response = supabase.table("messages")\
+        .select("*")\
+        .eq("external_message_id", external_id)\
+        .execute()
+    if response.data:
+        return Message(**response.data[0])
+    return None
+
 async def get_messages_for_session(db: Any, session_id: UUID) -> List[Message]:
     response = supabase.table("messages")\
         .select("*")\

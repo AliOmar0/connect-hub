@@ -1,0 +1,39 @@
+{
+  "metric": "asr_wer",
+  "timestamp": "2026-06-22T09:35:22Z",
+  "command": "python -m evaluation.run_all asr",
+  "dataset": {
+    "name": "asr_samples_template.csv",
+    "path": "evaluation\\datasets\\asr_samples_template.csv",
+    "size": 9,
+    "scored": 0,
+    "pending": 9,
+    "description": "ASR manifest with reference + hypothesis transcripts across MSA, Palestinian Levantine, English."
+  },
+  "thresholds": {
+    "wer_max": 0.25
+  },
+  "model_versions": {
+    "asr_engine": "TBD (coordinate with Person 2)",
+    "wer_method": "word-level Levenshtein (utils.word_error_rate)"
+  },
+  "suite_version": "1.0.0",
+  "results": {
+    "overall_wer": null,
+    "per_language": {},
+    "pending_samples": [
+      "asr_msa_001",
+      "asr_msa_002",
+      "asr_msa_003",
+      "asr_ps_001",
+      "asr_ps_002",
+      "asr_ps_003",
+      "asr_en_001",
+      "asr_en_002",
+      "asr_en_003"
+    ],
+    "per_sample_file": "asr_wer_per_sample.csv"
+  },
+  "status": "pending",
+  "limitations": "Template/partial until Person 2 supplies audio + ASR hypotheses. WER is whitespace-tokenised; Arabic orthographic normalisation (e.g. alef/ya variants) is not applied to references/hypotheses here."
+}

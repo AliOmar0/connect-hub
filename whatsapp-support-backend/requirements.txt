@@ -14,3 +14,12 @@ accelerate
 librosa
 soundfile
 pyngrok
+
+# --- NLP pipeline (intent / language / entity) ---
+# Runtime intent classification uses torch + transformers above when a
+# fine-tuned checkpoint is configured (INTENT_MODEL_PATH); otherwise the
+# dependency-free heuristic fallback is used. The following are only needed to
+# (re)train the intent model via scripts/train_intent_classifier.py:
+#   datasets>=2.16
+#   scikit-learn>=1.3
+# And, optionally, CAMeL-Tools for richer Arabic NER.

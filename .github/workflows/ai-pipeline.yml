@@ -1,0 +1,61 @@
+name: AI Pipeline
+
+# Runs the Python AI pipeline unit/integration tests and the evaluation suite,
+# then uploads the generated evidence folder as a build artifact.
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "whatsapp-support-backend/**"
+      - ".github/workflows/ai-pipeline.yml"
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - "whatsapp-support-backend/**"
+      - ".github/workflows/ai-pipeline.yml"
+
+jobs:
+  ai-tests-and-eval:
+    name: ai-tests-and-eval
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: whatsapp-support-backend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install pinned evaluation dependencies
+        run: pip install -r evaluation/requirements-eval.txt
+
+      - name: Regenerate datasets (deterministic, seeded)
+        run: python -m app.dataset.nlp.generate_dataset
+
+      - name: Run AI pipeline tests
+        # Only the AI/eval tests — they need no Supabase or network.
+        run: |
+          python -m pytest \
+            test/test_nlp.py \
+            test/test_decision.py \
+            test/test_decision_boundaries.py \
+            test/test_evaluation.py \
+            -q
+
+      - name: Run evaluation suite (writes evidence/)
+        run: python -m evaluation.run_all
+
+      - name: Upload AI evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ai-evidence
+          path: whatsapp-support-backend/evaluation/evidence/
+          retention-days: 30

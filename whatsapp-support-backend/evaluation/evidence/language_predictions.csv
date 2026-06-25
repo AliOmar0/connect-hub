@@ -1,0 +1,46 @@
+text,gold,predicted,confidence,below_confirm_threshold
+أرغب في معرفة رصيد حسابي الحالي من فضلك,MSA,MSA,0.8625,False
+ما هي شروط التمويل العقاري لديكم؟,MSA,MSA,0.75,False
+أريد فتح حساب توفير جديد,MSA,MSA,0.8625,False
+هل يمكنني الاستفسار عن أسعار صرف العملات اليوم؟,MSA,MSA,0.95,False
+أرجو إرسال كشف حساب مفصل عن الشهر الماضي,MSA,MSA,0.75,False
+ما هو الفرق بين المرابحة والإجارة؟,MSA,MSA,0.75,False
+أحتاج إلى تفعيل بطاقتي الائتمانية,MSA,MSA,0.75,False
+أين يقع أقرب فرع لكم في مدينة نابلس؟,MSA,MSA,0.8625,False
+أود تقديم شكوى بخصوص الخدمة المقدمة,MSA,MSA,0.95,False
+هل هذا المنتج متوافق مع أحكام الشريعة الإسلامية؟,MSA,MSA,0.95,False
+متى تبدأ أوقات الدوام الرسمية للبنك؟,MSA,MSA,0.75,False
+أرغب بالتحدث مع أحد موظفي خدمة العملاء,MSA,MSA,0.8625,False
+كيف يمكنني تحويل مبلغ إلى حساب آخر؟,MSA,MSA,0.95,False
+ما هي رسوم إصدار بطاقة الدفع المسبق؟,MSA,MSA,0.75,False
+أريد معرفة تفاصيل برنامج تمويل السيارات,MSA,MSA,0.8625,False
+بدي اعرف رصيدي هلأ شو الوضع,LEVANTINE_PS,LEVANTINE_PS,0.95,False
+شو سعر الدولار اليوم عندكم؟,LEVANTINE_PS,LEVANTINE_PS,0.8625,False
+بدي احكي مع موظف بليز,LEVANTINE_PS,LEVANTINE_PS,0.95,False
+ضاعت بطاقتي بدي اوقفها بسرعة,LEVANTINE_PS,LEVANTINE_PS,0.8625,False
+كيف بقدر احول مصاري لحساب صاحبي؟,LEVANTINE_PS,MSA,0.8625,False
+وين اقرب فرع الكم بالخليل؟,LEVANTINE_PS,LEVANTINE_PS,0.8625,False
+بدي اسأل عن تمويل السيارة شو الشروط,LEVANTINE_PS,LEVANTINE_PS,0.95,False
+في عنا مشكلة بالحساب وبدي حل,LEVANTINE_PS,LEVANTINE_PS,0.8625,False
+هلأ بدي افتح حساب جديد كيف بصير,LEVANTINE_PS,LEVANTINE_PS,0.8333,False
+بكرا بدي اروح عالفرع شو لازم اجيب,LEVANTINE_PS,LEVANTINE_PS,0.95,False
+مش عارف ليش بطاقتي مش شغالة,LEVANTINE_PS,LEVANTINE_PS,0.95,False
+بدي كشف حساب لآخر شهر لو سمحت,LEVANTINE_PS,LEVANTINE_PS,0.8625,False
+شو الفرق بين الجاري والتوفير؟,LEVANTINE_PS,LEVANTINE_PS,0.8625,False
+بدي اعرف كم باقي بحسابي كمان,LEVANTINE_PS,LEVANTINE_PS,0.8333,False
+ليش ما بتردو عالتلفون كتير بستنى,LEVANTINE_PS,LEVANTINE_PS,0.95,False
+I want to check my account balance please,ENGLISH,ENGLISH,0.95,False
+What are the requirements for a car financing plan?,ENGLISH,ENGLISH,0.95,False
+How can I transfer money to another account?,ENGLISH,ENGLISH,0.95,False
+I would like to open a new savings account,ENGLISH,ENGLISH,0.95,False
+Where is your nearest branch in Ramallah?,ENGLISH,ENGLISH,0.95,False
+I need to activate my credit card,ENGLISH,ENGLISH,0.95,False
+Can you tell me today's dollar exchange rate?,ENGLISH,ENGLISH,0.95,False
+I want to file a complaint about the service,ENGLISH,ENGLISH,0.95,False
+Please send me my account statement for last month,ENGLISH,ENGLISH,0.95,False
+Is this product compliant with Islamic Sharia?,ENGLISH,ENGLISH,0.95,False
+I would like to speak with a customer service agent,ENGLISH,ENGLISH,0.95,False
+What are the official working hours of the bank?,ENGLISH,ENGLISH,0.95,False
+"My card was stolen, please block it immediately",ENGLISH,ENGLISH,0.95,False
+What is the difference between Murabaha and Ijara?,ENGLISH,ENGLISH,0.95,False
+How much are the fees for a prepaid card?,ENGLISH,ENGLISH,0.95,False

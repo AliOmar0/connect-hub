@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Body
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
-import random
+import secrets
 import logging
 import os
 from typing import Optional
@@ -137,8 +137,10 @@ async def generate_otp(request: OtpRequest):
     if supabase is None:
         raise HTTPException(status_code=503, detail="Supabase not configured on the OTP service")
     phone = request.phone
-    otp = str(random.randint(1000, 9999))
-    logger.info(f"Generating OTP {otp} for {phone}")
+    # CSPRNG for verification codes (A02: avoid predictable PRNG).
+    otp = f"{secrets.randbelow(9000) + 1000}"
+    # SECURITY: never log the OTP value (A09: sensitive data in logs).
+    logger.info(f"Generating OTP for {phone}")
     
     # 1. Save to Supabase (bank_otps table)
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()

@@ -10,11 +10,38 @@ from app.core.notifications import NotificationService
 from app.core.message_buffer import message_buffer
 from typing import Any, Optional
 import logging
+import hmac
+import hashlib
 import httpx
 from uuid import UUID
 
 router = APIRouter()
 logger = logging.getLogger("webhook")
+
+
+def _verify_whatsapp_signature(raw_body: bytes, signature_header: Optional[str]) -> bool:
+    """
+    Verify Meta's X-Hub-Signature-256 header against the raw request body.
+
+    Returns True when verification passes OR when no app secret is configured
+    (skip mode for local/dev). Returns False only when a secret is configured
+    and the signature is missing or does not match.
+    """
+    app_secret = settings.WHATSAPP_APP_SECRET
+    if not app_secret:
+        logger.warning(
+            "WHATSAPP_APP_SECRET not configured - skipping webhook signature "
+            "verification. Set it in production to reject forged requests."
+        )
+        return True
+    if not signature_header or not signature_header.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(
+        app_secret.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    # Constant-time comparison to avoid timing side channels.
+    return hmac.compare_digest(expected, signature_header)
+
 
 # In-memory store for OTP sessions (Similar to Node.js backend)
 otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
@@ -374,17 +401,22 @@ async def process_ai_response(
 message_buffer.set_ai_callback(process_ai_response)
 
 @router.get("/webhook")
+@router.get("/api/wa/webhook")
 async def verify_webhook(request: Request, db: Any = Depends(get_session)):
     """
     Webhook verification for WhatsApp (Meta)
+
+    Exposed at both /webhook and /api/wa/webhook so that Meta app configs
+    pointing at either callback URL work. The optional `biz_id` query param
+    used by the multi-tenant style URL is accepted but ignored (this backend
+    is single-tenant; routing is resolved per phone_number_id in the payload).
     """
     params = request.query_params
     mode = params.get("hub.mode")
     token = params.get("hub.verify_token")
     challenge = params.get("hub.challenge")
 
-    logger.info(f"Webhook Verification: mode={mode}, token={token}, challenge={challenge}")
-    logger.info(f"Expected Token: {settings.WHATSAPP_VERIFY_TOKEN}")
+    logger.info(f"Webhook Verification request: mode={mode}, challenge_present={challenge is not None}")
 
     if mode == "subscribe" and token:
         # 1. Check if token matches environment variable
@@ -405,6 +437,7 @@ async def verify_webhook(request: Request, db: Any = Depends(get_session)):
     return Response(content="WhatsApp Webhook Server Active", media_type="text/plain")
 
 @router.post("/webhook")
+@router.post("/api/wa/webhook")
 async def extract_webhook(
     request: Request, 
     background_tasks: BackgroundTasks,
@@ -420,12 +453,19 @@ async def extract_webhook(
     3. Buffer lock: Prevents concurrent AI processing for the same session.
     """
     try:
-        payload = await request.json()
+        raw_body = await request.body()
+        # Verify Meta's signature against the raw body BEFORE trusting any content
+        # (A08: integrity / spoofed-webhook protection). No-op when secret unset.
+        if not _verify_whatsapp_signature(raw_body, request.headers.get("x-hub-signature-256")):
+            logger.warning("Rejected WhatsApp webhook with invalid/missing signature")
+            raise HTTPException(status_code=401, detail="Invalid signature")
+
         import json
-        print(f"\nWEBHOOK_RECEIVED: {json.dumps(payload)}\n")
-        logger.info(f"Incoming Webhook Payload: {json.dumps(payload)}")
+        payload = json.loads(raw_body)
+        logger.debug("Incoming webhook payload received")
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"WEBHOOK_ERROR: {e}")
         logger.error(f"Failed to parse JSON payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 

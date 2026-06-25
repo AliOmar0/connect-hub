@@ -1,0 +1,25 @@
+{"text": "بدي احول 500 شيكل لحسابي رقم 1234567890 من فرع رام الله بكرة", "entities": [{"type": "AMOUNT", "value": "500 ILS"}, {"type": "ACCOUNT_ID", "value": "******7890"}, {"type": "BRANCH_NAME", "value": "رام الله"}, {"type": "DATE", "value": "tomorrow"}]}
+{"text": "أريد تحويل 1000 دولار إلى الخارج اليوم", "entities": [{"type": "AMOUNT", "value": "1000 USD"}, {"type": "DATE", "value": "today"}]}
+{"text": "I want to transfer $300 to account 9876543210", "entities": [{"type": "AMOUNT", "value": "300 USD"}, {"type": "ACCOUNT_ID", "value": "******3210"}]}
+{"text": "ضاعت بطاقتي مسبقة الدفع رقم 4111 1111 1111 1111", "entities": [{"type": "CARD_TYPE", "value": "بطاقة الدفع المسبق"}, {"type": "ACCOUNT_ID", "value": "************1111"}]}
+{"text": "أين أقرب فرع في نابلس؟", "entities": [{"type": "BRANCH_NAME", "value": "نابلس"}]}
+{"text": "Where is the nearest branch in Hebron?", "entities": [{"type": "BRANCH_NAME", "value": "الخليل"}]}
+{"text": "أرغب بالاستفسار عن تمويل السيارات عبر المرابحة", "entities": [{"type": "PRODUCT_NAME", "value": "تمويل السيارات"}, {"type": "PRODUCT_NAME", "value": "المرابحة"}]}
+{"text": "ما هي تفاصيل التمويل العقاري؟", "entities": [{"type": "PRODUCT_NAME", "value": "التمويل العقاري"}]}
+{"text": "I want information about the savings account", "entities": [{"type": "PRODUCT_NAME", "value": "حساب التوفير"}]}
+{"text": "رقم العملية ABC123456 لم يكتمل", "entities": [{"type": "TRANSACTION_ID", "value": "*****3456"}]}
+{"text": "transaction ref 778899001122 was declined", "entities": [{"type": "TRANSACTION_ID", "value": "********1122"}]}
+{"text": "تم خصم 250 دينار من حسابي بتاريخ 12/05/2026", "entities": [{"type": "AMOUNT", "value": "250 JOD"}, {"type": "DATE", "value": "12/05/2026"}]}
+{"text": "بدي افعل بطاقة الائتمان تبعتي", "entities": [{"type": "CARD_TYPE", "value": "بطاقة ائتمان"}]}
+{"text": "حساب التوفير في فرع غزة", "entities": [{"type": "PRODUCT_NAME", "value": "حساب التوفير"}, {"type": "BRANCH_NAME", "value": "غزة"}]}
+{"text": "أريد كشف حساب من إسلامي موبايل", "entities": [{"type": "PRODUCT_NAME", "value": "إسلامي موبايل"}]}
+{"text": "حولت 2000 ILS مبارح", "entities": [{"type": "AMOUNT", "value": "2000 ILS"}, {"type": "DATE", "value": "yesterday"}]}
+{"text": "my IBAN is PS92PALS000000000400123456702", "entities": [{"type": "ACCOUNT_ID", "value": "PS92*********************6702"}]}
+{"text": "بدي اعرف سعر صرف الدولار", "entities": []}
+{"text": "أرجو إيقاف بطاقتي الخصم المفقودة", "entities": [{"type": "CARD_TYPE", "value": "بطاقة خصم"}]}
+{"text": "موعدي في فرع بيت لحم الأسبوع القادم", "entities": [{"type": "BRANCH_NAME", "value": "بيت لحم"}, {"type": "DATE", "value": "next_week"}]}
+{"text": "I need a Visa card", "entities": [{"type": "CARD_TYPE", "value": "Visa"}]}
+{"text": "ادفع 750 USD لحساب 5551234567 اليوم", "entities": [{"type": "AMOUNT", "value": "750 USD"}, {"type": "ACCOUNT_ID", "value": "******4567"}, {"type": "DATE", "value": "today"}]}
+{"text": "ما الفرق بين الحساب الجاري وحساب التوفير", "entities": [{"type": "PRODUCT_NAME", "value": "الحساب الجاري"}, {"type": "PRODUCT_NAME", "value": "حساب التوفير"}]}
+{"text": "تمويل عبر الإجارة المنتهية بالتمليك في الخليل", "entities": [{"type": "PRODUCT_NAME", "value": "الإجارة المنتهية بالتمليك"}, {"type": "BRANCH_NAME", "value": "الخليل"}]}
+{"text": "مرجع المعاملة 100200300 بتاريخ 5 يونيو", "entities": [{"type": "TRANSACTION_ID", "value": "*****0300"}, {"type": "DATE", "value": "5 يونيو"}]}

@@ -1,0 +1,5 @@
+case,limit,words,ok
+kb_limit_ar,150,151,True
+general_limit_en,150,151,True
+voice_limit_ar,60,61,True
+format_and_pii_strip,150,10,True

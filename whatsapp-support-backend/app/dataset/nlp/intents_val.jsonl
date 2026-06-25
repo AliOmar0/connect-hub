@@ -1,0 +1,150 @@
+{"text": "أريد تقديم شكوى على الخدمة", "intent": "COMPLAINT", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "أريد تقديم شكوى على الخدمة", "intent": "COMPLAINT", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "What is today's dollar exchange rate?", "intent": "EXCHANGE_RATE", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أرغب بتحويل 1000 دولار إلى دولة أخرى", "intent": "TRANSFER_INTERNATIONAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "أريد معلومات عن إسلامي موبايل", "intent": "PRODUCT_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "Where can I find the nearest ATM?", "intent": "BRANCH_ATM_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "What is today's dollar exchange rate?", "intent": "EXCHANGE_RATE", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I need an account statement", "intent": "STATEMENT_REQUEST", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أرغب بالتحدث مع شخص حقيقي", "intent": "ESCALATION_REQUEST", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كيف أحول مبلغ 250 دينار محلياً؟", "intent": "TRANSFER_LOCAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "هل هذا المنتج متوافق مع الشريعة؟", "intent": "SHARIA_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كيف بشتغل تمويل المرابحة؟", "intent": "FINANCING_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I have a complaint about my transaction", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I need an international transfer abroad", "intent": "TRANSFER_INTERNATIONAL", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "فقدت بطاقتي شو بدي اعمل؟", "intent": "CARD_LOST_STOLEN", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "بدي احول مصاري عالخارج", "intent": "TRANSFER_INTERNATIONAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I want to know the currency rates", "intent": "EXCHANGE_RATE", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I lost my card, please block it now", "intent": "CARD_LOST_STOLEN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "السلام عليكم", "intent": "GENERAL_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "أريد الاستفسار عن التمويل العقاري", "intent": "FINANCING_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "Good morning, how can you help me?", "intent": "GENERAL_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أخبرني نكتة من فضلك", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "هل هذا المنتج متوافق مع الشريعة؟", "intent": "SHARIA_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "Is your financing halal?", "intent": "SHARIA_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أهلاً، كيف يمكنكم مساعدتي؟", "intent": "GENERAL_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي احول مصاري عالخارج", "intent": "TRANSFER_INTERNATIONAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "What is today's dollar exchange rate?", "intent": "EXCHANGE_RATE", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I want to know the currency rates", "intent": "EXCHANGE_RATE", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أخبرني نكتة من فضلك", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "ما هو سعر صرف الدولار اليوم؟", "intent": "EXCHANGE_RATE", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كم سعر صرف الدينار مقابل الشيكل؟", "intent": "EXCHANGE_RATE", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "How many planets are there?", "intent": "UNKNOWN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "The service was very bad and I'm not satisfied", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "شو حكم الربا عندكم؟", "intent": "SHARIA_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I want to transfer $300 to another account", "intent": "TRANSFER_LOCAL", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "كيف بفتح حساب جديد؟", "intent": "PRODUCT_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "Make a local transfer of 250 JOD", "intent": "TRANSFER_LOCAL", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "بدي شوف كم باقي بحسابي", "intent": "ACCOUNT_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "ما هو رصيدي الحالي؟", "intent": "ACCOUNT_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "شو حكم الربا عندكم؟", "intent": "SHARIA_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كيف بفتح حساب جديد؟", "intent": "PRODUCT_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أريد إجراء تحويل دولي إلى الخارج بقيمة 500 شيكل", "intent": "TRANSFER_INTERNATIONAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "هاد المنتج حلال؟", "intent": "SHARIA_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "بدي اسأل عن تمويل السيارات", "intent": "FINANCING_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "بدي احكي مع ممثل خدمة", "intent": "ESCALATION_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "شو شروط التمويل العقاري؟", "intent": "FINANCING_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "بدي اعرف اسعار العملات", "intent": "EXCHANGE_RATE", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I want to file a complaint about the service", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I want information about Islami Mobile", "intent": "PRODUCT_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "شو سقف بطاقتي؟", "intent": "CARD_SERVICES", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "How much money is in my account?", "intent": "ACCOUNT_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "وين اقرب فرع بـطولكرم؟", "intent": "BRANCH_ATM_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "My card was stolen, block it", "intent": "CARD_LOST_STOLEN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I have a complaint about my transaction", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "كيف بطلع بطاقة جديدة؟", "intent": "CARD_SERVICES", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "How can I get my transactions list?", "intent": "STATEMENT_REQUEST", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "هاد المنتج حلال؟", "intent": "SHARIA_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أرجو إرسال كشف الحساب للشهر الماضي", "intent": "STATEMENT_REQUEST", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "مرحبا كيفكم", "intent": "GENERAL_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أريد التحدث مع موظف", "intent": "ESCALATION_REQUEST", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "مرحبا كيفكم", "intent": "GENERAL_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "شو رصيد حسابي هلأ؟", "intent": "ACCOUNT_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "How do I open a new account?", "intent": "PRODUCT_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أرغب بتمويل سيارة عبر المرابحة", "intent": "FINANCING_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي فعّل بطاقتي", "intent": "CARD_SERVICES", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "ما هي عاصمة اليابان؟", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كيف بشتغل تمويل المرابحة؟", "intent": "FINANCING_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كم عدد الكواكب في المجموعة الشمسية؟", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "أرغب بتمويل سيارة عبر المرابحة", "intent": "FINANCING_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي احكي مع ممثل خدمة", "intent": "ESCALATION_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "Is your financing halal?", "intent": "SHARIA_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I want to activate my card", "intent": "CARD_SERVICES", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "How do I send money locally?", "intent": "TRANSFER_LOCAL", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "فقدت بطاقتي شو بدي اعمل؟", "intent": "CARD_LOST_STOLEN", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كيف أفتح حساباً جديداً؟", "intent": "PRODUCT_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "I need to report a lost card", "intent": "CARD_LOST_STOLEN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "The service was very bad and I'm not satisfied", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "بدي احول مصاري عالخارج", "intent": "TRANSFER_INTERNATIONAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "How do I send money locally?", "intent": "TRANSFER_LOCAL", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "Transfer me to a customer service agent", "intent": "ESCALATION_REQUEST", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "التمويل تبعكم شرعي؟", "intent": "SHARIA_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I need to change my card PIN", "intent": "CARD_SERVICES", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "شو سقف بطاقتي؟", "intent": "CARD_SERVICES", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كم عدد الكواكب في المجموعة الشمسية؟", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "How much money is in my account?", "intent": "ACCOUNT_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أريد إجراء تحويل دولي إلى الخارج بقيمة 750 USD", "intent": "TRANSFER_INTERNATIONAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "I lost my card, please block it now", "intent": "CARD_LOST_STOLEN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "I want to talk to a human", "intent": "ESCALATION_REQUEST", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "Good morning, how can you help me?", "intent": "GENERAL_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "السلام عليكم", "intent": "GENERAL_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كيف بعمل حوالة خارجية سويفت؟", "intent": "TRANSFER_INTERNATIONAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "Where can I find the nearest ATM?", "intent": "BRANCH_ATM_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أريد الاطلاع على رصيد حسابي من فضلك", "intent": "ACCOUNT_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "How does Murabaha financing work?", "intent": "FINANCING_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "كم سعر صرف الدينار مقابل الشيكل؟", "intent": "EXCHANGE_RATE", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "Where is the nearest branch in Gaza?", "intent": "BRANCH_ATM_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أين أجد أقرب صراف آلي؟", "intent": "BRANCH_ATM_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "What is the capital of Japan?", "intent": "UNKNOWN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "بدي شوف كم باقي بحسابي", "intent": "ACCOUNT_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "ما هو سقف بطاقتي؟", "intent": "CARD_SERVICES", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "شو الفرق بين الجاري والتوفير؟", "intent": "PRODUCT_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كيف بعمل حوالة خارجية سويفت؟", "intent": "TRANSFER_INTERNATIONAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "لقد فقدت بطاقتي وأريد إيقافها فوراً", "intent": "CARD_LOST_STOLEN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "ما حكم الربا في التمويل؟", "intent": "SHARIA_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "مرحباً، أريد بعض المساعدة", "intent": "GENERAL_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "I need an account statement", "intent": "STATEMENT_REQUEST", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "What's the difference between current and savings accounts?", "intent": "PRODUCT_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "وين في صراف قريب؟", "intent": "BRANCH_ATM_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كم عدد الكواكب في المجموعة الشمسية؟", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي كشف حساب", "intent": "STATEMENT_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "ما هو سقف بطاقتي؟", "intent": "CARD_SERVICES", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي معلومات عن حساب التوفير", "intent": "PRODUCT_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "What's the difference between current and savings accounts?", "intent": "PRODUCT_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أرغب في معرفة رصيد حسابي", "intent": "ACCOUNT_INQUIRY", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي اقدم شكوى", "intent": "COMPLAINT", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I lost my card, please block it now", "intent": "CARD_LOST_STOLEN", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "حولني لموظف", "intent": "ESCALATION_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أرجو إرسال كشف الحساب للشهر الماضي", "intent": "STATEMENT_REQUEST", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي فعّل بطاقتي", "intent": "CARD_SERVICES", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "I want to file a complaint about the service", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "بدي ابعت 300$ لبرة فلسطين", "intent": "TRANSFER_INTERNATIONAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أرغب بتغيير رقم PIN للبطاقة", "intent": "CARD_SERVICES", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "أرغب بالتحدث مع شخص حقيقي", "intent": "ESCALATION_REQUEST", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "لقد فقدت بطاقتي وأريد إيقافها فوراً", "intent": "CARD_LOST_STOLEN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "How do I send money locally?", "intent": "TRANSFER_LOCAL", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "حولني لموظف", "intent": "ESCALATION_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "ما هي عاصمة اليابان؟", "intent": "UNKNOWN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كيف أحصل على بيان الحساب؟", "intent": "STATEMENT_REQUEST", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي احول 750 USD لحساب تاني", "intent": "TRANSFER_LOCAL", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "ما هي أوقات دوام فرع نابلس؟", "intent": "BRANCH_ATM_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "أرغب بإجراء حوالة محلية بقيمة 2000 ILS", "intent": "TRANSFER_LOCAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "كيف أحول مبلغ 500 شيكل محلياً؟", "intent": "TRANSFER_LOCAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "بدي اسأل عن تمويل السيارات", "intent": "FINANCING_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أين أقرب فرع في الخليل؟", "intent": "BRANCH_ATM_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "شو سعر الدولار اليوم؟", "intent": "EXCHANGE_RATE", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "شو رصيد حسابي هلأ؟", "intent": "ACCOUNT_INQUIRY", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "كيف أحول مبلغ 300$ محلياً؟", "intent": "TRANSFER_LOCAL", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "The service was very bad and I'm not satisfied", "intent": "COMPLAINT", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "بدي احكي مع حد", "intent": "ESCALATION_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "شو الطقس بكرة؟", "intent": "UNKNOWN", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "بدي كشف حساب", "intent": "STATEMENT_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "What is my current balance?", "intent": "ACCOUNT_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "ممكن كشف الحساب لآخر شهر؟", "intent": "STATEMENT_REQUEST", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أرجو إيقاف بطاقتي المفقودة", "intent": "CARD_LOST_STOLEN", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "اهلين بدي مساعدة", "intent": "GENERAL_INFO", "language": "LEVANTINE_PS", "dataset_version": "1.0.0"}
+{"text": "أين أجد أقرب صراف آلي؟", "intent": "BRANCH_ATM_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "Hello", "intent": "GENERAL_INFO", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "Send me last month's statement", "intent": "STATEMENT_REQUEST", "language": "ENGLISH", "dataset_version": "1.0.0"}
+{"text": "أين أجد أقرب صراف آلي؟", "intent": "BRANCH_ATM_INFO", "language": "MSA", "dataset_version": "1.0.0"}
+{"text": "What are the conditions for car financing?", "intent": "FINANCING_INQUIRY", "language": "ENGLISH", "dataset_version": "1.0.0"}
