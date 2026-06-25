@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     # Security WhatsApp (For OTPs)
     SECURITY_WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     SECURITY_WHATSAPP_ACCESS_TOKEN: Optional[str] = None
+
+    # Meta App Secret used to verify X-Hub-Signature-256 on inbound webhooks.
+    # When unset, signature verification is skipped (logs a warning) so local/dev
+    # setups keep working; set it in production to reject forged webhook calls.
+    WHATSAPP_APP_SECRET: Optional[str] = None
     
     # App
     BACKEND_CORS_ORIGINS: List[str] = ["*"]

@@ -160,3 +160,5 @@ whatsapp-support-backend/venv/
 .env.local
 .env.*.local
 
+.kiro/ 
+.opencode/

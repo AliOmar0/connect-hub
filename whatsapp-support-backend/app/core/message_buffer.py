@@ -223,30 +223,41 @@ class MessageBufferService:
 
             # Call the AI processing callback
             if self._ai_callback:
-                session_id = UUID(session_key)
-                await self._ai_callback(
-                    session_id,
-                    combined_content,
-                    buffer.customer_phone,
-                    buffer.config,
-                    last_msg.message_id,      # Use last WhatsApp message ID for read receipt
-                    first_msg.db_message_id,   # Use first DB message ID
+                asyncio.create_task(
+                    self._run_callback(
+                        self._ai_callback, 
+                        session_key, 
+                        buffer,
+                        UUID(session_key),
+                        combined_content,
+                        buffer.customer_phone,
+                        buffer.config,
+                        last_msg.message_id,
+                        first_msg.db_message_id,
+                    )
                 )
             else:
                 logger.error(f"[Buffer] Session {session_key}: No AI callback set!")
 
         except Exception as e:
             logger.error(f"[Buffer] Session {session_key}: Error during AI processing: {e}")
-        finally:
-            # Unlock processing
+            # Unlock processing on error
             buffer.is_processing = False
             buffer.rapid_typing_detected = False
             buffer.typing_started_at = None
 
-            # Clean up if buffer is empty and no pending timer
-            if not buffer.messages and (not buffer.timer_task or buffer.timer_task.done()):
-                self._buffers.pop(session_key, None)
-                logger.info(f"[Buffer] Session {session_key}: Buffer cleaned up")
+    async def _run_callback(self, callback, session_key, buffer_obj, *args):
+        try:
+            await callback(*args)
+        finally:
+            # Clean up buffer after processing ONLY IF it's the same buffer
+            # (a new buffer might have been created if messages arrived while processing)
+            current_buffer = self._buffers.get(session_key)
+            if current_buffer is buffer_obj:
+                del self._buffers[session_key]
+                logger.info(f"[Buffer] Session {session_key}: Buffer cleared after processing.")
+            else:
+                logger.info(f"[Buffer] Session {session_key}: Buffer was replaced during processing, leaving new buffer intact.")
 
     def _combine_messages(self, messages: List[BufferedMessage]) -> str:
         """

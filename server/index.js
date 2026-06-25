@@ -6,7 +6,7 @@ import twilio from 'twilio';
 import cors from 'cors';
 import helmet from 'helmet';
 import axios from 'axios';
-import { Buffer } from 'buffer';
+import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
 import { logger, correlationMiddleware } from './lib/logger.js';
@@ -125,18 +125,21 @@ async function getBankAccount(phone) {
 }
 
 async function sendOTP(phone) {
-    const otp = Math.floor(1000 + Math.random() * 9000).toString();
-    console.log(`[OTP] Generated ${otp} for ${phone}`);
+    // Use a CSPRNG (not Math.random) for verification codes (A02: weak PRNG).
+    const otp = crypto.randomInt(1000, 10000).toString();
 
     // 1. Create In-App Notification (For free testing in Dashboard)
+    // SECURITY: never put the OTP value in the notification body. The dashboard
+    // is visible to agents; embedding the code would let any agent read it and
+    // defeat the verification step. Only record that a code was sent.
     try {
         await supabase.from('notifications').insert({
             title: "🔑 PIB Verification OTP",
-            message: `The OTP for phone ${phone} is: ${otp}`,
+            message: `A verification code was sent to ${phone}.`,
             type: "info",
             is_read: false
         });
-        console.log(`[Supabase] In-app notification sent for OTP ${otp}`);
+        console.log(`[Supabase] In-app OTP notification recorded for ${phone}`);
     } catch (e) {
         console.error("[Supabase Notification Error]:", e.message);
     }
@@ -195,22 +198,47 @@ async function processMessage(userMessage, sessionId, phone = null, history = []
 
     // Case 1: Waiting for OTP
     if (state && state.type === 'WAITING_OTP') {
+        // Expire codes after 5 minutes (A07: limit the validity window).
+        const OTP_TTL_MS = 5 * 60 * 1000;
+        if (!state.timestamp || Date.now() - state.timestamp > OTP_TTL_MS) {
+            await deleteSession(sessionId);
+            return "انتهت صلاحية رمز التحقق. يرجى طلب البيانات مرة أخرى للحصول على رمز جديد.";
+        }
+
+        // Allow the user to cancel at any point.
+        if (userMessage.includes("الغاء") || userMessage.includes("cancel")) {
+            await deleteSession(sessionId);
+            return "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟";
+        }
+
         const digits = userMessage.replace(/\D/g, '');
-        if (digits === state.otp) {
+        // Constant-time compare to avoid leaking match progress via timing.
+        const otpBuf = Buffer.from(String(state.otp));
+        const inputBuf = Buffer.from(digits);
+        const isMatch =
+            otpBuf.length === inputBuf.length && crypto.timingSafeEqual(otpBuf, inputBuf);
+
+        if (isMatch) {
             const account = await getBankAccount(state.phone);
             await deleteSession(sessionId);
             if (account) {
                 return `تم التحقق بنجاح! سيد ${account.owner_name}، رصيد حسابك هو ${account.balance} ${account.currency}. رقم حسابك: ${account.account_number}. هل هناك شيء آخر؟`;
             }
             return "تم التحقق، ولكن لم نجد بيانات الحساب.";
-        } else {
-            // Check if user wants to cancel
-            if (userMessage.includes("الغاء") || userMessage.includes("cancel")) {
-                await deleteSession(sessionId);
-                return "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟";
-            }
-            return "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'.";
         }
+
+        // Wrong code: enforce a max attempt limit (A07: brute-force protection).
+        const MAX_OTP_ATTEMPTS = 5;
+        const attempts = (state.attempts || 0) + 1;
+        if (attempts >= MAX_OTP_ATTEMPTS) {
+            await deleteSession(sessionId);
+            return "لقد تجاوزت عدد المحاولات المسموح بها. تم إلغاء طلب التحقق لأسباب أمنية. يرجى المحاولة لاحقاً.";
+        }
+        await saveSession(sessionId, {
+            ...session,
+            otpState: { ...state, attempts },
+        });
+        return "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'.";
     }
 
     // Case 2: Regular LLM with Trigger Check
