@@ -15,11 +15,27 @@ export function buildCorsOptions() {
         .map((o) => o.trim())
         .filter(Boolean);
 
+    // Support wildcard entries (e.g. "https://connect-hub-*.vercel.app") so that
+    // all of a project's Vercel preview/branch deployments are allowed without
+    // hardcoding every generated URL. A "*" only matches within a single path
+    // segment (no dots), so "connect-hub-*.vercel.app" cannot match a deeper
+    // subdomain like "evil.connect-hub-x.vercel.app".
+    const exact = new Set(allowed.filter((o) => !o.includes('*')));
+    const patterns = allowed
+        .filter((o) => o.includes('*'))
+        .map((o) => {
+            const escaped = o.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^.]*');
+            return new RegExp(`^${escaped}$`);
+        });
+
+    const isAllowed = (origin) =>
+        exact.has(origin) || patterns.some((re) => re.test(origin));
+
     return {
         origin(origin, callback) {
             // Allow same-origin / server-to-server (no Origin header) and Twilio webhooks.
             if (!origin) return callback(null, true);
-            if (allowed.includes(origin)) return callback(null, true);
+            if (isAllowed(origin)) return callback(null, true);
             logger.warn({ origin }, 'Blocked by CORS policy');
             return callback(new Error('Not allowed by CORS'));
         },
