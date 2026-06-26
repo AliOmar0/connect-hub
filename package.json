@@ -24,6 +24,8 @@
     "backend:node": "node scripts/dev-backend.mjs node",
     "backend:otp": "node scripts/dev-backend.mjs node tts otp",
     "backend:all": "node scripts/dev-backend.mjs all",
+    "channel:whatsapp": "node scripts/run-channel.mjs whatsapp",
+    "channel:voice": "node scripts/run-channel.mjs voice",
     "simulate:call": "node scripts/simulate-call.mjs"
   },
   "dependencies": {

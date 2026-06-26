@@ -39,6 +39,59 @@ to an in-memory store (fine for a single dev instance).
 
 ---
 
+## Run ONE public channel at a time (WhatsApp or Voice)
+
+WhatsApp and Twilio voice are separate channels, each needs its own public URL,
+and the free ngrok plan allows only one tunnel per account at a time. So run them
+**one at a time** — and you can put each on a **separate laptop**.
+
+```bash
+npm run channel:whatsapp   # Python backend (port 5000) + ngrok -> Active AI Sessions
+npm run channel:voice      # Node API (port 3001) + edge TTS + ngrok -> Twilio voice
+```
+
+Each command starts the channel's backend **and** its ngrok tunnel in one
+terminal (colored, prefixed output). Stop with `Ctrl+C`.
+
+| Channel            | Backend                           | Port | Meta/Twilio path              | Powers                            |
+| ------------------ | --------------------------------- | ---- | ----------------------------- | --------------------------------- |
+| `channel:whatsapp` | Python `whatsapp-support-backend` | 5000 | `/webhook`                    | WhatsApp + **Active AI Sessions** |
+| `channel:voice`    | Node `server/index.js`            | 3001 | `/voice`, `/webhook/whatsapp` | Twilio phone calls                |
+
+### Per-laptop ngrok config (root `.env`)
+
+ngrok reserved domains belong to a specific ngrok **account**, and the free plan
+gives one static domain per account. So each laptop uses **its own** authtoken
+and **its own** reserved domain:
+
+```dotenv
+NGROK_AUTHTOKEN="<this laptop's ngrok authtoken>"   # dashboard.ngrok.com > Your Authtoken
+WHATSAPP_NGROK_URL="<your-whatsapp-domain>.ngrok-free.dev"   # laptop running channel:whatsapp
+VOICE_NGROK_URL="<your-voice-domain>.ngrok-free.dev"         # laptop running channel:voice (falls back to NGROK_URL)
+```
+
+Only the domain for the channel that laptop runs needs to be valid. To test
+without a reserved domain, append `--no-tunnel` and run your own
+`ngrok http <port>` separately:
+
+```bash
+node scripts/run-channel.mjs whatsapp --no-tunnel
+```
+
+### Point Meta at the WhatsApp channel
+
+In developers.facebook.com → your app → WhatsApp → Configuration:
+
+- Callback URL: `https://<WHATSAPP_NGROK_URL>/webhook`
+- Verify token: the `WHATSAPP_VERIFY_TOKEN` from `whatsapp-support-backend/.env`
+- Subscribe to the **messages** field.
+
+The active WhatsApp number (phone number id + access token) is read from the
+`api_configurations` table in Supabase, editable from the in-app **Settings**
+page — not from `.env`.
+
+---
+
 ## Option A — Run with npm scripts (recommended for development)
 
 One-time setup:
