@@ -90,6 +90,30 @@ The active WhatsApp number (phone number id + access token) is read from the
 `api_configurations` table in Supabase, editable from the in-app **Settings**
 page — not from `.env`.
 
+### Voice notes (STT) and reply speed
+
+WhatsApp voice notes are transcribed via **Deepgram** (REST over httpx — no local
+model). Set these in `whatsapp-support-backend/.env`:
+
+```dotenv
+DEEPGRAM_API_KEY="your_deepgram_api_key"
+VOICE_ASR_MODEL="nova-3"   # nova-3 supports Arabic; nova-2 does NOT
+VOICE_ASR_LANGUAGE="ar"
+```
+
+AI replies are debounced by a short buffer so rapid multi-message bursts become
+one request. The wait is intentionally short; lower it further for snappier
+replies (the timer resets on each new message):
+
+```dotenv
+BUFFER_WAIT_SECONDS=4        # wait after the last message before answering
+RAPID_TYPING_WAIT_SECONDS=7  # wait used mid-burst when rapid typing is detected
+```
+
+> The old STT path used a local Whisper model (torch/transformers/librosa, multi-GB).
+> Those deps are now **optional** in `requirements.txt` — the WhatsApp backend runs
+> without them.
+
 ---
 
 ## Option A — Run with npm scripts (recommended for development)
