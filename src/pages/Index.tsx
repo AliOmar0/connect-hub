@@ -215,15 +215,22 @@ export default function Index() {
   } = useQuery({
     queryKey: ["dashboard-active-sessions"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("sessions")
         .select(
-          "*, customer:customers(*), employee:employees(*, profile:profiles(*))",
+          // `sessions` has TWO foreign keys to `employees` (employee_id and
+          // escalated_to). The employee embed MUST name the FK or PostgREST
+          // can't disambiguate and returns an error (data => null), which is why
+          // the Active Sessions panel was always empty.
+          "*, customer:customers(*), employee:employees!sessions_employee_id_fkey(*, profile:profiles(*))",
         )
         .in("status", ["active", "waiting", "escalated"])
         .order("started_at", { ascending: false })
         .limit(5);
 
+      if (error) {
+        console.error("Failed to load active sessions:", error.message);
+      }
       return data || [];
     },
   });

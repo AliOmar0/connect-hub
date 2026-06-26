@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     OPENROUTER_API_KEY: str
     OPENROUTER_MODEL: str = "google/gemma-4-31b-it:free"
 
+    # DeepSeek (primary answering model when DEEPSEEK_API_KEY is set; OpenRouter
+    # is used as fallback). DeepSeek's API is OpenAI-compatible.
+    DEEPSEEK_API_KEY: Optional[str] = None
+    DEEPSEEK_MODEL: str = "deepseek-v4-pro"
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
+
     # WhatsApp Settings (Defaults, but usually pulled from DB)
     WHATSAPP_VERIFY_TOKEN: str = "pib_verify_token_2024"
     
@@ -77,6 +83,8 @@ except Exception as e:
         SUPABASE_KEY=os.getenv("SUPABASE_KEY", os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")),
         OPENROUTER_API_KEY=os.getenv("OPENROUTER_API_KEY", ""),
         OPENROUTER_MODEL=os.getenv("OPENROUTER_MODEL", "arcee-ai/trinity-large-preview:free"),
+        DEEPSEEK_API_KEY=os.getenv("DEEPSEEK_API_KEY"),
+        DEEPSEEK_MODEL=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
         SECURITY_WHATSAPP_PHONE_NUMBER_ID=os.getenv("SECURITY_WHATSAPP_PHONE_NUMBER_ID"),
         SECURITY_WHATSAPP_ACCESS_TOKEN=os.getenv("SECURITY_WHATSAPP_ACCESS_TOKEN"),
         NGROK_ID=os.getenv("ID"),

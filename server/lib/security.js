@@ -40,7 +40,7 @@ export function buildCorsOptions() {
             return callback(new Error('Not allowed by CORS'));
         },
         methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization', 'x-correlation-id'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-correlation-id', 'ngrok-skip-browser-warning'],
         credentials: true,
         maxAge: 600,
     };
