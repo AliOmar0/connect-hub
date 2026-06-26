@@ -435,7 +435,11 @@ export default function SettingsPage() {
           throw new Error("Gateway server unreachable");
         }
       } else if (channel === "whatsapp") {
-        const response = await fetch("http://localhost:8000/");
+        // The WhatsApp AI backend (FastAPI) runs on port 5000, not 8000.
+        // Note: this is a localhost check, so it only succeeds when the browser
+        // and the backend run on the same machine (local dev). From the deployed
+        // Vercel app this can't reach your local backend.
+        const response = await fetch("http://localhost:5000/health");
         if (response.ok) {
           toast.success("WhatsApp Backend is Online");
           return true;

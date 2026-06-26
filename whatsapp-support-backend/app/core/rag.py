@@ -398,6 +398,17 @@ def retrieve(
     if not query:
         return []
     
+    # Graceful degradation: when the optional embeddings stack
+    # (sentence-transformers) isn't installed, skip vector retrieval instead of
+    # raising. The assistant still works using the JSON knowledge base injected
+    # in llm.py; install sentence-transformers to enable document RAG search.
+    if not EMBEDDINGS_AVAILABLE:
+        logger.warning(
+            "RAG retrieval skipped: sentence-transformers not installed. "
+            "Answering without document context."
+        )
+        return []
+    
     top_k = top_k or rag_config.top_k
     threshold = threshold or rag_config.similarity_threshold
     

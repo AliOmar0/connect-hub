@@ -109,3 +109,16 @@ app.include_router(assistant_router, prefix=settings.API_V1_STR, tags=["assistan
 @app.get("/")
 def root():
     return {"message": "WhatsApp Support Backend Running"}
+
+
+@app.get("/health")
+def health():
+    """Lightweight health/status used by the Node API and the Backend Tester to
+    report the ACTUAL answering model (this service is the AI brain; the Node
+    API only delegates to it)."""
+    use_deepseek = bool(settings.DEEPSEEK_API_KEY)
+    return {
+        "status": "ok",
+        "ai_provider": "deepseek" if use_deepseek else "openrouter",
+        "ai_model": settings.DEEPSEEK_MODEL if use_deepseek else settings.OPENROUTER_MODEL,
+    }

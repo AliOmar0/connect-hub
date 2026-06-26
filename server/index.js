@@ -468,12 +468,30 @@ if (TEST_ENDPOINTS_ENABLED) {
         );
     }
     // Config snapshot (no secret values, just whether each is configured).
-    app.get('/api/test/status', (req, res) => {
+    app.get('/api/test/status', async (req, res) => {
+        // The actual answering model lives in the Python AI backend (this Node
+        // server only delegates to it). Ask it for the live model/provider so the
+        // tester shows the truth (e.g. deepseek-v4-pro) instead of the local
+        // OpenRouter fallback display value.
+        const aiBackendUrl = process.env.AI_BACKEND_URL || 'http://127.0.0.1:5000';
+        let aiBackend = { reachable: false, url: aiBackendUrl, model: null, provider: null };
+        try {
+            const r = await axios.get(`${aiBackendUrl}/health`, { timeout: 3000 });
+            aiBackend = {
+                reachable: true,
+                url: aiBackendUrl,
+                model: r.data?.ai_model || null,
+                provider: r.data?.ai_provider || null,
+            };
+        } catch {
+            // AI backend unreachable -> fall back to local display values below.
+        }
         res.json({
             ok: true,
             env: process.env.NODE_ENV || 'development',
-            model: MODEL_NAME,
+            model: aiBackend.model || MODEL_NAME,
             models: MODEL_LIST,
+            aiBackend,
             ttsProvider: getTtsProvider(),
             redisHealthy: isRedisHealthy(),
             mediaConfigured: isMediaConfigured(),

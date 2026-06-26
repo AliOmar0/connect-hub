@@ -5,6 +5,8 @@ pydantic>=2.5.3
 pydantic-settings>=2.1.0
 httpx>=0.26.0
 python-dotenv>=1.0.1
+python-multipart>=0.0.9
+qdrant-client>=1.7.0
 flask
 flask-cors
 requests
@@ -14,6 +16,12 @@ accelerate
 librosa
 soundfile
 pyngrok
+
+# --- Optional: vector RAG document search (FR-03.03) ---
+# sentence-transformers enables embedding-based knowledge-base retrieval. It is
+# optional: without it the assistant gracefully skips vector RAG and still
+# answers using the JSON knowledge base. Install to enable document search:
+#   pip install sentence-transformers
 
 # --- NLP pipeline (intent / language / entity) ---
 # Runtime intent classification uses torch + transformers above when a

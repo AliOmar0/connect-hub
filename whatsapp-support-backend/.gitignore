@@ -8,3 +8,5 @@ env/
 *.log
 server_log*.txt
 .pytest_cache/
+# Local Qdrant vector store (runtime data, not source)
+qdrant_storage/
