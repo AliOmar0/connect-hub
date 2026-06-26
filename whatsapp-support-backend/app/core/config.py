@@ -34,6 +34,12 @@ class Settings(BaseSettings):
 
     # WhatsApp Settings (Defaults, but usually pulled from DB)
     WHATSAPP_VERIFY_TOKEN: str = "pib_verify_token_2024"
+
+    # Speech-to-Text (voice messages). Deepgram is used via REST (httpx) so no
+    # heavy local model/deps are required. Arabic by default.
+    DEEPGRAM_API_KEY: Optional[str] = None
+    VOICE_ASR_MODEL: str = "nova-3"
+    VOICE_ASR_LANGUAGE: str = "ar"
     
     # Security WhatsApp (For OTPs)
     SECURITY_WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None

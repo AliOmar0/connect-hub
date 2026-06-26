@@ -18,6 +18,7 @@ Logic:
 
 import asyncio
 import logging
+import os
 from typing import Dict, List, Optional, Callable, Any
 from uuid import UUID
 from dataclasses import dataclass, field
@@ -25,10 +26,13 @@ from datetime import datetime
 
 logger = logging.getLogger("message_buffer")
 
-# Buffer wait times in seconds
-BUFFER_WAIT_SECONDS = 30        # Default wait when message cadence is slow (1 message, or slow typist)
-RAPID_TYPING_WAIT_SECONDS = 15  # Shorter wait when rapid typing is detected (faster AI response)
-RAPID_TYPING_THRESHOLD = 5      # If messages arrive within this many seconds, it's rapid typing
+# Buffer wait times in seconds (debounce window AFTER the last message arrives).
+# Kept short so a single message is answered quickly; the timer resets on each
+# new message, so rapid bursts are still combined into one AI request.
+# Override via env (BUFFER_WAIT_SECONDS / RAPID_TYPING_WAIT_SECONDS) without code changes.
+BUFFER_WAIT_SECONDS = float(os.getenv("BUFFER_WAIT_SECONDS", "4"))         # default wait (single / slow typist)
+RAPID_TYPING_WAIT_SECONDS = float(os.getenv("RAPID_TYPING_WAIT_SECONDS", "7"))  # wait a bit longer mid-burst
+RAPID_TYPING_THRESHOLD = float(os.getenv("RAPID_TYPING_THRESHOLD", "5"))   # messages within this gap = rapid typing
 
 
 @dataclass
