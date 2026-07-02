@@ -23,6 +23,8 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { touchTargetClass } from "@/lib/touch-target";
+import { useTranslation } from "react-i18next";
 
 interface EmployeeCardProps {
   employee: Employee & { profile?: Profile };
@@ -38,12 +40,24 @@ const channelIcons: Record<ChannelType, React.ElementType> = {
   email: Mail,
 };
 
+// Channel accents reference semantic status/chart design tokens rather than
+// literal Tailwind hues so styling stays consistent with the token system
+// (Requirement 18.1). The channel name text alongside each icon is the
+// non-color cue.
 const channelColors: Record<ChannelType, string> = {
-  whatsapp: "bg-green-500/10 text-green-600",
-  messenger: "bg-blue-500/10 text-blue-600",
-  sms: "bg-purple-500/10 text-purple-600",
-  voice: "bg-orange-500/10 text-orange-600",
-  email: "bg-red-500/10 text-red-600",
+  whatsapp: "bg-status-success/10 text-status-success",
+  messenger: "bg-status-info/10 text-status-info-foreground",
+  sms: "bg-chart-secondary/10 text-chart-secondary",
+  voice: "bg-status-warning/10 text-status-warning-foreground",
+  email: "bg-status-error/10 text-status-error",
+};
+
+// Presence status dot color, paired with the textual status shown on the card
+// so meaning never depends on color alone (Property 2 / Requirement 18.5).
+const statusDotColors: Record<string, string> = {
+  online: "bg-status-success",
+  busy: "bg-status-warning",
+  away: "bg-status-info",
 };
 
 export default function EmployeeCard({
@@ -51,6 +65,7 @@ export default function EmployeeCard({
   onEdit,
   onDelete,
 }: EmployeeCardProps) {
+  const { t } = useTranslation();
   const profile = employee.profile;
   const fullName = profile
     ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim()
@@ -77,14 +92,10 @@ export default function EmployeeCard({
               <div
                 className={cn(
                   "absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-background",
-                  profile?.status === "online"
-                    ? "bg-green-500"
-                    : profile?.status === "busy"
-                      ? "bg-yellow-500"
-                      : profile?.status === "away"
-                        ? "bg-orange-500"
-                        : "bg-muted-foreground",
+                  statusDotColors[profile?.status ?? ""] ??
+                    "bg-muted-foreground",
                 )}
+                aria-hidden="true"
               />
             </div>
             <div>
@@ -101,14 +112,18 @@ export default function EmployeeCard({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                aria-label={t("employees.card.actions", { name: fullName })}
+                className={touchTargetClass(
+                  "extend",
+                  "h-8 w-8 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100",
+                )}
               >
-                <MoreVertical className="h-4 w-4" />
+                <MoreVertical className="h-4 w-4" aria-hidden="true" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => onEdit?.(employee)}>
-                <Edit className="h-4 w-4 mr-2" />
+                <Edit className="h-4 w-4 mr-2" aria-hidden="true" />
                 Edit
               </DropdownMenuItem>
               <DropdownMenuSeparator />
@@ -116,7 +131,7 @@ export default function EmployeeCard({
                 className="text-destructive"
                 onClick={() => onDelete?.(employee)}
               >
-                <Trash2 className="h-4 w-4 mr-2" />
+                <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
                 Delete
               </DropdownMenuItem>
             </DropdownMenuContent>

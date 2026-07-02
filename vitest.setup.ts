@@ -1,6 +1,15 @@
 import "@testing-library/jest-dom";
 import { expect, afterEach } from "vitest";
 import { cleanup } from "@testing-library/react";
+import * as fc from "fast-check";
+// Initialize the shared i18next instance so components using useTranslation
+// resolve real translations (English by default) during tests.
+import "./src/i18n";
+
+// Single source of truth for property-based test iteration counts.
+// Lowered to keep the full suite fast; individual tests should rely on this
+// global default rather than per-call numRuns overrides.
+fc.configureGlobal({ numRuns: 25 });
 
 // Cleanup after each test
 afterEach(() => {

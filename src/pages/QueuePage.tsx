@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -11,17 +11,27 @@ import {
   Check,
   PhoneCall,
   AlarmClock,
+  Timer,
+  TimerOff,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { BidiText } from "@/components/ui/bidi-text";
+import { notifySuccess, notifyError } from "@/lib/feedback";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/hooks/useAuth";
 import { BACKEND_URL } from "@/lib/config";
 import { maskText } from "@/lib/mask";
-import { useSlaTimer, formatCountdown } from "@/hooks/useSlaTimer";
+import {
+  useSlaTimer,
+  formatCountdown,
+  type SlaState,
+} from "@/hooks/useSlaTimer";
+import type { ViewStatus } from "@/types/presentation";
+import { touchTargetClass } from "@/lib/touch-target";
 import { cn } from "@/lib/utils";
 
 interface QueueSession {
@@ -44,90 +54,128 @@ const channelIcons: Record<string, React.ElementType> = {
   email: Mail,
 };
 
-function SlaBadge({ startedAt }: { startedAt: string }) {
+/**
+ * Textual SLA countdown (Requirement 15.2). The remaining time is always
+ * rendered as text and paired with a shape (icon) cue in addition to the color
+ * cue, so meaning never depends on color alone (status non-color cue, Property
+ * 2). Colors come from the semantic status tokens, not literal hues.
+ */
+function SlaBadge({ sla }: { sla: SlaState }) {
   const { t } = useTranslation();
-  const sla = useSlaTimer(startedAt);
+  const critical = !sla.breached && sla.remainingSeconds < 30;
+  const countdown = formatCountdown(sla.remainingSeconds);
+
+  const Icon = sla.breached ? TimerOff : critical ? AlarmClock : Timer;
+  const text = sla.breached ? t("queue.slaBreached") : countdown;
+  const accessibleLabel = sla.breached
+    ? t("queue.slaBreachedLabel")
+    : t("queue.slaRemainingLabel", { time: countdown });
+
   return (
     <Badge
       variant="outline"
+      aria-label={accessibleLabel}
       className={cn(
         "gap-1 font-mono",
         sla.breached
-          ? "border-red-500/40 text-red-600 bg-red-500/10"
-          : sla.remainingSeconds < 30
-            ? "border-orange-500/40 text-orange-600 bg-orange-500/10"
-            : "border-green-500/40 text-green-600 bg-green-500/10",
+          ? "border-status-error/40 bg-status-error/10 text-status-error"
+          : critical
+            ? "border-status-warning/40 bg-status-warning/10 text-status-warning-foreground"
+            : "border-status-success/40 bg-status-success/10 text-status-success-foreground",
       )}
     >
-      <AlarmClock className="h-3 w-3" />
-      {sla.breached
-        ? t("queue.slaBreached")
-        : formatCountdown(sla.remainingSeconds)}
+      <Icon className="h-3 w-3" aria-hidden="true" />
+      <span>{text}</span>
     </Badge>
   );
 }
 
 function QueueCard({
   session,
+  isAccepting,
   onAccept,
   onCallback,
   onOpen,
 }: {
   session: QueueSession;
+  isAccepting: boolean;
   onAccept: (s: QueueSession) => void;
   onCallback: (s: QueueSession) => void;
   onOpen: (s: QueueSession) => void;
 }) {
   const { t } = useTranslation();
+  const sla = useSlaTimer(session.started_at);
   const ChannelIcon = channelIcons[session.channel] || MessageSquare;
 
+  const customerName = session.customer_name || t("queue.unknownCustomer");
+  const sessionRef = `#${session.id.slice(0, 8)}`;
+  const waitingDuration = formatCountdown(sla.elapsedSeconds);
+
   return (
-    <Card className="border-border/50">
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-        <div className="flex items-center gap-3 min-w-0">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+    <Card className="border-border/60 shadow-card">
+      <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary"
+            aria-hidden="true"
+          >
             <ChannelIcon className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <p className="font-medium truncate">
-              {session.customer_name || "Unknown"}
+            <p className="truncate font-medium text-foreground">
+              {customerName}
             </p>
-            <p className="text-xs text-muted-foreground truncate">
-              {maskText(session.customer_phone)} · {session.channel}
+            <p className="truncate text-xs text-muted-foreground">
+              <BidiText value={maskText(session.customer_phone) || "—"} /> ·{" "}
+              {session.channel}
             </p>
           </div>
         </div>
-        <SlaBadge startedAt={session.started_at} />
+        <SlaBadge sla={sla} />
       </CardHeader>
-      <CardContent className="space-y-3">
-        <p className="text-sm text-muted-foreground line-clamp-2">
+      <CardContent className="space-y-4">
+        {/* Waiting context: waiting duration + originating session reference (Requirement 15.1) */}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1">
+            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            {t("queue.waitingFor", { duration: waitingDuration })}
+          </span>
+          <span className="inline-flex items-center gap-1">
+            {t("queue.sessionRefLabel")}
+            <BidiText value={sessionRef} className="font-mono" />
+          </span>
+        </div>
+
+        <p className="line-clamp-2 text-sm text-muted-foreground">
           {maskText(session.last_message) || "—"}
         </p>
         <p className="text-[11px] text-muted-foreground/70">
           {t("queue.maskedNotice")}
         </p>
-        <div className="flex flex-wrap items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2 touch-gap">
           <Button
             size="sm"
-            className="min-h-[44px] sm:min-h-9"
+            disabled={isAccepting}
+            className={touchTargetClass("grow")}
             onClick={() => onAccept(session)}
           >
-            <Check className="h-4 w-4 me-1" />
+            <Check className="h-4 w-4 me-1" aria-hidden="true" />
             {t("queue.accept")}
           </Button>
           <Button
             size="sm"
             variant="outline"
-            className="min-h-[44px] sm:min-h-9"
+            className={touchTargetClass("grow")}
             onClick={() => onCallback(session)}
           >
-            <PhoneCall className="h-4 w-4 me-1" />
+            <PhoneCall className="h-4 w-4 me-1" aria-hidden="true" />
             {t("queue.offerCallback")}
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            className="min-h-[44px] sm:min-h-9"
+            className={touchTargetClass("grow")}
             onClick={() => onOpen(session)}
           >
             {t("handoff.transcript")}
@@ -138,13 +186,51 @@ function QueueCard({
   );
 }
 
+function QueueSkeleton() {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Card key={i} className="border-border/60">
+          <CardHeader className="flex flex-row items-center justify-between gap-3 pb-3">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-full" />
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-3 w-24" />
+              </div>
+            </div>
+            <Skeleton className="h-6 w-16 rounded-full" />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-4 w-full" />
+            <div className="flex gap-2">
+              <Skeleton className="h-11 w-24" />
+              <Skeleton className="h-11 w-28" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function QueuePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
 
-  const { data: sessions = [], isLoading } = useQuery({
+  // Escalations optimistically removed from the presentation after being
+  // accepted. On accept failure they are restored so the item is retained in
+  // the queue presentation (Requirement 15.5).
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+
+  const {
+    data: sessions = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["escalation-queue"],
     queryFn: async (): Promise<QueueSession[]> => {
       const res = await fetch(`${BACKEND_URL}/api/v1/sessions`);
@@ -172,63 +258,119 @@ export default function QueuePage() {
     };
   }, [queryClient]);
 
-  const updateStatus = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const res = await fetch(`${BACKEND_URL}/api/v1/sessions/${id}`, {
+  // Escalations currently shown: server results minus optimistically accepted.
+  const visibleSessions = useMemo(
+    () => sessions.filter((s) => !removedIds.has(s.id)),
+    [sessions, removedIds],
+  );
+
+  const restore = (id: string) =>
+    setRemovedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+
+  const acceptMutation = useMutation({
+    mutationFn: async (s: QueueSession) => {
+      const res = await fetch(`${BACKEND_URL}/api/v1/sessions/${s.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status: "active" }),
       });
-      if (!res.ok) throw new Error("Update failed");
+      if (!res.ok) throw new Error("Accept failed");
       return res.json();
     },
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["escalation-queue"] }),
-    onError: () => toast.error("Could not update the session."),
+    onSuccess: (_data, s) => {
+      // Confirmation identifying the accepted escalation (Requirement 15.4).
+      notifySuccess(
+        t("queue.acceptedNamed", {
+          name: s.customer_name || t("queue.unknownCustomer"),
+        }),
+      );
+      queryClient.invalidateQueries({ queryKey: ["escalation-queue"] });
+    },
+    onError: (_error, s) => {
+      // Retain the escalation in the queue presentation and offer recovery
+      // (Requirement 15.5).
+      restore(s.id);
+      notifyError(t("queue.acceptFailed"), {
+        action: { label: t("feedback.retry"), onClick: () => onAccept(s) },
+      });
+    },
+  });
+
+  const callbackMutation = useMutation({
+    mutationFn: async (s: QueueSession) => {
+      const res = await fetch(`${BACKEND_URL}/api/v1/sessions/${s.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "waiting" }),
+      });
+      if (!res.ok) throw new Error("Callback failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      notifySuccess(t("queue.callbackToast"));
+      queryClient.invalidateQueries({ queryKey: ["escalation-queue"] });
+    },
+    onError: () => notifyError(t("queue.callbackFailed")),
   });
 
   const onAccept = (s: QueueSession) => {
-    updateStatus.mutate({ id: s.id, status: "active" });
-    toast.success(t("queue.acceptedToast"));
+    // Optimistically remove from the queue presentation (Requirement 15.4).
+    setRemovedIds((prev) => new Set(prev).add(s.id));
+    acceptMutation.mutate(s);
   };
 
-  const onCallback = (s: QueueSession) => {
-    updateStatus.mutate({ id: s.id, status: "waiting" });
-    toast.success(t("queue.callbackToast"));
-  };
+  const onCallback = (s: QueueSession) => callbackMutation.mutate(s);
 
   const onOpen = (s: QueueSession) => navigate(`/sessions/${s.id}`);
+
+  const status: ViewStatus = isError
+    ? "error"
+    : isLoading
+      ? "loading"
+      : visibleSessions.length === 0
+        ? "empty"
+        : "loaded";
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">{t("queue.title")}</h1>
+          <h1 className="text-2xl font-semibold text-foreground">
+            {t("queue.title")}
+          </h1>
           <p className="text-muted-foreground">{t("queue.subtitle")}</p>
         </div>
 
-        {isLoading ? (
-          <p className="text-muted-foreground">{t("common.loading")}</p>
-        ) : sessions.length === 0 ? (
-          <Card className="border-dashed">
-            <CardContent className="flex flex-col items-center gap-2 py-12 text-center text-muted-foreground">
-              <Clock className="h-8 w-8 opacity-40" />
-              <p>{t("queue.empty")}</p>
-            </CardContent>
-          </Card>
-        ) : (
+        <AsyncBoundary
+          status={status}
+          skeleton={<QueueSkeleton />}
+          onRetry={() => refetch()}
+          emptyTitle={t("queue.emptyTitle")}
+          emptyDescription={t("queue.empty")}
+          emptyIcon={<Clock />}
+          errorTitle={t("queue.loadErrorTitle")}
+          errorDescription={t("queue.loadErrorDescription")}
+        >
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {sessions.map((s) => (
+            {visibleSessions.map((s) => (
               <QueueCard
                 key={s.id}
                 session={s}
+                isAccepting={
+                  acceptMutation.isPending &&
+                  acceptMutation.variables?.id === s.id
+                }
                 onAccept={onAccept}
                 onCallback={onCallback}
                 onOpen={onOpen}
               />
             ))}
           </div>
-        )}
+        </AsyncBoundary>
       </div>
     </DashboardLayout>
   );

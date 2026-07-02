@@ -1,7 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { axe, toHaveNoViolations } from "jest-axe";
+import { toast } from "sonner";
 import KnowledgePage from "./KnowledgePage";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+
+expect.extend(toHaveNoViolations);
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -11,7 +15,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
+  toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
 }));
 
 vi.mock("@/components/layout/DashboardLayout", () => ({
@@ -59,13 +63,26 @@ function setup(opts: {
   return render(<KnowledgePage />);
 }
 
+// The file <input> carries an accessible label ("kb.upload") so it is the only
+// labelable form control matching that name; the visible Button is queried by
+// role instead.
+function getFileInput(): HTMLInputElement {
+  return screen.getByLabelText("kb.upload") as HTMLInputElement;
+}
+
+function selectFile(input: HTMLInputElement) {
+  const file = new File(["hello"], "guide.pdf", { type: "application/pdf" });
+  fireEvent.change(input, { target: { files: [file] } });
+}
+
 describe("KnowledgePage", () => {
   beforeEach(() => vi.clearAllMocks());
+  afterEach(() => vi.unstubAllGlobals());
 
   it("renders the title and upload button", () => {
     setup({ documents: [] });
     expect(screen.getAllByText("kb.title").length).toBeGreaterThan(0);
-    expect(screen.getByText("kb.upload")).toBeInTheDocument();
+    expect(screen.getAllByText("kb.upload").length).toBeGreaterThan(0);
   });
 
   it("shows the empty state when there are no documents", () => {
@@ -83,5 +100,98 @@ describe("KnowledgePage", () => {
     expect(screen.getByText("branches.pdf")).toBeInTheDocument();
     fireEvent.click(screen.getByTitle("kb.reindex"));
     expect(reindexMutate).toHaveBeenCalledWith("d-1");
+  });
+
+  // Requirement 16.2: while an upload is in progress the page presents a
+  // loading Component_State and disables the upload submission control to
+  // prevent duplicate submission.
+  it("shows a loading state and disables the upload button while uploading", async () => {
+    // A fetch that never settles keeps the upload in flight.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => {})),
+    );
+    setup({ documents: [sampleDoc] });
+
+    const uploadButton = screen.getByRole("button", { name: "kb.upload" });
+    expect(uploadButton).not.toBeDisabled();
+
+    selectFile(getFileInput());
+
+    await waitFor(() => {
+      const busyButton = screen.getByRole("button", { name: "kb.uploading" });
+      expect(busyButton).toBeDisabled();
+      expect(busyButton).toHaveAttribute("aria-busy", "true");
+    });
+    // The in-progress label replaces the idle one.
+    expect(
+      screen.queryByRole("button", { name: "kb.upload" }),
+    ).not.toBeInTheDocument();
+  });
+
+  // Requirement 16.3: a failed operation presents an Error_State with a
+  // recovery action and retains the prior document collection presentation.
+  it("keeps the document collection and offers retry when upload fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new Error("Upload failed"))),
+    );
+    setup({ documents: [sampleDoc] });
+
+    selectFile(getFileInput());
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "kb.operationFailed",
+        expect.objectContaining({
+          action: expect.objectContaining({ label: "feedback.retry" }),
+        }),
+      );
+    });
+
+    // The existing collection presentation is retained after the failure.
+    expect(screen.getByText("branches.pdf")).toBeInTheDocument();
+    // The upload control returns to its idle, enabled state.
+    expect(
+      screen.getByRole("button", { name: "kb.upload" }),
+    ).not.toBeDisabled();
+  });
+
+  // Requirement 16.4: the empty state offers a document-add action.
+  it("offers a document-add action in the empty state", () => {
+    setup({ documents: [] });
+    expect(screen.getByText("kb.empty")).toBeInTheDocument();
+    // Both the header button and the empty-state action expose the add affordance.
+    const addButtons = screen.getAllByRole("button", { name: "kb.upload" });
+    expect(addButtons.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // Requirement 16.5: every document management input has an accessible label.
+  it("associates document management inputs with accessible labels", () => {
+    setup({ documents: [sampleDoc] });
+    // The file input, re-index, and version-history controls are all labelled.
+    expect(getFileInput()).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "kb.reindex" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "kb.versionHistory" }),
+    ).toBeInTheDocument();
+  });
+
+  it("has no axe-detectable accessibility violations when loaded", async () => {
+    const { container } = setup({ documents: [sampleDoc] });
+    const results = await axe(container, {
+      rules: { "heading-order": { enabled: false } },
+    });
+    expect(results).toHaveNoViolations();
+  });
+
+  it("has no axe-detectable accessibility violations in the empty state", async () => {
+    const { container } = setup({ documents: [] });
+    const results = await axe(container, {
+      rules: { "heading-order": { enabled: false } },
+    });
+    expect(results).toHaveNoViolations();
   });
 });

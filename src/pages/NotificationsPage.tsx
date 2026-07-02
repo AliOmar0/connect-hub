@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -6,6 +7,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { LiveRegion } from "@/components/ui/live-region";
 import {
   Select,
   SelectContent,
@@ -13,27 +17,137 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Bell, Check, CheckCheck, Filter, Trash2 } from "lucide-react";
+import {
+  Bell,
+  Check,
+  CheckCheck,
+  CircleDot,
+  Filter,
+  Info,
+  CheckCircle2,
+  AlertTriangle,
+  AlertCircle,
+  Trash2,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { toast } from "sonner";
+import { notifySuccess, notifyError } from "@/lib/feedback";
 import { Notification } from "@/types/database";
+import type { ViewStatus } from "@/types/presentation";
+import { touchTargetClass, touchGapClass } from "@/lib/touch-target";
 import { cn } from "@/lib/utils";
 
+type NotificationType = "info" | "success" | "warning" | "error";
+
+/**
+ * Notification type -> semantic status token + shape (icon) cue. Colors come
+ * from the design system's status tokens (never literal hues), and each type
+ * always carries an icon so meaning is not conveyed by color alone
+ * (Requirement 3.5, Property 2).
+ */
+const typeMeta: Record<
+  NotificationType,
+  { icon: React.ElementType; className: string }
+> = {
+  info: {
+    icon: Info,
+    className: "border-status-info/40 bg-status-info/10 text-status-info",
+  },
+  success: {
+    icon: CheckCircle2,
+    className:
+      "border-status-success/40 bg-status-success/10 text-status-success",
+  },
+  warning: {
+    icon: AlertTriangle,
+    className:
+      "border-status-warning/40 bg-status-warning/10 text-status-warning-foreground",
+  },
+  error: {
+    icon: AlertCircle,
+    className: "border-status-error/40 bg-status-error/10 text-status-error",
+  },
+};
+
+function NotificationsSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 3 }).map((_, i) => (
+        <Card key={i} className="border-border/60">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-4 w-4 rounded-full" />
+                  <Skeleton className="h-4 w-40" />
+                </div>
+                <Skeleton className="h-3 w-full max-w-md" />
+                <div className="flex gap-2">
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-5 w-24 rounded-full" />
+                </div>
+              </div>
+              <Skeleton className="h-8 w-8 rounded-md" />
+            </div>
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Non-color read/unread cue (Requirement 20.2): a text label paired with a
+ * shape/icon cue in addition to color. Unread uses a filled dot + "Unread";
+ * read uses a check + "Read". Never relies on color alone.
+ */
+function ReadStateBadge({ isRead }: { isRead: boolean }) {
+  const { t } = useTranslation();
+  if (isRead) {
+    return (
+      <Badge
+        variant="outline"
+        className="gap-1 border-border bg-muted text-muted-foreground"
+      >
+        <Check className="h-3 w-3" aria-hidden="true" />
+        <span>{t("notifications.read")}</span>
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      variant="outline"
+      className="gap-1 border-primary/40 bg-primary/10 text-primary"
+    >
+      <CircleDot className="h-3 w-3" aria-hidden="true" />
+      <span>{t("notifications.unread")}</span>
+    </Badge>
+  );
+}
+
 export default function NotificationsPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
+  // Message announced to assistive technology when the read state changes
+  // (Requirement 20.4). Changing this value re-announces via the LiveRegion.
+  const [readStateAnnouncement, setReadStateAnnouncement] = useState("");
 
-  const { data: notifications, isLoading } = useQuery({
+  const {
+    data: notifications = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["notifications", user?.id, filter],
-    queryFn: async () => {
+    queryFn: async (): Promise<Notification[]> => {
       if (!user?.id) return [];
 
       let query = supabase
         .from("notifications")
         .select("*")
         .order("created_at", { ascending: false })
-        .or(`user_id.eq.${user.id},user_id.is.null`); // Added .or filter here
+        .or(`user_id.eq.${user.id},user_id.is.null`);
 
       if (filter === "unread") {
         query = query.eq("is_read", false);
@@ -43,10 +157,9 @@ export default function NotificationsPage() {
 
       const { data, error } = await query;
 
-      if (error) {
-        console.error("Error fetching notifications:", error);
-        return [];
-      }
+      // Surface the failure so the shared ErrorState + retry can recover
+      // (Requirement 20.6) instead of silently rendering an empty list.
+      if (error) throw error;
 
       return (data || []) as Notification[];
     },
@@ -63,10 +176,21 @@ export default function NotificationsPage() {
       if (error) throw error;
     },
     onSuccess: () => {
+      // Announce the read-state change to assistive technology (Requirement
+      // 20.4). Re-invalidate so the presentation reflects the new state.
+      setReadStateAnnouncement(t("notifications.markedReadAnnouncement"));
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to mark notification as read");
+    onError: (_error, id) => {
+      // Present a recoverable error and retain the unread state — the DB
+      // update failed and we never optimistically flipped it (Requirement
+      // 20.7).
+      notifyError(t("notifications.markReadFailed"), {
+        action: {
+          label: t("feedback.retry"),
+          onClick: () => markAsReadMutation.mutate(id),
+        },
+      });
     },
   });
 
@@ -78,13 +202,21 @@ export default function NotificationsPage() {
         .update({ is_read: true })
         .or(`user_id.eq.${user.id},user_id.is.null`)
         .eq("is_read", false);
+
+      if (error) throw error;
     },
     onSuccess: () => {
+      setReadStateAnnouncement(t("notifications.allMarkedReadAnnouncement"));
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      toast.success("All notifications marked as read");
+      notifySuccess(t("notifications.allMarkedRead"));
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to mark all as read");
+    onError: () => {
+      notifyError(t("notifications.markAllReadFailed"), {
+        action: {
+          label: t("feedback.retry"),
+          onClick: () => markAllAsReadMutation.mutate(),
+        },
+      });
     },
   });
 
@@ -99,10 +231,15 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      toast.success("Notification deleted");
+      notifySuccess(t("notifications.deleted"));
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to delete notification");
+    onError: (_error, id) => {
+      notifyError(t("notifications.deleteFailed"), {
+        action: {
+          label: t("feedback.retry"),
+          onClick: () => deleteMutation.mutate(id),
+        },
+      });
     },
   });
 
@@ -119,14 +256,19 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      toast.success("All read notifications deleted");
+      notifySuccess(t("notifications.allReadDeleted"));
     },
-    onError: (error: Error) => {
-      toast.error(error.message || "Failed to delete read notifications");
+    onError: () => {
+      notifyError(t("notifications.deleteAllReadFailed"), {
+        action: {
+          label: t("feedback.retry"),
+          onClick: () => deleteAllReadMutation.mutate(),
+        },
+      });
     },
   });
 
-  // Real-time subscription
+  // Real-time subscription: refresh the list on any notification change.
   useEffect(() => {
     if (!user?.id) return;
 
@@ -134,12 +276,7 @@ export default function NotificationsPage() {
       .channel("notifications-changes")
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: undefined, // Listen to all notification changes and filter locally or let queryClient handle it
-        },
+        { event: "*", schema: "public", table: "notifications" },
         () => {
           queryClient.invalidateQueries({ queryKey: ["notifications"] });
         },
@@ -151,14 +288,10 @@ export default function NotificationsPage() {
     };
   }, [user?.id, queryClient]);
 
-  const unreadCount = notifications?.filter((n) => !n.is_read).length || 0;
-
-  const typeColors: Record<string, string> = {
-    info: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-    success: "bg-green-500/10 text-green-600 border-green-500/20",
-    warning: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
-    error: "bg-red-500/10 text-red-600 border-red-500/20",
-  };
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.is_read).length,
+    [notifications],
+  );
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.is_read) {
@@ -169,31 +302,53 @@ export default function NotificationsPage() {
     }
   };
 
+  // Derive the list view's ViewStatus for the shared AsyncBoundary so loading
+  // (20.5), empty (20.3), and error (20.6) states use the standard patterns.
+  const status: ViewStatus = isError
+    ? "error"
+    : isLoading
+      ? "loading"
+      : notifications.length === 0
+        ? "empty"
+        : "loaded";
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        {/* Read-state changes are announced to AT within 1s (Requirement 20.4). */}
+        <LiveRegion message={readStateAnnouncement} politeness="polite" />
+
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-display font-bold tracking-tight">
-              Notifications
+            <h1 className="text-2xl font-display font-bold tracking-tight text-foreground">
+              {t("notifications.title")}
             </h1>
             <p className="text-muted-foreground">
-              View all system notifications and alerts.
+              {t("notifications.subtitle")}
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2 touch-gap">
             <Select
               value={filter}
               onValueChange={(v) => setFilter(v as "all" | "unread" | "read")}
             >
-              <SelectTrigger className="w-[180px]">
-                <Filter className="h-4 w-4 mr-2" />
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label={t("notifications.filter")}
+              >
+                <Filter className="me-2 h-4 w-4" aria-hidden="true" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Notifications</SelectItem>
-                <SelectItem value="unread">Unread ({unreadCount})</SelectItem>
-                <SelectItem value="read">Read</SelectItem>
+                <SelectItem value="all">
+                  {t("notifications.filterAll")}
+                </SelectItem>
+                <SelectItem value="unread">
+                  {t("notifications.filterUnread", { count: unreadCount })}
+                </SelectItem>
+                <SelectItem value="read">
+                  {t("notifications.filterRead")}
+                </SelectItem>
               </SelectContent>
             </Select>
             {unreadCount > 0 && (
@@ -202,141 +357,147 @@ export default function NotificationsPage() {
                 onClick={() => markAllAsReadMutation.mutate()}
                 disabled={markAllAsReadMutation.isPending}
               >
-                <CheckCheck className="h-4 w-4 mr-2" />
-                Mark All Read
+                <CheckCheck className="me-2 h-4 w-4" aria-hidden="true" />
+                {t("notifications.markAllRead")}
               </Button>
             )}
             <Button
               variant="outline"
               className="text-destructive hover:text-destructive"
               onClick={() => {
-                if (confirm("Delete all read notifications?")) {
+                if (window.confirm(t("notifications.confirmDeleteAllRead"))) {
                   deleteAllReadMutation.mutate();
                 }
               }}
               disabled={deleteAllReadMutation.isPending}
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete All Read
+              <Trash2 className="me-2 h-4 w-4" aria-hidden="true" />
+              {t("notifications.deleteAllRead")}
             </Button>
           </div>
         </div>
 
-        {isLoading ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <div className="animate-pulse space-y-4">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="h-20 bg-muted rounded-lg" />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        ) : notifications && notifications.length > 0 ? (
-          <div className="space-y-3">
-            {notifications.map((notification) => (
-              <Card
-                key={notification.id}
-                className={cn(
-                  "cursor-pointer transition-all hover:shadow-md",
-                  !notification.is_read && "border-primary/20 bg-primary/5",
-                )}
-                onClick={() => handleNotificationClick(notification)}
-              >
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Bell
-                          className={cn(
-                            "h-4 w-4",
-                            !notification.is_read
-                              ? "text-primary"
-                              : "text-muted-foreground",
+        <AsyncBoundary
+          status={status}
+          skeleton={<NotificationsSkeleton />}
+          onRetry={() => refetch()}
+          emptyTitle={t("notifications.emptyTitle")}
+          emptyDescription={t("notifications.emptyDescription")}
+          emptyIcon={<Bell />}
+          errorTitle={t("notifications.loadErrorTitle")}
+          errorDescription={t("notifications.loadErrorDescription")}
+        >
+          <ul className="space-y-3">
+            {notifications.map((notification) => {
+              const type = (notification.type || "info") as NotificationType;
+              const meta = typeMeta[type] ?? typeMeta.info;
+              const TypeIcon = meta.icon;
+              const isRead = !!notification.is_read;
+
+              return (
+                <li key={notification.id}>
+                  <Card
+                    className={cn(
+                      "cursor-pointer shadow-card transition-shadow hover:shadow-md",
+                      !isRead && "border-primary/40 bg-primary/5",
+                    )}
+                    onClick={() => handleNotificationClick(notification)}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Bell
+                              className={cn(
+                                "h-4 w-4",
+                                isRead
+                                  ? "text-muted-foreground"
+                                  : "text-primary",
+                              )}
+                              aria-hidden="true"
+                            />
+                            <h2
+                              className={cn(
+                                "text-base font-semibold",
+                                isRead
+                                  ? "font-medium text-muted-foreground"
+                                  : "text-foreground",
+                              )}
+                            >
+                              {notification.title}
+                            </h2>
+                            <ReadStateBadge isRead={isRead} />
+                          </div>
+                          {notification.message && (
+                            <p className="text-sm text-muted-foreground">
+                              {notification.message}
+                            </p>
                           )}
-                        />
-                        <h3
-                          className={cn(
-                            "font-semibold",
-                            !notification.is_read && "text-foreground",
-                            notification.is_read && "text-muted-foreground",
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className={cn("gap-1 text-xs", meta.className)}
+                            >
+                              <TypeIcon
+                                className="h-3 w-3"
+                                aria-hidden="true"
+                              />
+                              <span>{t(`notifications.types.${type}`)}</span>
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(
+                                new Date(notification.created_at),
+                                { addSuffix: true },
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 touch-gap">
+                          {!isRead && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={t("notifications.markAsRead")}
+                              className={touchTargetClass(
+                                "grow",
+                                "text-muted-foreground hover:text-primary",
+                              )}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                markAsReadMutation.mutate(notification.id);
+                              }}
+                            >
+                              <Check className="h-4 w-4" aria-hidden="true" />
+                            </Button>
                           )}
-                        >
-                          {notification.title}
-                        </h3>
-                        {!notification.is_read && (
-                          <div className="h-2 w-2 rounded-full bg-primary" />
-                        )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={t("notifications.delete")}
+                            className={touchTargetClass(
+                              "grow",
+                              "text-muted-foreground hover:text-destructive",
+                            )}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (
+                                window.confirm(t("notifications.confirmDelete"))
+                              ) {
+                                deleteMutation.mutate(notification.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </Button>
+                        </div>
                       </div>
-                      {notification.message && (
-                        <p className="text-sm text-muted-foreground">
-                          {notification.message}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            "text-xs",
-                            typeColors[notification.type || "info"] ||
-                              typeColors.info,
-                          )}
-                        >
-                          {notification.type || "info"}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {formatDistanceToNow(
-                            new Date(notification.created_at),
-                            {
-                              addSuffix: true,
-                            },
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {!notification.is_read && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          title="Mark as Read"
-                          className="h-8 w-8 text-muted-foreground hover:text-primary"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            markAsReadMutation.mutate(notification.id);
-                          }}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        title="Delete"
-                        className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (confirm("Delete this notification?")) {
-                            deleteMutation.mutate(notification.id);
-                          }
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Bell className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No notifications found</p>
-            </CardContent>
-          </Card>
-        )}
+                    </CardContent>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
+        </AsyncBoundary>
       </div>
     </DashboardLayout>
   );

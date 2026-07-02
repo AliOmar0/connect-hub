@@ -9,15 +9,16 @@ import {
   Cell,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useDirection } from "@/hooks/use-direction";
 
 interface ResponseTimeChartProps {
   data?: Array<{ hour: string; time: number }>;
 }
 
 const getBarColor = (value: number) => {
-  if (value <= 2) return "hsl(150, 60%, 45%)"; // Green - excellent
-  if (value <= 3) return "hsl(45, 95%, 50%)"; // Gold - good
-  return "hsl(0, 84%, 60%)"; // Red - needs improvement
+  if (value <= 2) return "hsl(var(--chart-success))"; // excellent
+  if (value <= 3) return "hsl(var(--chart-warning))"; // good
+  return "hsl(var(--destructive))"; // needs improvement
 };
 
 interface TooltipProps {
@@ -53,6 +54,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
 export default function ResponseTimeChart({
   data = [],
 }: ResponseTimeChartProps) {
+  const isRtl = useDirection() === "rtl";
   const chartData =
     data.length > 0
       ? data
@@ -79,7 +81,7 @@ export default function ResponseTimeChart({
             <span className="text-muted-foreground">{"<2m Excellent"}</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-gold" />
+            <div className="w-2 h-2 rounded-full bg-chart-warning" />
             <span className="text-muted-foreground">{"2-3m Good"}</span>
           </div>
           <div className="flex items-center gap-1.5">
@@ -108,11 +110,13 @@ export default function ResponseTimeChart({
               />
               <XAxis
                 dataKey="hour"
+                reversed={isRtl}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
               />
               <YAxis
+                orientation={isRtl ? "right" : "left"}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}

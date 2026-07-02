@@ -1,6 +1,5 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, Phone } from "lucide-react";
 
 interface ChannelDistributionChartProps {
   data?: Array<{ name: string; value: number; color: string }>;
@@ -40,10 +39,10 @@ export default function ChannelDistributionChart({
     data.length > 0
       ? data
       : [
-          { name: "WhatsApp", value: 0, color: "hsl(142, 70%, 45%)" },
-          { name: "Messenger", value: 0, color: "hsl(220, 90%, 56%)" },
-          { name: "Phone Calls", value: 0, color: "hsl(45, 95%, 50%)" },
-          { name: "Other", value: 0, color: "hsl(220, 20%, 70%)" },
+          { name: "WhatsApp", value: 0, color: "hsl(var(--chart-success))" },
+          { name: "Messenger", value: 0, color: "hsl(var(--chart-info))" },
+          { name: "Phone Calls", value: 0, color: "hsl(var(--chart-warning))" },
+          { name: "Other", value: 0, color: "hsl(var(--status-neutral))" },
         ];
 
   const total = chartData.reduce((sum, item) => sum + item.value, 0);

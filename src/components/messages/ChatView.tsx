@@ -35,24 +35,29 @@ import {
   MessageSquare,
   Mail,
   Tag,
-  Clock,
-  Star,
-  Hourglass,
+  User,
+  Headset,
+  Bot,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format, intervalToDuration, formatDuration } from "date-fns";
+import { format } from "date-fns";
+import { useTranslation } from "react-i18next";
+import { BidiText } from "@/components/ui/bidi-text";
+import { ErrorState } from "@/components/ui/error-state";
+import { resolveStatusCue, type MessageAuthor } from "@/lib/status-cue";
 import ChatShortcuts from "./ChatShortcuts";
 import { ChatVoicePlayer } from "./ChatVoicePlayer";
 
-function formatSessionDuration(seconds: number | null): string {
-  if (!seconds) return "-";
-  const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
-  return (
-    formatDuration(duration, { format: ["hours", "minutes"], delimiter: " " })
-      .replace(/ hours?/, "h")
-      .replace(/ minutes?/, "m") || "< 1m"
-  );
-}
+/**
+ * Non-color authorship cue (Requirement 14.7 / Property 2): each message
+ * authorship maps to a lucide icon (shape) rendered alongside a text label, so
+ * customer / agent / bot messages are distinguishable without relying on color.
+ */
+const AUTHOR_ICON_COMPONENTS: Record<MessageAuthor, React.ElementType> = {
+  customer: User,
+  agent: Headset,
+  bot: Bot,
+};
 
 interface ChatViewProps {
   session: (Session & { customer?: Customer }) | null;
@@ -63,14 +68,18 @@ interface ChatViewProps {
   onUpdateStatus?: (status: string) => void;
   sessionTypes?: SessionMainType[];
   loading?: boolean;
+  /** Transcript load failed; render an ErrorState in the messages region. */
+  error?: boolean;
+  /** Recovery action for a failed transcript load (Requirement 14.5). */
+  onRetryMessages?: () => void;
 }
 
-const channelLabels: Record<ChannelType, string> = {
-  whatsapp: "WhatsApp",
-  messenger: "Messenger",
-  sms: "SMS",
-  voice: "Voice",
-  email: "Email",
+const channelLabelKeys: Record<ChannelType, string> = {
+  whatsapp: "sessions.channels.whatsapp",
+  messenger: "sessions.channels.messenger",
+  sms: "sessions.channels.sms",
+  voice: "sessions.channels.voice",
+  email: "sessions.channels.email",
 };
 
 const channelIcons: Record<ChannelType, React.ElementType> = {
@@ -90,7 +99,10 @@ export default function ChatView({
   onUpdateStatus,
   sessionTypes,
   loading,
+  error,
+  onRetryMessages,
 }: ChatViewProps) {
+  const { t } = useTranslation();
   const [newMessage, setNewMessage] = useState("");
   const [showShortcutMenu, setShowShortcutMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -229,11 +241,10 @@ export default function ChatView({
           <MessageCircle className="h-10 w-10 text-primary/40" />
         </div>
         <h3 className="text-xl font-semibold mb-2 text-foreground">
-          لم يتم اختيار محادثة
+          {t("sessions.noSelection.title")}
         </h3>
         <p className="text-sm max-w-[280px] leading-relaxed">
-          الرجاء اختيار محادثة من القائمة الجانبية للبدء في متابعة مراسلات
-          العملاء
+          {t("sessions.noSelection.description")}
         </p>
       </div>
     );
@@ -259,15 +270,21 @@ export default function ChatView({
           </Avatar>
           <div>
             <h3 className="font-medium">
-              {session.customer?.name || "Unknown"}
+              {session.customer?.name || t("sessions.detail.unknownCustomer")}
             </h3>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <ChannelIcon className="h-3 w-3" />
               <span>
-                {channelLabels[session.channel] || session.channel || "Unknown"}
+                {channelLabelKeys[session.channel]
+                  ? t(channelLabelKeys[session.channel])
+                  : session.channel || t("sessions.detail.unknownCustomer")}
               </span>
               <span>•</span>
-              <span>{session.customer?.phone || "No phone"}</span>
+              {session.customer?.phone ? (
+                <BidiText value={session.customer.phone} />
+              ) : (
+                <span>{t("sessions.detail.noPhone")}</span>
+              )}
             </div>
           </div>
         </div>
@@ -326,13 +343,15 @@ export default function ChatView({
                 onValueChange={(val) => onUpdateType(val === "none" ? "" : val)}
               >
                 <SelectTrigger className="h-8 w-[140px] text-xs">
-                  <SelectValue placeholder="Set Type" />
+                  <SelectValue placeholder={t("sessions.detail.setType")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No Type</SelectItem>
-                  {sessionTypes.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>
-                      {t.name}
+                  <SelectItem value="none">
+                    {t("sessions.detail.noType")}
+                  </SelectItem>
+                  {sessionTypes.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -346,7 +365,7 @@ export default function ChatView({
               onClick={onJoinSession}
               className="bg-primary/10 text-primary hover:bg-primary/20 border-primary/20"
             >
-              Join Conversation
+              {t("sessions.detail.joinConversation")}
             </Button>
           )}
           {session.status === "escalated" && onUpdateStatus && (
@@ -354,16 +373,16 @@ export default function ChatView({
               variant="outline"
               size="sm"
               onClick={() => onUpdateStatus("completed")}
-              className="bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 border-blue-500/20"
+              className="bg-status-info/10 text-status-info hover:bg-status-info/20 border-status-info/20"
             >
               <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
-              Complete Session
+              {t("sessions.detail.completeSession")}
             </Button>
           )}
           <Badge
             variant={session.status === "active" ? "default" : "secondary"}
           >
-            {session.status}
+            {t(`sessions.status.${session.status}`)}
           </Badge>
           <Button variant="ghost" size="icon">
             <Phone className="h-4 w-4" />
@@ -401,27 +420,61 @@ export default function ChatView({
               </div>
             ))}
           </div>
+        ) : error ? (
+          <div className="flex h-full items-center justify-center">
+            <ErrorState
+              title={t("feedback.errorTitle")}
+              description={t("feedback.errorDescription")}
+              onRetry={onRetryMessages}
+              className="border-0 bg-transparent"
+            />
+          </div>
         ) : messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8 text-center">
             <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
               <MessageSquare className="h-8 w-8 opacity-20" />
             </div>
-            <p className="text-sm font-medium">لا توجد رسائل بعد</p>
-            <p className="text-xs mt-1">ابدأ المحادثة الآن مع العميل</p>
+            <p className="text-sm font-medium">
+              {t("sessions.detail.noMessagesTitle")}
+            </p>
+            <p className="text-xs mt-1">
+              {t("sessions.detail.noMessagesDescription")}
+            </p>
           </div>
         ) : (
           <div className="space-y-4">
             {messages.map((message) => {
               const isOutbound = message.direction === "outbound";
+              // Authorship non-color cue (Requirement 14.7): inbound is the
+              // customer; an outbound message is attributed to the assigned
+              // agent when one is present, otherwise to the automated bot.
+              const author: MessageAuthor = isOutbound
+                ? session.employee_id
+                  ? "agent"
+                  : "bot"
+                : "customer";
+              const cue = resolveStatusCue({
+                kind: "authorship",
+                value: author,
+              });
+              const AuthorIcon = AUTHOR_ICON_COMPONENTS[author];
 
               return (
                 <div
                   key={message.id}
                   className={cn(
-                    "flex",
-                    isOutbound ? "justify-end" : "justify-start",
+                    "flex flex-col gap-1",
+                    isOutbound ? "items-end" : "items-start",
                   )}
                 >
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] font-medium text-muted-foreground",
+                    )}
+                  >
+                    <AuthorIcon className="h-3 w-3" aria-hidden="true" />
+                    {t(cue.label)}
+                  </span>
                   <div
                     className={cn(
                       "max-w-[70%] rounded-2xl px-4 py-2.5",
@@ -505,8 +558,10 @@ export default function ChatView({
             </div>
             <span className="text-[11px] font-semibold text-primary/80 uppercase tracking-tighter">
               {bufferedCount > 1
-                ? `العميل يكتب (${bufferedCount} رسائل)...`
-                : "العميل يكتب الآن..."}
+                ? t("sessions.detail.customerTypingCount", {
+                    count: bufferedCount,
+                  })
+                : t("sessions.detail.customerTyping")}
             </span>
           </div>
         </div>

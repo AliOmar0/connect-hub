@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -7,12 +7,16 @@ import {
   History,
   RotateCcw,
   FileText,
+  CheckCircle2,
+  Clock,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -27,7 +31,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { toast } from "sonner";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import type { ViewStatus } from "@/types/presentation";
+import { notifySuccess, notifyError } from "@/lib/feedback";
+import { useAsyncAction } from "@/hooks/use-async-action";
 import { KB_API_URL } from "@/lib/config";
 import { cn } from "@/lib/utils";
 
@@ -45,10 +52,29 @@ interface KbVersion {
   note?: string;
 }
 
-const statusStyles: Record<string, string> = {
-  indexed: "bg-green-500/10 text-green-600 border-green-500/30",
-  processing: "bg-yellow-500/10 text-yellow-600 border-yellow-500/30",
-  failed: "bg-red-500/10 text-red-600 border-red-500/30",
+// Every status pairs a design-token color with a non-color cue (icon + label)
+// so meaning is never carried by color alone (Requirements 2.5, 3.5).
+const statusConfig: Record<
+  KbDocument["status"],
+  { className: string; Icon: typeof CheckCircle2; labelKey: string }
+> = {
+  indexed: {
+    className:
+      "border-status-success/30 bg-status-success/10 text-status-success",
+    Icon: CheckCircle2,
+    labelKey: "kb.statusIndexed",
+  },
+  processing: {
+    className:
+      "border-status-warning/30 bg-status-warning/10 text-status-warning",
+    Icon: Clock,
+    labelKey: "kb.statusProcessing",
+  },
+  failed: {
+    className: "border-status-error/30 bg-status-error/10 text-status-error",
+    Icon: AlertTriangle,
+    labelKey: "kb.statusFailed",
+  },
 };
 
 export default function KnowledgePage() {
@@ -61,6 +87,7 @@ export default function KnowledgePage() {
     data: documents = [],
     isLoading,
     isError,
+    refetch,
   } = useQuery({
     queryKey: ["kb-documents"],
     queryFn: async (): Promise<KbDocument[]> => {
@@ -71,23 +98,37 @@ export default function KnowledgePage() {
     retry: false,
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+  // Upload is wrapped in useAsyncAction so it presents a loading state, blocks
+  // duplicate submission while in flight (Requirement 16.2 / 10.2), and exposes
+  // a retry for the recovery action surfaced on failure (Requirement 16.3).
+  const uploadAction = useAsyncAction<[File], unknown>(
+    async (signal, file) => {
       const form = new FormData();
       form.append("file", file);
       const res = await fetch(`${KB_API_URL}/documents`, {
         method: "POST",
         body: form,
+        signal,
       });
       if (!res.ok) throw new Error("Upload failed");
       return res.json();
     },
-    onSuccess: () => {
-      toast.success(t("kb.uploadSuccess"));
-      queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
+    {
+      onSuccess: () => {
+        notifySuccess(t("kb.uploadSuccess"));
+        queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
+      },
+      onError: () => {
+        // Error_State with a recovery action; the collection stays presented.
+        notifyError(t("kb.operationFailed"), {
+          action: {
+            label: t("feedback.retry"),
+            onClick: () => uploadAction.retry(),
+          },
+        });
+      },
     },
-    onError: () => toast.error(t("kb.backendMissing")),
-  });
+  );
 
   const reindexMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -98,10 +139,17 @@ export default function KnowledgePage() {
       return res.json();
     },
     onSuccess: () => {
-      toast.success(t("kb.reindexSuccess"));
+      notifySuccess(t("kb.reindexSuccess"));
       queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
     },
-    onError: () => toast.error(t("kb.backendMissing")),
+    onError: (_error, id) => {
+      notifyError(t("kb.operationFailed"), {
+        action: {
+          label: t("feedback.retry"),
+          onClick: () => reindexMutation.mutate(id),
+        },
+      });
+    },
   });
 
   const rollbackMutation = useMutation({
@@ -115,68 +163,101 @@ export default function KnowledgePage() {
       return res.json();
     },
     onSuccess: () => {
-      toast.success(t("kb.rollbackSuccess"));
+      notifySuccess(t("kb.rollbackSuccess"));
       setHistoryDoc(null);
       queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
     },
-    onError: () => toast.error(t("kb.backendMissing")),
+    onError: (_error, variables) => {
+      notifyError(t("kb.operationFailed"), {
+        action: {
+          label: t("feedback.retry"),
+          onClick: () => rollbackMutation.mutate(variables),
+        },
+      });
+    },
   });
 
-  const onPickFile = () => fileInputRef.current?.click();
+  const onPickFile = useCallback(() => fileInputRef.current?.click(), []);
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) uploadMutation.mutate(file);
+    if (file) uploadAction.run(file);
     e.target.value = "";
   };
+
+  const isUploading = uploadAction.isLoading;
+
+  // Derive the single ViewStatus that drives the shared feedback boundary so
+  // the collection uses the same loading / empty / error presentation as every
+  // other page (Requirement 10.8).
+  const collectionStatus: ViewStatus = isLoading
+    ? "loading"
+    : isError
+      ? "error"
+      : documents.length === 0
+        ? "empty"
+        : "loaded";
 
   return (
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-semibold">{t("kb.title")}</h1>
+            <h1 className="text-2xl font-semibold text-foreground">
+              {t("kb.title")}
+            </h1>
             <p className="text-muted-foreground">{t("kb.subtitle")}</p>
           </div>
           <div>
             <input
               ref={fileInputRef}
+              id="kb-file-input"
               type="file"
               accept=".pdf,.txt,.md,.docx,.json,.csv"
               className="hidden"
+              aria-label={t("kb.upload")}
               onChange={onFileChange}
             />
             <Button
               onClick={onPickFile}
-              disabled={uploadMutation.isPending}
+              disabled={isUploading}
+              aria-busy={isUploading}
               className="min-h-[44px]"
             >
-              <Upload className="h-4 w-4 me-2" />
-              {uploadMutation.isPending ? t("kb.uploading") : t("kb.upload")}
+              {isUploading ? (
+                <Loader2
+                  className="h-4 w-4 me-2 animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Upload className="h-4 w-4 me-2" aria-hidden="true" />
+              )}
+              {isUploading ? t("kb.uploading") : t("kb.upload")}
             </Button>
           </div>
         </div>
 
-        {isError && (
-          <Card className="border-amber-500/40 bg-amber-500/5">
-            <CardContent className="flex items-center gap-2 py-4 text-amber-700">
-              <AlertTriangle className="h-4 w-4" />
-              {t("kb.backendMissing")}
-            </CardContent>
-          </Card>
-        )}
-
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{t("kb.title")}</CardTitle>
+            <CardTitle className="text-base">{t("kb.documents")}</CardTitle>
           </CardHeader>
           <CardContent>
-            {isLoading ? (
-              <p className="text-muted-foreground">{t("common.loading")}</p>
-            ) : documents.length === 0 ? (
-              <p className="py-8 text-center text-muted-foreground">
-                {t("kb.empty")}
-              </p>
-            ) : (
+            <AsyncBoundary
+              status={collectionStatus}
+              skeleton={<DocumentTableSkeleton />}
+              onRetry={() => refetch?.()}
+              emptyTitle={t("kb.empty")}
+              emptyDescription={t("kb.emptyDescription")}
+              emptyIcon={<FileText />}
+              emptyAction={
+                <Button onClick={onPickFile} className="min-h-[44px]">
+                  <Upload className="h-4 w-4 me-2" aria-hidden="true" />
+                  {t("kb.upload")}
+                </Button>
+              }
+              errorTitle={t("kb.loadErrorTitle")}
+              errorDescription={t("kb.backendMissing")}
+              retryLabel={t("feedback.retry")}
+            >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -190,53 +271,69 @@ export default function KnowledgePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {documents.map((doc) => (
-                    <TableRow key={doc.id}>
-                      <TableCell className="font-medium">
-                        <span className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          {doc.name}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={cn(statusStyles[doc.status])}
-                        >
-                          {t(
-                            `kb.status${doc.status.charAt(0).toUpperCase()}${doc.status.slice(1)}`,
-                          )}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>v{doc.version}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(doc.updated_at).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title={t("kb.reindex")}
-                            onClick={() => reindexMutation.mutate(doc.id)}
+                  {documents.map((doc) => {
+                    const status = statusConfig[doc.status];
+                    const StatusIcon = status.Icon;
+                    return (
+                      <TableRow key={doc.id}>
+                        <TableCell className="font-medium">
+                          <span className="flex items-center gap-2">
+                            <FileText
+                              className="h-4 w-4 text-muted-foreground"
+                              aria-hidden="true"
+                            />
+                            {doc.name}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={cn("gap-1", status.className)}
                           >
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title={t("kb.versionHistory")}
-                            onClick={() => setHistoryDoc(doc)}
-                          >
-                            <History className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            <StatusIcon
+                              className="h-3 w-3"
+                              aria-hidden="true"
+                            />
+                            {t(status.labelKey)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>v{doc.version}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {new Date(doc.updated_at).toLocaleString()}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="min-h-[44px] min-w-[44px]"
+                              title={t("kb.reindex")}
+                              aria-label={t("kb.reindex")}
+                              onClick={() => reindexMutation.mutate(doc.id)}
+                            >
+                              <RefreshCw
+                                className="h-4 w-4"
+                                aria-hidden="true"
+                              />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="min-h-[44px] min-w-[44px]"
+                              title={t("kb.versionHistory")}
+                              aria-label={t("kb.versionHistory")}
+                              onClick={() => setHistoryDoc(doc)}
+                            >
+                              <History className="h-4 w-4" aria-hidden="true" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
-            )}
+            </AsyncBoundary>
           </CardContent>
         </Card>
       </div>
@@ -249,6 +346,21 @@ export default function KnowledgePage() {
         }
       />
     </DashboardLayout>
+  );
+}
+
+function DocumentTableSkeleton() {
+  return (
+    <div className="space-y-3" aria-hidden="true">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4">
+          <Skeleton className="h-5 w-1/3" />
+          <Skeleton className="h-5 w-20" />
+          <Skeleton className="h-5 w-12" />
+          <Skeleton className="ms-auto h-9 w-24" />
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -289,7 +401,7 @@ function VersionHistoryDialog({
             {versions.map((v) => (
               <div
                 key={v.version}
-                className="flex items-center justify-between rounded-md border p-3"
+                className="flex items-center justify-between rounded-md border border-border p-3"
               >
                 <div>
                   <p className="font-medium">v{v.version}</p>
@@ -301,9 +413,10 @@ function VersionHistoryDialog({
                 <Button
                   size="sm"
                   variant="outline"
+                  className="min-h-[44px]"
                   onClick={() => onRollback(v.version)}
                 >
-                  <RotateCcw className="h-4 w-4 me-1" />
+                  <RotateCcw className="h-4 w-4 me-1" aria-hidden="true" />
                   {t("kb.rollback")}
                 </Button>
               </div>

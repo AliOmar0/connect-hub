@@ -96,8 +96,8 @@ describe("SessionsTable", () => {
       />,
     );
 
-    expect(screen.getByText("whatsapp")).toBeInTheDocument();
-    expect(screen.getByText("messenger")).toBeInTheDocument();
+    expect(screen.getByText("WhatsApp")).toBeInTheDocument();
+    expect(screen.getByText("Messenger")).toBeInTheDocument();
   });
 
   it("displays session status with correct badge", () => {
@@ -111,7 +111,7 @@ describe("SessionsTable", () => {
     );
 
     // Multiple sessions can have "active" status, so use getAllByText
-    const activeBadges = screen.getAllByText("active");
+    const activeBadges = screen.getAllByText("Active");
     expect(activeBadges.length).toBeGreaterThan(0);
   });
 
@@ -269,10 +269,10 @@ describe("SessionsTable", () => {
 
     // Wait for dropdown to open and menu items to appear
     // Use findByText which waits for the element to appear
-    const viewDetails = await screen.findByText("View Details", {
+    const viewDetails = await screen.findByText("View conversation", {
       timeout: 3000,
     });
-    const assignAgent = await screen.findByText("Assign Agent", {
+    const assignAgent = await screen.findByText("Assign Agent to Session", {
       timeout: 3000,
     });
 
@@ -297,7 +297,7 @@ describe("SessionsTable", () => {
     await user.click(menuButtons[0]);
 
     // Wait for menu to open and find the View Details button
-    const viewDetailsButton = await screen.findByText("View Details", {
+    const viewDetailsButton = await screen.findByText("View conversation", {
       timeout: 3000,
     });
     await user.click(viewDetailsButton);
@@ -324,9 +324,12 @@ describe("SessionsTable", () => {
     await user.click(menuButtons[0]);
 
     // Wait for menu to open and find the Assign Agent button
-    const assignAgentButton = await screen.findByText("Assign Agent", {
-      timeout: 3000,
-    });
+    const assignAgentButton = await screen.findByText(
+      "Assign Agent to Session",
+      {
+        timeout: 3000,
+      },
+    );
     await user.click(assignAgentButton);
 
     expect(mockOnAssignAgent).toHaveBeenCalledWith(
@@ -390,63 +393,67 @@ describe("SessionsTable", () => {
   });
 
   it("displays different status styles for different statuses", () => {
-    const statuses = [
-      "active",
-      "waiting",
-      "completed",
-      "escalated",
-      "missed",
-    ] as const;
+    const statusLabels = {
+      active: "Active",
+      waiting: "Waiting",
+      completed: "Completed",
+      escalated: "Escalated",
+      missed: "Missed",
+    } as const;
 
-    statuses.forEach((status) => {
-      const { unmount } = render(
-        <SessionsTable
-          sessions={[
-            {
-              ...mockSessions[0],
-              status,
-              customer: mockCustomers[0],
-            },
-          ]}
-          loading={false}
-          onViewSession={mockOnViewSession}
-          onAssignAgent={mockOnAssignAgent}
-        />,
-      );
+    (Object.keys(statusLabels) as (keyof typeof statusLabels)[]).forEach(
+      (status) => {
+        const { unmount } = render(
+          <SessionsTable
+            sessions={[
+              {
+                ...mockSessions[0],
+                status,
+                customer: mockCustomers[0],
+              },
+            ]}
+            loading={false}
+            onViewSession={mockOnViewSession}
+            onAssignAgent={mockOnAssignAgent}
+          />,
+        );
 
-      expect(screen.getByText(status)).toBeInTheDocument();
-      unmount();
-    });
+        expect(screen.getByText(statusLabels[status])).toBeInTheDocument();
+        unmount();
+      },
+    );
   });
 
   it("displays different channel icons for different channels", () => {
-    const channels = [
-      "whatsapp",
-      "messenger",
-      "sms",
-      "voice",
-      "email",
-    ] as const;
+    const channelLabels = {
+      whatsapp: "WhatsApp",
+      messenger: "Messenger",
+      sms: "SMS",
+      voice: "Voice",
+      email: "Email",
+    } as const;
 
-    channels.forEach((channel) => {
-      const { unmount } = render(
-        <SessionsTable
-          sessions={[
-            {
-              ...mockSessions[0],
-              channel,
-              customer: mockCustomers[0],
-            },
-          ]}
-          loading={false}
-          onViewSession={mockOnViewSession}
-          onAssignAgent={mockOnAssignAgent}
-        />,
-      );
+    (Object.keys(channelLabels) as (keyof typeof channelLabels)[]).forEach(
+      (channel) => {
+        const { unmount } = render(
+          <SessionsTable
+            sessions={[
+              {
+                ...mockSessions[0],
+                channel,
+                customer: mockCustomers[0],
+              },
+            ]}
+            loading={false}
+            onViewSession={mockOnViewSession}
+            onAssignAgent={mockOnAssignAgent}
+          />,
+        );
 
-      expect(screen.getByText(channel)).toBeInTheDocument();
-      unmount();
-    });
+        expect(screen.getByText(channelLabels[channel])).toBeInTheDocument();
+        unmount();
+      },
+    );
   });
 
   it("does not show assign agent option when onAssignAgent is not provided", async () => {
@@ -466,13 +473,15 @@ describe("SessionsTable", () => {
       await user.click(menuButtons[0]);
 
       // Wait for View Details to appear
-      const viewDetails = await screen.findByText("View Details", {
+      const viewDetails = await screen.findByText("View conversation", {
         timeout: 3000,
       });
       expect(viewDetails).toBeInTheDocument();
 
       // Assign Agent should not be present
-      expect(screen.queryByText("Assign Agent")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Assign Agent to Session"),
+      ).not.toBeInTheDocument();
     }
   });
 });

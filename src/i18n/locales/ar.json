@@ -13,6 +13,424 @@
     "english": "الإنجليزية",
     "arabic": "العربية"
   },
+  "auth": {
+    "brandName": "PIB Connect",
+    "brandSubtitle": "مركز الاتصال",
+    "brandTagline": "دعم مدعوم بالذكاء الاصطناعي لكل محادثة مع العملاء",
+    "brandDescription": "لوحة تشغيل واحدة للمكالمات الصوتية وواتساب والدردشة عبر الويب — مع ذكاء اصطناعي يدعم العربية أولاً، وتحقق آمن عبر رمز التحقق، وتحويل مباشر إلى موظف بشري.",
+    "security": "أمان بمستوى مصرفي ووصول قائم على الأدوار",
+    "logoAlt": "شعار البنك الإسلامي الفلسطيني",
+    "loading": "جارٍ التحميل",
+    "channels": {
+      "voice": "المكالمات الصوتية",
+      "whatsapp": "واتساب",
+      "webchat": "الدردشة عبر الويب"
+    },
+    "welcomeTitle": "مرحباً بعودتك",
+    "welcomeSubtitle": "سجّل الدخول للوصول إلى لوحة الدعم الخاصة بك",
+    "emailLabel": "البريد الإلكتروني",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "كلمة المرور",
+    "passwordPlaceholder": "••••••••",
+    "showPassword": "إظهار كلمة المرور",
+    "hidePassword": "إخفاء كلمة المرور",
+    "signIn": "تسجيل الدخول",
+    "signingIn": "جارٍ تسجيل الدخول...",
+    "needAccount": "بحاجة إلى حساب؟ تواصل مع مديرك.",
+    "copyright": "البنك الإسلامي الفلسطيني © {{year}}",
+    "success": "مرحباً بعودتك!",
+    "validation": {
+      "email": "يرجى إدخال عنوان بريد إلكتروني صالح.",
+      "password": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل."
+    },
+    "errors": {
+      "title": "فشل تسجيل الدخول",
+      "invalid": "تعذّر تسجيل دخولك. تحقق من بياناتك وحاول مرة أخرى.",
+      "timeout": "انتهت مهلة تسجيل الدخول. يرجى المحاولة مرة أخرى."
+    }
+  },
+  "accessibility": {
+    "skipToContent": "تخطَّ إلى المحتوى الرئيسي"
+  },
+  "theme": {
+    "label": "المظهر",
+    "light": "فاتح",
+    "dark": "داكن",
+    "switchToLight": "التبديل إلى المظهر الفاتح",
+    "switchToDark": "التبديل إلى المظهر الداكن"
+  },
+  "feedback": {
+    "retry": "إعادة المحاولة",
+    "emptyTitle": "لا يوجد ما يُعرض",
+    "emptyDescription": "لا توجد سجلات لعرضها بعد.",
+    "errorTitle": "حدث خطأ ما",
+    "errorDescription": "تعذّر تحميل هذا المحتوى. يرجى المحاولة مرة أخرى.",
+    "boundaryTitle": "حدث خطأ ما",
+    "boundaryDescription": "حدث خطأ غير متوقع أدى إلى إيقاف الصفحة. يمكنك المحاولة مرة أخرى لإعادة تحميلها.",
+    "reload": "إعادة التحميل",
+    "status": {
+      "loading": "جارٍ تحميل المحتوى",
+      "loaded": "تم تحميل المحتوى",
+      "empty": "لا توجد سجلات لعرضها",
+      "error": "فشل تحميل المحتوى"
+    }
+  },
+  "authorship": {
+    "customer": "العميل",
+    "agent": "الموظف",
+    "bot": "المساعد الآلي"
+  },
+  "diagnostics": {
+    "backend": {
+      "title": "أداة اختبار الخادم",
+      "subtitle": "اختبر واجهة Node البرمجية (الدردشة، الصوت، تحويل النص إلى كلام) دون أي تكلفة على Twilio.",
+      "audioLabel": "تشغيل الصوت التشخيصي",
+      "health": {
+        "title": "حالة الخادم",
+        "refresh": "تحديث",
+        "unreachable": "تعذّر الوصول إلى واجهة Node البرمجية على {{url}}. هل هي قيد التشغيل؟ (npm run backend)",
+        "env": "البيئة: {{value}}",
+        "tts": "تحويل النص إلى كلام: {{value}}",
+        "model": "النموذج: {{value}}",
+        "redisConnected": "Redis: متصل",
+        "redisFallback": "Redis: تخزين مؤقت في الذاكرة",
+        "ttsWarning": "مزوّد تحويل النص إلى كلام هو \"{{provider}}\" لكنه غير مُهيأ. للحصول على صوت مجاني، اضبط TTS_PROVIDER=edge في .env وشغّل خادم edge-tts.",
+        "available": "{{label}} متاح",
+        "unavailable": "{{label}} غير متاح",
+        "providers": {
+          "openrouter": "OpenRouter (ذكاء اصطناعي)",
+          "supabase": "Supabase",
+          "twilio": "Twilio",
+          "whatsappOtp": "رمز واتساب",
+          "azureTts": "Azure TTS",
+          "elevenlabs": "ElevenLabs",
+          "edgeTts": "Edge TTS (مجاني)",
+          "media": "تخزين الوسائط"
+        }
+      },
+      "tabs": {
+        "voice": "الصوت",
+        "chat": "الدردشة",
+        "tts": "تحويل النص إلى كلام"
+      },
+      "voice": {
+        "description": "يحاكي دور مكالمة هاتفية واحد (كلام إلى رد بالذكاء الاصطناعي) دون إجراء مكالمة حقيقية. يشغّل الرد المُركّب إذا كان تحويل النص إلى كلام مُهيأ.",
+        "phonePlaceholder": "هاتف المتصل (مثال: +970599123456)",
+        "messagePlaceholder": "ما يقوله المتصل...",
+        "simulate": "محاكاة",
+        "callerSaid": "قال المتصل",
+        "aiReply": "رد الذكاء الاصطناعي",
+        "ttsLabel": "تحويل النص إلى كلام: {{provider}}",
+        "audioPlayed": "تم تشغيل الصوت ({{provider}})",
+        "noAudio": "لا يوجد صوت (لم يُرجع المزوّد أي صوت — سيُستخدم Twilio Polly في مكالمة حقيقية)",
+        "success": "تمت محاكاة دور المكالمة الصوتية"
+      },
+      "chat": {
+        "description": "يتواصل مع ‎/api/chat‎ — نفس منطق الذكاء الاصطناعي الذي يستخدمه مسار الصوت. بدون Twilio.",
+        "empty": "أرسل رسالة للبدء.",
+        "placeholder": "اسأل الذكاء الاصطناعي...",
+        "send": "إرسال الرسالة"
+      },
+      "tts": {
+        "description": "يركّب كلامًا عربيًا عبر مزوّد تحويل النص إلى كلام المُهيأ ويشغّله.",
+        "synthesize": "تركيب وتشغيل",
+        "success": "تم تركيب الكلام",
+        "playerLabel": "مشغّل الكلام المُركّب"
+      }
+    },
+    "twilio": {
+      "title": "Connect Hub AI",
+      "subtitle": "بوابة صوتية متميزة لبنك فلسطين الإسلامي",
+      "sdkStatus": "SDK: {{status}}",
+      "sdk": {
+        "offline": "غير متصل",
+        "connecting": "جارٍ الاتصال...",
+        "online": "متصل (الموظف: {{identity}})",
+        "error": "خطأ: {{message}}",
+        "setupRequired": "الإعداد مطلوب: {{message}}",
+        "registered": "تم تسجيل SDK الصوتي",
+        "errorToast": "خطأ في SDK: {{message}}",
+        "setupError": "خطأ في إعداد الصوت: {{message}}",
+        "noToken": "لم يُرجع الخادم أي رمز",
+        "unknownError": "حدث خطأ غير معروف أثناء الإعداد"
+      },
+      "incoming": {
+        "title": "مكالمة واردة...",
+        "accept": "قبول",
+        "ignore": "تجاهل",
+        "toast": "مكالمة واردة"
+      },
+      "security": {
+        "title": "إعدادات الأمان",
+        "initialize": "تهيئة SDK الصوتي",
+        "hint": "تتيح تهيئة SDK لمتصفحك استقبال المكالمات مباشرة من سحابة Twilio."
+      },
+      "bankingVoice": {
+        "title": "الصوت المصرفي",
+        "value": "العربية (Polly.Zeina)"
+      },
+      "tabs": {
+        "voice": "مكالمة صوتية بالذكاء الاصطناعي",
+        "sms": "اختبار الرسائل القصيرة",
+        "chat": "اختبار الدردشة بالذكاء الاصطناعي"
+      },
+      "voice": {
+        "label": "اختبار الذكاء الاصطناعي الوارد/الصادر",
+        "placeholder": "+970...",
+        "dial": "اتصل الآن",
+        "hint": "لسماع الذكاء الاصطناعي، يمكنك الاتصال بـ +1 916 659 6816 أو استخدام \"اتصل الآن\".",
+        "success": "تم بدء المكالمة بالذكاء الاصطناعي"
+      },
+      "sms": {
+        "recipient": "رقم المستلم",
+        "recipientPlaceholder": "+970...",
+        "message": "الرسالة",
+        "send": "إرسال رسالة قصيرة",
+        "missingFields": "يرجى تعبئة الرقم والرسالة معًا",
+        "success": "تم إرسال الرسالة القصيرة بنجاح (SID: {{sid}})",
+        "failed": "تعذّر إرسال الرسالة القصيرة",
+        "error": "خطأ في الرسالة القصيرة: {{message}}"
+      },
+      "chat": {
+        "identityLabel": "محاكاة هوية الهاتف",
+        "identityPlaceholder": "+970...",
+        "identityHint": "استخدم +970599123456 لعلي عمر",
+        "placeholder": "اسأل الذكاء الاصطناعي...",
+        "send": "إرسال الرسالة",
+        "error": "خطأ في الدردشة: {{message}}"
+      }
+    }
+  },
+  "settings": {
+    "title": "الإعدادات",
+    "subtitle": "إدارة عمليات التكامل ومفاتيح الواجهة البرمجية وتفضيلات النظام.",
+    "saveFailed": "تعذّر حفظ التغييرات",
+    "tabs": {
+      "integrations": "عمليات التكامل",
+      "notifications": "الإشعارات",
+      "security": "الأمان",
+      "general": "عام",
+      "appearance": "المظهر",
+      "sessionTypes": "أنواع الجلسات",
+      "voiceTesting": "اختبار الصوت"
+    },
+    "appearance": {
+      "title": "المظهر",
+      "description": "اختر شكل لوحة التحكم. يُطبَّق اختيارك فورًا ويُحفظ للمرة القادمة.",
+      "theme": "السمة",
+      "themeDescription": "التبديل بين السمة الفاتحة والداكنة في لوحة التحكم بأكملها.",
+      "light": "فاتح",
+      "dark": "داكن"
+    },
+    "integrations": {
+      "title": "تكامل القنوات",
+      "description": "إعداد مفاتيح الواجهة البرمجية وبيانات الاعتماد لكل قناة اتصال.",
+      "smsTest": "اختبار رسالة نصية سريع",
+      "sendTest": "إرسال اختبار",
+      "smsMissingFields": "يرجى إدخال رقم الهاتف والرسالة معًا",
+      "smsSuccess": "تم إرسال الرسالة النصية بنجاح",
+      "smsFailed": "فشل إرسال الرسالة النصية",
+      "adminOnly": "يجب أن تكون مسؤولًا لتعديل عمليات التكامل.",
+      "saveSuccess": "تم حفظ الإعدادات"
+    },
+    "notifications": {
+      "title": "تفضيلات الإشعارات",
+      "description": "حدّد كيف ومتى تتلقى الإشعارات.",
+      "email": "إشعارات البريد الإلكتروني",
+      "emailDescription": "تلقّي الإشعارات عبر البريد الإلكتروني",
+      "inApp": "الإشعارات داخل التطبيق",
+      "inAppDescription": "عرض الإشعارات داخل التطبيق",
+      "quietHours": "ساعات الهدوء",
+      "quietHoursDescription": "تعطيل الإشعارات خلال ساعات محددة",
+      "startTime": "وقت البدء",
+      "endTime": "وقت الانتهاء",
+      "save": "حفظ التفضيلات",
+      "saveSuccess": "تم حفظ تفضيلات الإشعارات"
+    },
+    "security": {
+      "title": "تغيير كلمة المرور",
+      "description": "حدّث كلمة مرور حسابك لمزيد من الأمان.",
+      "currentPassword": "كلمة المرور الحالية",
+      "currentPasswordPlaceholder": "أدخل كلمة المرور الحالية",
+      "newPassword": "كلمة المرور الجديدة",
+      "newPasswordPlaceholder": "أدخل كلمة مرور جديدة (٦ أحرف على الأقل)",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "confirmPasswordPlaceholder": "أكّد كلمة المرور الجديدة",
+      "update": "تحديث كلمة المرور",
+      "updating": "جارٍ التحديث...",
+      "mismatch": "كلمتا المرور غير متطابقتين",
+      "tooShort": "يجب أن تتكوّن كلمة المرور من ٦ أحرف على الأقل",
+      "updateSuccess": "تم تحديث كلمة المرور بنجاح",
+      "sessionsTitle": "الجلسات النشطة",
+      "sessionsDescription": "إدارة جلساتك النشطة عبر الأجهزة.",
+      "sessionsHint": "إدارة الجلسات قادمة قريبًا. يمكنك تسجيل الخروج من جميع الأجهزة بتسجيل الخروج ثم الدخول مجددًا."
+    },
+    "profile": {
+      "title": "إعدادات الملف الشخصي",
+      "description": "حدّث معلوماتك الشخصية وصورة الملف الشخصي.",
+      "loading": "جارٍ تحميل بيانات الملف الشخصي...",
+      "notFound": "لم يتم العثور على إعدادات الملف الشخصي.",
+      "changePhoto": "تغيير صورة الملف الشخصي",
+      "firstName": "الاسم الأول",
+      "lastName": "اسم العائلة",
+      "email": "البريد الإلكتروني",
+      "phone": "رقم الهاتف",
+      "department": "القسم",
+      "save": "حفظ التغييرات",
+      "saving": "جارٍ الحفظ...",
+      "saveSuccess": "تم تحديث الملف الشخصي بنجاح",
+      "photoSuccess": "تم تحديث صورة الملف الشخصي",
+      "photoFailed": "فشل تحديث الصورة"
+    },
+    "sessionTypes": {
+      "title": "أنواع الجلسات ومعرفة الذكاء الاصطناعي",
+      "description": "إدارة الفئات والمعرفة الواقعية التي يستخدمها المساعد الآلي.",
+      "newType": "نوع جديد",
+      "searchPlaceholder": "ابحث بالاسم أو الفئة أو المحتوى...",
+      "clearSearch": "مسح البحث",
+      "adminOnly": "يمكن للمسؤولين فقط تعديل أنواع الجلسات ومعرفة الذكاء الاصطناعي.",
+      "empty": "لم يتم تعريف أنواع جلسات بعد.",
+      "noMatches": "لا توجد نتائج مطابقة لـ \"{{term}}\"",
+      "otherCategory": "أخرى",
+      "edit": "تعديل نوع الجلسة",
+      "delete": "حذف نوع الجلسة",
+      "deleteConfirm": "هل أنت متأكد من حذف نوع الجلسة هذا؟ قد يؤثر ذلك على الجلسات الحالية.",
+      "createTitle": "إنشاء نوع جلسة جديد",
+      "editTitle": "تعديل نوع الجلسة",
+      "dialogDescription": "حدّد فئة الجلسة وقدّم معرفة مفصلة للمساعد الآلي.",
+      "nameLabel": "الاسم (بالعربية أو الإنجليزية)",
+      "namePlaceholder": "مثال: تمويل السيارات",
+      "categoryLabel": "الفئة (التجميع)",
+      "categoryPlaceholder": "مثال: الخدمات",
+      "knowledgeLabel": "معرفة الذكاء الاصطناعي / الوصف",
+      "knowledgePlaceholder": "قدّم معلومات مفصلة يستخدمها الذكاء الاصطناعي عند الرد على هذا النوع من الاستفسارات...",
+      "knowledgeHint": "سيُقدَّم هذا المحتوى ديناميكيًا للذكاء الاصطناعي أثناء المحادثات.",
+      "nameRequired": "الاسم مطلوب",
+      "adminOnlyManage": "يجب أن تكون مسؤولًا لإدارة أنواع الجلسات.",
+      "adminOnlyDelete": "يجب أن تكون مسؤولًا لحذف أنواع الجلسات.",
+      "saveFailed": "فشل حفظ نوع الجلسة",
+      "createSuccess": "تمت الإضافة بنجاح",
+      "updateSuccess": "تم التحديث بنجاح",
+      "deleteSuccess": "تم حذف نوع الجلسة بنجاح",
+      "deleteFailed": "فشل حذف نوع الجلسة",
+      "cancel": "إلغاء",
+      "save": "حفظ التغييرات"
+    }
+  },
+  "sessions": {
+    "title": "جلسات الذكاء الاصطناعي النشطة",
+    "subtitle": "راقب وأدِر جميع الجلسات النشطة.",
+    "searchPlaceholder": "ابحث بالاسم أو الهاتف أو البريد أو الموظف...",
+    "filters": {
+      "status": "الحالة",
+      "channel": "القناة",
+      "type": "النوع",
+      "dateRange": "النطاق الزمني",
+      "allStatus": "كل الحالات",
+      "allChannels": "كل القنوات",
+      "allTypes": "كل الأنواع",
+      "last24h": "آخر 24 ساعة",
+      "last7d": "آخر 7 أيام",
+      "last30d": "آخر 30 يوماً",
+      "last90d": "آخر 90 يوماً"
+    },
+    "status": {
+      "active": "نشطة",
+      "waiting": "في الانتظار",
+      "completed": "مكتملة",
+      "escalated": "مُصعّدة",
+      "missed": "فائتة"
+    },
+    "channels": {
+      "whatsapp": "واتساب",
+      "messenger": "ماسنجر",
+      "sms": "رسالة نصية",
+      "voice": "مكالمة صوتية",
+      "email": "بريد إلكتروني"
+    },
+    "stats": {
+      "activeSessions": "الجلسات النشطة",
+      "escalated": "المُصعّدة",
+      "completed": "المكتملة (24 ساعة)",
+      "totalAgents": "إجمالي الموظفين"
+    },
+    "overviewTitle": "نظرة عامة على الجلسات",
+    "conversationDetails": "تفاصيل المحادثة",
+    "viewConversation": "عرض المحادثة",
+    "backToList": "العودة إلى الجلسات",
+    "exportCsv": "تصدير الجلسات المصفّاة إلى CSV",
+    "activity": {
+      "title": "الجدول الزمني للنشاط",
+      "subtitle": "سجل المكالمات والتحديثات",
+      "empty": "لا يوجد نشاط بعد",
+      "inboundCall": "مكالمة واردة",
+      "outboundCall": "مكالمة صادرة",
+      "status": "الحالة",
+      "duration": "المدة",
+      "id": "المعرّف"
+    },
+    "table": {
+      "channel": "القناة",
+      "customer": "العميل",
+      "agent": "الموظف",
+      "type": "النوع",
+      "status": "الحالة",
+      "waitTime": "وقت الانتظار",
+      "duration": "المدة",
+      "satisfaction": "الرضا",
+      "started": "البدء",
+      "unassigned": "غير مُسندة",
+      "unknown": "غير معروف",
+      "empty": "لا توجد جلسات"
+    },
+    "emptyList": {
+      "title": "لا توجد جلسات متاحة",
+      "description": "لا توجد جلسات تطابق عوامل التصفية الحالية."
+    },
+    "noSelection": {
+      "title": "لم يتم اختيار محادثة",
+      "description": "اختر جلسة من القائمة لمراجعة محادثتها."
+    },
+    "detail": {
+      "unknownCustomer": "غير معروف",
+      "noPhone": "لا يوجد هاتف",
+      "setType": "تعيين النوع",
+      "noType": "بدون نوع",
+      "joinConversation": "الانضمام إلى المحادثة",
+      "completeSession": "إنهاء الجلسة",
+      "messagePlaceholder": "اكتب رسالة هنا... (استخدم \\ للاختصارات)",
+      "quickShortcuts": "اختصارات سريعة",
+      "noMessagesTitle": "لا توجد رسائل بعد",
+      "noMessagesDescription": "ابدأ المحادثة الآن مع العميل.",
+      "customerTyping": "العميل يكتب الآن...",
+      "customerTypingCount": "العميل يكتب ({{count}} رسائل)..."
+    },
+    "assign": {
+      "title": "إسناد موظف إلى الجلسة",
+      "description": "اختر موظفاً لإسناده إلى هذه الجلسة.",
+      "sessionLabel": "الجلسة",
+      "channelStatus": "القناة: {{channel}} • الحالة: {{status}}",
+      "selectEmployee": "اختر موظفاً",
+      "chooseEmployee": "اختر موظفاً",
+      "unassign": "إلغاء الإسناد",
+      "assign": "إسناد",
+      "assigning": "جارٍ الإسناد..."
+    },
+    "toasts": {
+      "exported": "تم تصدير الجلسات بنجاح",
+      "noSessions": "لا توجد جلسات للتنزيل",
+      "assigned": "تم إسناد الجلسة بنجاح",
+      "unassigned": "تم إلغاء إسناد الجلسة",
+      "assignFailed": "فشل إسناد الجلسة",
+      "noSessionSelected": "لم يتم اختيار جلسة",
+      "messageSent": "تم إرسال الرسالة",
+      "sendFailed": "فشل إرسال الرسالة",
+      "typeUpdated": "تم تحديث نوع الجلسة",
+      "typeUpdateFailed": "فشل تحديث نوع الجلسة",
+      "statusUpdated": "تم تعليم الجلسة كـ {{status}}",
+      "statusUpdateFailed": "فشل تحديث حالة الجلسة"
+    }
+  },
   "nav": {
     "dashboard": "لوحة التحكم",
     "sessions": "الجلسات",
@@ -48,19 +466,169 @@
     "title": "قائمة انتظار التحويل",
     "subtitle": "الجلسات التي تنتظر موظفاً بشرياً",
     "empty": "لا توجد جلسات تنتظر التحويل.",
+    "emptyTitle": "لا توجد تحويلات في انتظار المعالجة",
     "sla": "اتفاقية مستوى الخدمة",
     "slaBreached": "تم تجاوز مستوى الخدمة",
     "slaRemaining": "الوقت المتبقي لمستوى الخدمة",
+    "slaRemainingLabel": "مستوى الخدمة: متبقٍّ {{time}}",
+    "slaBreachedLabel": "تم تجاوز مستوى الخدمة",
     "waiting": "في الانتظار",
+    "waitingFor": "في الانتظار منذ {{duration}}",
+    "sessionRef": "الجلسة {{ref}}",
+    "sessionRefLabel": "الجلسة",
     "accept": "قبول",
     "accepted": "تم القبول",
     "offerCallback": "عرض معاودة الاتصال",
     "callbackRequested": "تم طلب معاودة الاتصال",
     "detectedIntent": "النية المكتشفة",
     "channel": "القناة",
+    "unknownCustomer": "عميل غير معروف",
     "maskedNotice": "القيم الحساسة مخفية. افتح الجلسة لعرض السياق الكامل.",
     "acceptedToast": "لقد قبلت الجلسة.",
-    "callbackToast": "تم عرض معاودة الاتصال على العميل."
+    "acceptedNamed": "لقد قبلت جلسة {{name}}.",
+    "acceptFailed": "تعذّر قبول التحويل. لا يزال موجوداً في قائمة الانتظار.",
+    "callbackToast": "تم عرض معاودة الاتصال على العميل.",
+    "callbackFailed": "تعذّر عرض معاودة الاتصال. يرجى المحاولة مرة أخرى.",
+    "loadErrorTitle": "تعذّر تحميل قائمة الانتظار",
+    "loadErrorDescription": "تعذّر تحميل التحويلات التي تنتظر المعالجة. يرجى المحاولة مرة أخرى."
+  },
+  "shortcutsPage": {
+    "title": "اختصارات لوحة المفاتيح",
+    "subtitle": "مرجع اختصارات لوحة المفاتيح لتشغيل لوحة التحكم.",
+    "emptyTitle": "لا توجد اختصارات متاحة",
+    "emptyDescription": "لا توجد اختصارات لوحة مفاتيح لعرضها.",
+    "groups": {
+      "general": "عام",
+      "navigation": "التنقل"
+    },
+    "items": {
+      "focusNext": "نقل التركيز إلى العنصر التالي",
+      "focusPrevious": "نقل التركيز إلى العنصر السابق",
+      "activate": "تفعيل العنصر المحدد",
+      "dismiss": "إغلاق النافذة أو القائمة المفتوحة",
+      "toggleSidebar": "إظهار أو إخفاء الشريط الجانبي للتنقل"
+    }
+  },
+  "notFoundPage": {
+    "code": "404",
+    "title": "الصفحة غير موجودة",
+    "description": "الصفحة التي تبحث عنها غير موجودة أو ربما تم نقلها.",
+    "returnHome": "العودة إلى الصفحة الرئيسية"
+  },
+  "employees": {
+    "title": "إدارة الموظفين",
+    "subtitle": "إدارة فريقك والأدوار والصلاحيات الفردية.",
+    "addEmployee": "إضافة موظف",
+    "createUser": "إنشاء مستخدم",
+    "searchPlaceholder": "ابحث عن الموظفين بالاسم أو الرمز أو القسم...",
+    "searchLabel": "البحث عن الموظفين",
+    "stats": {
+      "totalTeam": "إجمالي الفريق",
+      "activeNow": "نشط الآن",
+      "avgPerformance": "متوسط الأداء",
+      "activeDepts": "الأقسام النشطة"
+    },
+    "emptyTitle": "لا يوجد موظفون",
+    "emptyDescription": "لا يوجد أعضاء فريق يطابقون بحثك بعد.",
+    "errorTitle": "تعذّر تحميل الموظفين",
+    "errorDescription": "تعذّر تحميل قائمة الفريق. يرجى المحاولة مرة أخرى.",
+    "roleLabel": "الدور",
+    "card": {
+      "actions": "إجراءات {{name}}"
+    },
+    "form": {
+      "addTitle": "إضافة موظف",
+      "editTitle": "تعديل موظف",
+      "addDescription": "أنشئ سجل موظف جديد واربطه بملف مستخدم.",
+      "editDescription": "تحديث معلومات الموظف والإعدادات.",
+      "photoTitle": "صورة الموظف",
+      "photoHint": "انقر للتحميل أو اسحب وأفلت",
+      "uploadPhoto": "تحميل صورة الموظف",
+      "userProfile": "ملف المستخدم",
+      "selectProfile": "اختر ملف مستخدم",
+      "employeeCode": "رمز الموظف",
+      "department": "القسم",
+      "shiftStart": "بداية الوردية",
+      "shiftEnd": "نهاية الوردية",
+      "assignedChannels": "القنوات المسندة",
+      "active": "نشط",
+      "processing": "جارٍ المعالجة...",
+      "saveChanges": "حفظ التغييرات",
+      "uploadFailed": "تعذّر تحميل الصورة",
+      "errorTitle": "تعذّر حفظ الموظف"
+    },
+    "createDialog": {
+      "title": "إنشاء مستخدم جديد",
+      "description": "أنشئ حساب مستخدم جديد بالبريد الإلكتروني وكلمة المرور وحدّد دوره وصلاحياته.",
+      "firstName": "الاسم الأول",
+      "lastName": "اسم العائلة",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "confirmPassword": "تأكيد كلمة المرور",
+      "role": "الدور",
+      "phone": "الهاتف",
+      "department": "القسم",
+      "creating": "جارٍ الإنشاء...",
+      "submit": "إنشاء مستخدم",
+      "errorTitle": "تعذّر إنشاء المستخدم",
+      "passwordsMismatch": "كلمتا المرور غير متطابقتين",
+      "passwordTooShort": "يجب أن تتكوّن كلمة المرور من 6 أحرف على الأقل",
+      "mustBeLoggedIn": "يجب تسجيل الدخول لإنشاء مستخدمين",
+      "createdSuccess": "تم إنشاء المستخدم {{email}} بنجاح بدور {{role}}",
+      "createFailed": "تعذّر إنشاء المستخدم"
+    },
+    "toasts": {
+      "createdSuccess": "تم إنشاء الموظف بنجاح",
+      "createFailed": "تعذّر إنشاء الموظف",
+      "updatedSuccess": "تم تحديث الموظف بنجاح",
+      "updateFailed": "تعذّر تحديث الموظف",
+      "deletedSuccess": "تم حذف الموظف بنجاح",
+      "deleteFailed": "تعذّر حذف الموظف"
+    },
+    "delete": {
+      "title": "حذف الموظف؟",
+      "description": "لا يمكن التراجع عن هذا الإجراء. سيتم حذف سجل الموظف نهائياً.",
+      "confirm": "حذف",
+      "cancel": "إلغاء",
+      "deleting": "جارٍ الحذف..."
+    }
+  },
+  "notifications": {
+    "title": "الإشعارات",
+    "subtitle": "عرض جميع إشعارات النظام والتنبيهات.",
+    "filter": "تصفية",
+    "filterAll": "كل الإشعارات",
+    "filterUnread": "غير المقروءة ({{count}})",
+    "filterRead": "المقروءة",
+    "markAllRead": "تعليم الكل كمقروء",
+    "deleteAllRead": "حذف كل المقروءة",
+    "markAsRead": "تعليم كمقروء",
+    "delete": "حذف",
+    "unread": "غير مقروء",
+    "read": "مقروء",
+    "unreadStatusLabel": "إشعار غير مقروء",
+    "readStatusLabel": "إشعار مقروء",
+    "markedReadAnnouncement": "تم تعليم الإشعار كمقروء.",
+    "allMarkedReadAnnouncement": "تم تعليم جميع الإشعارات كمقروءة.",
+    "confirmDelete": "حذف هذا الإشعار؟",
+    "confirmDeleteAllRead": "حذف كل الإشعارات المقروءة؟",
+    "deleted": "تم حذف الإشعار.",
+    "allReadDeleted": "تم حذف جميع الإشعارات المقروءة.",
+    "allMarkedRead": "تم تعليم جميع الإشعارات كمقروءة.",
+    "markReadFailed": "تعذّر تعليم الإشعار كمقروء. لا يزال غير مقروء.",
+    "markAllReadFailed": "تعذّر تعليم جميع الإشعارات كمقروءة. يرجى المحاولة مرة أخرى.",
+    "deleteFailed": "تعذّر حذف الإشعار. يرجى المحاولة مرة أخرى.",
+    "deleteAllReadFailed": "تعذّر حذف الإشعارات المقروءة. يرجى المحاولة مرة أخرى.",
+    "emptyTitle": "لا توجد إشعارات",
+    "emptyDescription": "لا توجد لديك إشعارات حالياً. ستظهر التنبيهات الجديدة هنا.",
+    "loadErrorTitle": "تعذّر تحميل الإشعارات",
+    "loadErrorDescription": "تعذّر تحميل إشعاراتك. يرجى المحاولة مرة أخرى.",
+    "types": {
+      "info": "معلومة",
+      "success": "نجاح",
+      "warning": "تحذير",
+      "error": "خطأ"
+    }
   },
   "kb": {
     "title": "قاعدة المعرفة",
@@ -80,9 +648,126 @@
     "statusProcessing": "قيد المعالجة",
     "statusFailed": "فشل",
     "empty": "لا توجد مستندات بعد. ارفع مستنداً للبدء.",
+    "emptyDescription": "أضف مستنداً ليتمكن المساعد من الإجابة من محتوى معتمد.",
+    "loadErrorTitle": "تعذّر تحميل المستندات",
     "backendMissing": "خدمة قاعدة المعرفة غير متاحة. يرجى ضبط VITE_KB_API_URL.",
+    "operationFailed": "فشلت عملية المستند. يرجى المحاولة مرة أخرى.",
+    "documents": "المستندات",
     "uploadSuccess": "تم رفع المستند وإدراجه في قائمة الفهرسة.",
     "rollbackSuccess": "تم الاسترجاع إلى الإصدار المحدد.",
     "reindexSuccess": "بدأت إعادة الفهرسة."
+  },
+  "analytics": {
+    "title": "التحليلات",
+    "subtitle": "تحليلات وتقارير معمّقة لمركز الاتصالات لديك.",
+    "export": "تصدير التحليلات",
+    "dateRange": {
+      "label": "النطاق الزمني",
+      "last7": "آخر 7 أيام",
+      "last30": "آخر 30 يوماً",
+      "last90": "آخر 90 يوماً",
+      "last6months": "آخر 6 أشهر"
+    },
+    "channelFilter": {
+      "label": "القناة",
+      "all": "جميع القنوات"
+    },
+    "channels": {
+      "whatsapp": "واتساب",
+      "messenger": "ماسنجر",
+      "sms": "رسائل نصية",
+      "voice": "صوت",
+      "email": "بريد إلكتروني"
+    },
+    "summary": {
+      "totalSessions": "إجمالي الجلسات",
+      "completed": "{{count}} مكتملة",
+      "resolutionRate": "معدل الحل",
+      "completionRate": "معدل الإكمال",
+      "avgSatisfaction": "متوسط الرضا",
+      "outOf5": "من 5.0",
+      "avgWaitTime": "متوسط وقت الانتظار",
+      "beforeResponse": "قبل الاستجابة"
+    },
+    "charts": {
+      "activityTitle": "النشاط عبر الزمن",
+      "channelTitle": "توزيع القنوات",
+      "satisfactionTitle": "اتجاه درجة الرضا"
+    },
+    "series": {
+      "sessions": "الجلسات",
+      "messages": "الرسائل",
+      "calls": "المكالمات",
+      "satisfaction": "الرضا"
+    },
+    "total": "الإجمالي",
+    "empty": "لا توجد بيانات متاحة",
+    "emptyDescription": "لا توجد بيانات للنطاق المحدد بعد.",
+    "loadErrorTitle": "تعذّر تحميل التحليلات",
+    "loadErrorDescription": "تعذّر تحميل هذه العرض المرئي. يرجى المحاولة مرة أخرى."
+  },
+  "appShell": {
+    "header": {
+      "searchPlaceholder": "ابحث في المحادثات والموظفين...",
+      "activeSessions": "جلسات الذكاء الاصطناعي النشطة",
+      "notifications": "الإشعارات",
+      "notificationsNew": "{{count}} جديدة",
+      "noNotifications": "لا توجد إشعارات جديدة",
+      "viewAllNotifications": "عرض كل الإشعارات",
+      "loading": "جارٍ التحميل...",
+      "whatsapp": "واتساب",
+      "messenger": "ماسنجر",
+      "logoAlt": "شعار البنك الإسلامي الفلسطيني",
+      "bankName": "البنك الإسلامي الفلسطيني",
+      "account": "الحساب",
+      "pageContextLabel": "الصفحة الحالية",
+      "pages": {
+        "home": "الرئيسية",
+        "dashboard": "لوحة التحكم",
+        "sessions": "الجلسات",
+        "queue": "قائمة انتظار التحويل",
+        "knowledge": "قاعدة المعرفة",
+        "employees": "الموظفون",
+        "analytics": "التحليلات",
+        "settings": "الإعدادات",
+        "notifications": "الإشعارات",
+        "shortcuts": "اختصارات لوحة المفاتيح",
+        "backendTest": "أداة اختبار الخادم",
+        "notFound": "الصفحة غير موجودة"
+      }
+    },
+    "sidebar": {
+      "logoAlt": "شعار البنك الإسلامي الفلسطيني",
+      "bankNameLine1": "البنك الإسلامي",
+      "bankNameLine2": "الفلسطيني",
+      "signOut": "تسجيل الخروج",
+      "collapse": "طي",
+      "collapseSidebar": "طي الشريط الجانبي",
+      "expandSidebar": "توسيع الشريط الجانبي",
+      "userFallback": "مستخدم"
+    },
+    "nav": {
+      "dashboard": "لوحة التحكم",
+      "sessions": "جلسات الذكاء الاصطناعي النشطة",
+      "queue": "قائمة انتظار التحويل",
+      "employees": "الموظفون",
+      "analytics": "التحليلات",
+      "notifications": "الإشعارات",
+      "shortcuts": "اختصارات لوحة المفاتيح",
+      "knowledge": "قاعدة المعرفة",
+      "backendTest": "أداة اختبار الخادم",
+      "settings": "الإعدادات",
+      "primaryLabel": "الرئيسية",
+      "openMenu": "فتح قائمة التنقل",
+      "closeMenu": "إغلاق قائمة التنقل"
+    },
+    "roles": {
+      "admin": "مدير النظام",
+      "supervisor": "مشرف",
+      "manager": "مدير",
+      "agent": "موظف",
+      "viewer": "مشاهد",
+      "user": "مستخدم"
+    }
   }
 }

@@ -4,6 +4,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
+import { ThemeProvider } from "@/components/theme-provider";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleBasedRedirect from "@/components/RoleBasedRedirect";
 import Index from "./pages/Index";
@@ -25,131 +27,135 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <AuthProvider>
-      <EscalationListener />
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter
-          future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-        >
-          <Routes>
-            <Route path="/auth" element={<AuthPage />} />
-            <Route
-              path="/backend-test"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["admin", "supervisor", "manager"]}
-                >
-                  <BackendTester />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <RoleBasedRedirect />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["supervisor", "manager", "admin"]}
-                >
-                  <Index />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/sessions"
-              element={
-                <ProtectedRoute>
-                  <SessionsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/sessions/:id"
-              element={
-                <ProtectedRoute>
-                  <SessionsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/queue"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["admin", "supervisor", "manager", "agent"]}
-                >
-                  <QueuePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/knowledge"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["admin", "supervisor", "manager"]}
-                >
-                  <KnowledgePage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/employees"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["supervisor", "manager", "admin"]}
-                >
-                  <EmployeesPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/analytics"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["supervisor", "manager", "admin"]}
-                >
-                  <AnalyticsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <ProtectedRoute
-                  allowedRoles={["supervisor", "manager", "admin"]}
-                >
-                  <SettingsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/notifications"
-              element={
-                <ProtectedRoute>
-                  <NotificationsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/shortcuts"
-              element={
-                <ProtectedRoute>
-                  <ShortcutsPage />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <EscalationListener />
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <ErrorBoundary>
+            <BrowserRouter
+              future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+            >
+              <Routes>
+                <Route path="/auth" element={<AuthPage />} />
+                <Route
+                  path="/backend-test"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["admin", "supervisor", "manager"]}
+                    >
+                      <BackendTester />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <RoleBasedRedirect />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dashboard"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["supervisor", "manager", "admin"]}
+                    >
+                      <Index />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/sessions"
+                  element={
+                    <ProtectedRoute>
+                      <SessionsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/sessions/:id"
+                  element={
+                    <ProtectedRoute>
+                      <SessionsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/queue"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["admin", "supervisor", "manager", "agent"]}
+                    >
+                      <QueuePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/knowledge"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["admin", "supervisor", "manager"]}
+                    >
+                      <KnowledgePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/employees"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["supervisor", "manager", "admin"]}
+                    >
+                      <EmployeesPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/analytics"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["supervisor", "manager", "admin"]}
+                    >
+                      <AnalyticsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["supervisor", "manager", "admin"]}
+                    >
+                      <SettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/notifications"
+                  element={
+                    <ProtectedRoute>
+                      <NotificationsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/shortcuts"
+                  element={
+                    <ProtectedRoute>
+                      <ShortcutsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </ErrorBoundary>
+        </TooltipProvider>
+      </AuthProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

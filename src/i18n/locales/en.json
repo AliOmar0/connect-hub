@@ -13,6 +13,424 @@
     "english": "English",
     "arabic": "Arabic"
   },
+  "auth": {
+    "brandName": "PIB Connect",
+    "brandSubtitle": "Communication Center",
+    "brandTagline": "AI-powered support for every customer conversation",
+    "brandDescription": "One operations dashboard for voice, WhatsApp, and web chat — with Arabic-first AI, secure OTP verification, and live human handover.",
+    "security": "Bank-grade security & role-based access",
+    "logoAlt": "Palestinian Islamic Bank logo",
+    "loading": "Loading",
+    "channels": {
+      "voice": "Voice calls",
+      "whatsapp": "WhatsApp",
+      "webchat": "Web chat"
+    },
+    "welcomeTitle": "Welcome back",
+    "welcomeSubtitle": "Sign in to access your support dashboard",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "••••••••",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password",
+    "signIn": "Sign In",
+    "signingIn": "Signing in...",
+    "needAccount": "Need an account? Contact your manager.",
+    "copyright": "Palestinian Islamic Bank © {{year}}",
+    "success": "Welcome back!",
+    "validation": {
+      "email": "Please enter a valid email address.",
+      "password": "Password must be at least 6 characters."
+    },
+    "errors": {
+      "title": "Sign-in failed",
+      "invalid": "We couldn't sign you in. Check your credentials and try again.",
+      "timeout": "Sign-in timed out. Please try again."
+    }
+  },
+  "accessibility": {
+    "skipToContent": "Skip to main content"
+  },
+  "theme": {
+    "label": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "switchToLight": "Switch to light theme",
+    "switchToDark": "Switch to dark theme"
+  },
+  "feedback": {
+    "retry": "Retry",
+    "emptyTitle": "Nothing to show",
+    "emptyDescription": "There are no records to display yet.",
+    "errorTitle": "Something went wrong",
+    "errorDescription": "We couldn't load this content. Please try again.",
+    "boundaryTitle": "Something went wrong",
+    "boundaryDescription": "An unexpected error interrupted the page. You can try again to reload it.",
+    "reload": "Reload",
+    "status": {
+      "loading": "Loading content",
+      "loaded": "Content loaded",
+      "empty": "No records to display",
+      "error": "Failed to load content"
+    }
+  },
+  "authorship": {
+    "customer": "Customer",
+    "agent": "Agent",
+    "bot": "Bot"
+  },
+  "diagnostics": {
+    "backend": {
+      "title": "Backend Tester",
+      "subtitle": "Exercise the Node API (chat, voice, TTS) with no Twilio cost.",
+      "audioLabel": "Diagnostic audio playback",
+      "health": {
+        "title": "Backend Health",
+        "refresh": "Refresh",
+        "unreachable": "Could not reach the Node API at {{url}}. Is it running? (npm run backend)",
+        "env": "env: {{value}}",
+        "tts": "TTS: {{value}}",
+        "model": "model: {{value}}",
+        "redisConnected": "Redis: connected",
+        "redisFallback": "Redis: in-memory fallback",
+        "ttsWarning": "TTS provider is \"{{provider}}\" but it isn't configured. For free audio, set TTS_PROVIDER=edge in .env and run the edge-tts server.",
+        "available": "{{label}} available",
+        "unavailable": "{{label}} unavailable",
+        "providers": {
+          "openrouter": "OpenRouter (AI)",
+          "supabase": "Supabase",
+          "twilio": "Twilio",
+          "whatsappOtp": "WhatsApp OTP",
+          "azureTts": "Azure TTS",
+          "elevenlabs": "ElevenLabs",
+          "edgeTts": "Edge TTS (free)",
+          "media": "Media storage"
+        }
+      },
+      "tabs": {
+        "voice": "Voice",
+        "chat": "Chat",
+        "tts": "TTS"
+      },
+      "voice": {
+        "description": "Simulates one phone turn (speech to AI reply) without placing a real call. Plays the synthesized reply if TTS is configured.",
+        "phonePlaceholder": "Caller phone (e.g. +970599123456)",
+        "messagePlaceholder": "What the caller says...",
+        "simulate": "Simulate",
+        "callerSaid": "Caller said",
+        "aiReply": "AI reply",
+        "ttsLabel": "tts: {{provider}}",
+        "audioPlayed": "audio played ({{provider}})",
+        "noAudio": "no audio (provider returned none — would use Twilio Polly on a real call)",
+        "success": "Voice turn simulated"
+      },
+      "chat": {
+        "description": "Talks to /api/chat — the same AI logic the voice path uses. No Twilio.",
+        "empty": "Send a message to start.",
+        "placeholder": "Ask the AI...",
+        "send": "Send message"
+      },
+      "tts": {
+        "description": "Synthesizes Arabic speech via the configured TTS provider and plays it.",
+        "synthesize": "Synthesize & Play",
+        "success": "Speech synthesized",
+        "playerLabel": "Synthesized speech player"
+      }
+    },
+    "twilio": {
+      "title": "Connect Hub AI",
+      "subtitle": "Premium Voice Gateway for PIB",
+      "sdkStatus": "SDK: {{status}}",
+      "sdk": {
+        "offline": "Offline",
+        "connecting": "Connecting...",
+        "online": "Online (agent: {{identity}})",
+        "error": "Error: {{message}}",
+        "setupRequired": "Setup Required: {{message}}",
+        "registered": "Voice SDK registered",
+        "errorToast": "SDK error: {{message}}",
+        "setupError": "Voice setup error: {{message}}",
+        "noToken": "No token returned from server",
+        "unknownError": "Unknown error occurred during setup"
+      },
+      "incoming": {
+        "title": "Incoming call...",
+        "accept": "Accept",
+        "ignore": "Ignore",
+        "toast": "Incoming call"
+      },
+      "security": {
+        "title": "Security Settings",
+        "initialize": "Initialize Voice SDK",
+        "hint": "Initializing the SDK allows your browser to receive calls directly from the Twilio cloud."
+      },
+      "bankingVoice": {
+        "title": "Banking Voice",
+        "value": "Arabic (Polly.Zeina)"
+      },
+      "tabs": {
+        "voice": "AI Voice Call",
+        "sms": "SMS Test",
+        "chat": "AI Chat Test"
+      },
+      "voice": {
+        "label": "Test Inbound/Outbound AI",
+        "placeholder": "+970...",
+        "dial": "Dial Now",
+        "hint": "To hear the AI, you can call +1 916 659 6816 or use \"Dial Now\".",
+        "success": "AI call initiated"
+      },
+      "sms": {
+        "recipient": "Recipient Number",
+        "recipientPlaceholder": "+970...",
+        "message": "Message",
+        "send": "Send SMS Message",
+        "missingFields": "Please fill in both number and message",
+        "success": "SMS sent successfully (SID: {{sid}})",
+        "failed": "Failed to send SMS",
+        "error": "SMS error: {{message}}"
+      },
+      "chat": {
+        "identityLabel": "Simulate Phone Identity",
+        "identityPlaceholder": "+970...",
+        "identityHint": "Use +970599123456 for Ali Omar",
+        "placeholder": "Ask the AI...",
+        "send": "Send message",
+        "error": "Chat error: {{message}}"
+      }
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Configure integrations, API keys, and system preferences.",
+    "saveFailed": "Failed to save changes",
+    "tabs": {
+      "integrations": "Integrations",
+      "notifications": "Notifications",
+      "security": "Security",
+      "general": "General",
+      "appearance": "Appearance",
+      "sessionTypes": "Session Types",
+      "voiceTesting": "Voice Testing"
+    },
+    "appearance": {
+      "title": "Appearance",
+      "description": "Choose how the dashboard looks. Your choice applies immediately and is saved for next time.",
+      "theme": "Theme",
+      "themeDescription": "Switch between the light and dark themes across the whole dashboard.",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "integrations": {
+      "title": "Channel Integrations",
+      "description": "Configure API keys and credentials for each communication channel.",
+      "smsTest": "Quick SMS Test",
+      "sendTest": "Send Test",
+      "smsMissingFields": "Please provide both a phone number and a message",
+      "smsSuccess": "SMS sent successfully",
+      "smsFailed": "Failed to send SMS",
+      "adminOnly": "You must be an admin to modify integrations.",
+      "saveSuccess": "Configuration saved"
+    },
+    "notifications": {
+      "title": "Notification Preferences",
+      "description": "Configure how and when you receive notifications.",
+      "email": "Email Notifications",
+      "emailDescription": "Receive notifications via email",
+      "inApp": "In-App Notifications",
+      "inAppDescription": "Show notifications in the application",
+      "quietHours": "Quiet Hours",
+      "quietHoursDescription": "Disable notifications during specific hours",
+      "startTime": "Start Time",
+      "endTime": "End Time",
+      "save": "Save Preferences",
+      "saveSuccess": "Notification preferences saved"
+    },
+    "security": {
+      "title": "Change Password",
+      "description": "Update your account password for better security.",
+      "currentPassword": "Current Password",
+      "currentPasswordPlaceholder": "Enter current password",
+      "newPassword": "New Password",
+      "newPasswordPlaceholder": "Enter new password (min 6 characters)",
+      "confirmPassword": "Confirm Password",
+      "confirmPasswordPlaceholder": "Confirm new password",
+      "update": "Update Password",
+      "updating": "Updating...",
+      "mismatch": "Passwords do not match",
+      "tooShort": "Password must be at least 6 characters",
+      "updateSuccess": "Password updated successfully",
+      "sessionsTitle": "Active Sessions",
+      "sessionsDescription": "Manage your active sessions across devices.",
+      "sessionsHint": "Session management coming soon. You can sign out from all devices by signing out and back in."
+    },
+    "profile": {
+      "title": "Profile Settings",
+      "description": "Update your personal information and profile picture.",
+      "loading": "Loading profile data...",
+      "notFound": "Profile settings not found.",
+      "changePhoto": "Change profile photo",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email Address",
+      "phone": "Phone Number",
+      "department": "Department",
+      "save": "Save Changes",
+      "saving": "Saving...",
+      "saveSuccess": "Profile updated successfully",
+      "photoSuccess": "Profile photo updated",
+      "photoFailed": "Failed to update avatar"
+    },
+    "sessionTypes": {
+      "title": "Session Types & AI Knowledge",
+      "description": "Manage categories and factual knowledge used by the AI assistant.",
+      "newType": "New Type",
+      "searchPlaceholder": "Search by name, category, or content...",
+      "clearSearch": "Clear search",
+      "adminOnly": "Only administrators can modify session types and AI knowledge.",
+      "empty": "No session types defined yet.",
+      "noMatches": "No matches found for \"{{term}}\"",
+      "otherCategory": "Other",
+      "edit": "Edit session type",
+      "delete": "Delete session type",
+      "deleteConfirm": "Are you sure you want to delete this session type? This might affect existing sessions.",
+      "createTitle": "Create New Session Type",
+      "editTitle": "Edit Session Type",
+      "dialogDescription": "Define a session category and provide detailed knowledge for the AI assistant.",
+      "nameLabel": "Name (English or Arabic)",
+      "namePlaceholder": "e.g. Car Financing",
+      "categoryLabel": "Category (Grouping)",
+      "categoryPlaceholder": "e.g. Services",
+      "knowledgeLabel": "AI Knowledge / Description",
+      "knowledgePlaceholder": "Provide detailed information that the AI should use when responding to this type of inquiry...",
+      "knowledgeHint": "This content will be dynamically provided to the AI during conversations.",
+      "nameRequired": "Name is required",
+      "adminOnlyManage": "You must be an admin to manage session types.",
+      "adminOnlyDelete": "You must be an admin to delete session types.",
+      "saveFailed": "Failed to save session type",
+      "createSuccess": "Added successfully",
+      "updateSuccess": "Updated successfully",
+      "deleteSuccess": "Session type deleted successfully",
+      "deleteFailed": "Failed to delete session type",
+      "cancel": "Cancel",
+      "save": "Save Changes"
+    }
+  },
+  "sessions": {
+    "title": "Active AI Sessions",
+    "subtitle": "Monitor and manage all active sessions.",
+    "searchPlaceholder": "Search by customer, phone, email, or agent...",
+    "filters": {
+      "status": "Status",
+      "channel": "Channel",
+      "type": "Type",
+      "dateRange": "Date Range",
+      "allStatus": "All Status",
+      "allChannels": "All Channels",
+      "allTypes": "All Types",
+      "last24h": "Last 24 hours",
+      "last7d": "Last 7 days",
+      "last30d": "Last 30 days",
+      "last90d": "Last 90 days"
+    },
+    "status": {
+      "active": "Active",
+      "waiting": "Waiting",
+      "completed": "Completed",
+      "escalated": "Escalated",
+      "missed": "Missed"
+    },
+    "channels": {
+      "whatsapp": "WhatsApp",
+      "messenger": "Messenger",
+      "sms": "SMS",
+      "voice": "Voice",
+      "email": "Email"
+    },
+    "stats": {
+      "activeSessions": "Active Sessions",
+      "escalated": "Escalated",
+      "completed": "Completed (24h)",
+      "totalAgents": "Total Agents"
+    },
+    "overviewTitle": "Sessions Overview",
+    "conversationDetails": "Conversation Details",
+    "viewConversation": "View conversation",
+    "backToList": "Back to sessions",
+    "exportCsv": "Export filtered sessions to CSV",
+    "activity": {
+      "title": "Activity Timeline",
+      "subtitle": "Call history and updates",
+      "empty": "No activity yet",
+      "inboundCall": "Inbound Call",
+      "outboundCall": "Outbound Call",
+      "status": "Status",
+      "duration": "Duration",
+      "id": "ID"
+    },
+    "table": {
+      "channel": "Channel",
+      "customer": "Customer",
+      "agent": "Agent",
+      "type": "Type",
+      "status": "Status",
+      "waitTime": "Wait Time",
+      "duration": "Duration",
+      "satisfaction": "Satisfaction",
+      "started": "Started",
+      "unassigned": "Unassigned",
+      "unknown": "Unknown",
+      "empty": "No sessions found"
+    },
+    "emptyList": {
+      "title": "No sessions available",
+      "description": "There are no sessions matching the current filters."
+    },
+    "noSelection": {
+      "title": "No conversation selected",
+      "description": "Select a session from the list to review its conversation."
+    },
+    "detail": {
+      "unknownCustomer": "Unknown",
+      "noPhone": "No phone",
+      "setType": "Set Type",
+      "noType": "No Type",
+      "joinConversation": "Join Conversation",
+      "completeSession": "Complete Session",
+      "messagePlaceholder": "Type a message here... (use \\ for shortcuts)",
+      "quickShortcuts": "Quick Shortcuts",
+      "noMessagesTitle": "No messages yet",
+      "noMessagesDescription": "Start the conversation with the customer now.",
+      "customerTyping": "Customer is typing now...",
+      "customerTypingCount": "Customer is typing ({{count}} messages)..."
+    },
+    "assign": {
+      "title": "Assign Agent to Session",
+      "description": "Select an employee to assign to this session.",
+      "sessionLabel": "Session",
+      "channelStatus": "Channel: {{channel}} • Status: {{status}}",
+      "selectEmployee": "Select Employee",
+      "chooseEmployee": "Choose an employee",
+      "unassign": "Unassign",
+      "assign": "Assign",
+      "assigning": "Assigning..."
+    },
+    "toasts": {
+      "exported": "Sessions exported correctly",
+      "noSessions": "No sessions to download",
+      "assigned": "Session assigned successfully",
+      "unassigned": "Session unassigned",
+      "assignFailed": "Failed to assign session",
+      "noSessionSelected": "No session selected",
+      "messageSent": "Message sent",
+      "sendFailed": "Failed to send message",
+      "typeUpdated": "Session type updated",
+      "typeUpdateFailed": "Failed to update session type",
+      "statusUpdated": "Session marked as {{status}}",
+      "statusUpdateFailed": "Failed to update session status"
+    }
+  },
   "nav": {
     "dashboard": "Dashboard",
     "sessions": "Sessions",
@@ -48,19 +466,169 @@
     "title": "Escalation Queue",
     "subtitle": "Sessions waiting for a human agent",
     "empty": "No sessions are waiting for handoff.",
+    "emptyTitle": "No escalations awaiting handoff",
     "sla": "SLA",
     "slaBreached": "SLA breached",
     "slaRemaining": "SLA remaining",
+    "slaRemainingLabel": "Service level: {{time}} remaining",
+    "slaBreachedLabel": "Service level breached",
     "waiting": "Waiting",
+    "waitingFor": "Waiting {{duration}}",
+    "sessionRef": "Session {{ref}}",
+    "sessionRefLabel": "Session",
     "accept": "Accept",
     "accepted": "Accepted",
     "offerCallback": "Offer callback",
     "callbackRequested": "Callback requested",
     "detectedIntent": "Detected intent",
     "channel": "Channel",
+    "unknownCustomer": "Unknown customer",
     "maskedNotice": "Sensitive values are masked. Open the session for full context.",
     "acceptedToast": "You accepted the session.",
-    "callbackToast": "Callback offered to the customer."
+    "acceptedNamed": "You accepted {{name}}'s session.",
+    "acceptFailed": "Could not accept the escalation. It is still in the queue.",
+    "callbackToast": "Callback offered to the customer.",
+    "callbackFailed": "Could not offer a callback. Please try again.",
+    "loadErrorTitle": "Couldn't load the queue",
+    "loadErrorDescription": "We couldn't load escalations awaiting handoff. Please try again."
+  },
+  "shortcutsPage": {
+    "title": "Keyboard Shortcuts",
+    "subtitle": "Reference of keyboard shortcuts for operating the dashboard.",
+    "emptyTitle": "No shortcuts available",
+    "emptyDescription": "There are no keyboard shortcuts to display.",
+    "groups": {
+      "general": "General",
+      "navigation": "Navigation"
+    },
+    "items": {
+      "focusNext": "Move focus to the next control",
+      "focusPrevious": "Move focus to the previous control",
+      "activate": "Activate the focused control",
+      "dismiss": "Close the open dialog or menu",
+      "toggleSidebar": "Toggle the navigation sidebar"
+    }
+  },
+  "notFoundPage": {
+    "code": "404",
+    "title": "Page not found",
+    "description": "The page you're looking for doesn't exist or may have been moved.",
+    "returnHome": "Return to home"
+  },
+  "employees": {
+    "title": "Employee Management",
+    "subtitle": "Manage your team, roles, and individual permissions.",
+    "addEmployee": "Add Employee",
+    "createUser": "Create User",
+    "searchPlaceholder": "Search employees by name, code, or department...",
+    "searchLabel": "Search employees",
+    "stats": {
+      "totalTeam": "Total Team",
+      "activeNow": "Active Now",
+      "avgPerformance": "Avg Performance",
+      "activeDepts": "Active Depts"
+    },
+    "emptyTitle": "No employees found",
+    "emptyDescription": "No team members match your search yet.",
+    "errorTitle": "Couldn't load employees",
+    "errorDescription": "We couldn't load the team list. Please try again.",
+    "roleLabel": "Role",
+    "card": {
+      "actions": "Actions for {{name}}"
+    },
+    "form": {
+      "addTitle": "Add Employee",
+      "editTitle": "Edit Employee",
+      "addDescription": "Create a new employee record and link it to a user profile.",
+      "editDescription": "Update employee information and settings.",
+      "photoTitle": "Employee Photo",
+      "photoHint": "Click to upload or drag and drop",
+      "uploadPhoto": "Upload employee photo",
+      "userProfile": "User Profile",
+      "selectProfile": "Select a user profile",
+      "employeeCode": "Employee Code",
+      "department": "Department",
+      "shiftStart": "Shift Start",
+      "shiftEnd": "Shift End",
+      "assignedChannels": "Assigned Channels",
+      "active": "Active",
+      "processing": "Processing...",
+      "saveChanges": "Save Changes",
+      "uploadFailed": "Failed to upload image",
+      "errorTitle": "Couldn't save the employee"
+    },
+    "createDialog": {
+      "title": "Create New User",
+      "description": "Create a new user account with email, password, and assign their role and permissions.",
+      "firstName": "First Name",
+      "lastName": "Last Name",
+      "email": "Email",
+      "password": "Password",
+      "confirmPassword": "Confirm Password",
+      "role": "Role",
+      "phone": "Phone",
+      "department": "Department",
+      "creating": "Creating...",
+      "submit": "Create User",
+      "errorTitle": "Couldn't create the user",
+      "passwordsMismatch": "Passwords do not match",
+      "passwordTooShort": "Password must be at least 6 characters",
+      "mustBeLoggedIn": "You must be logged in to create users",
+      "createdSuccess": "User {{email}} created successfully with role {{role}}",
+      "createFailed": "Failed to create user"
+    },
+    "toasts": {
+      "createdSuccess": "Employee created successfully",
+      "createFailed": "Failed to create employee",
+      "updatedSuccess": "Employee updated successfully",
+      "updateFailed": "Failed to update employee",
+      "deletedSuccess": "Employee deleted successfully",
+      "deleteFailed": "Failed to delete employee"
+    },
+    "delete": {
+      "title": "Delete employee?",
+      "description": "This action cannot be undone. The employee record will be permanently removed.",
+      "confirm": "Delete",
+      "cancel": "Cancel",
+      "deleting": "Deleting..."
+    }
+  },
+  "notifications": {
+    "title": "Notifications",
+    "subtitle": "View all system notifications and alerts.",
+    "filter": "Filter",
+    "filterAll": "All notifications",
+    "filterUnread": "Unread ({{count}})",
+    "filterRead": "Read",
+    "markAllRead": "Mark all read",
+    "deleteAllRead": "Delete all read",
+    "markAsRead": "Mark as read",
+    "delete": "Delete",
+    "unread": "Unread",
+    "read": "Read",
+    "unreadStatusLabel": "Unread notification",
+    "readStatusLabel": "Read notification",
+    "markedReadAnnouncement": "Notification marked as read.",
+    "allMarkedReadAnnouncement": "All notifications marked as read.",
+    "confirmDelete": "Delete this notification?",
+    "confirmDeleteAllRead": "Delete all read notifications?",
+    "deleted": "Notification deleted.",
+    "allReadDeleted": "All read notifications deleted.",
+    "allMarkedRead": "All notifications marked as read.",
+    "markReadFailed": "Couldn't mark the notification as read. It is still unread.",
+    "markAllReadFailed": "Couldn't mark all notifications as read. Please try again.",
+    "deleteFailed": "Couldn't delete the notification. Please try again.",
+    "deleteAllReadFailed": "Couldn't delete read notifications. Please try again.",
+    "emptyTitle": "No notifications",
+    "emptyDescription": "You have no notifications right now. New alerts will appear here.",
+    "loadErrorTitle": "Couldn't load notifications",
+    "loadErrorDescription": "We couldn't load your notifications. Please try again.",
+    "types": {
+      "info": "Info",
+      "success": "Success",
+      "warning": "Warning",
+      "error": "Error"
+    }
   },
   "kb": {
     "title": "Knowledge Base",
@@ -80,9 +648,126 @@
     "statusProcessing": "Processing",
     "statusFailed": "Failed",
     "empty": "No documents yet. Upload one to get started.",
+    "emptyDescription": "Add a document so the assistant can answer from approved content.",
+    "loadErrorTitle": "Couldn't load documents",
     "backendMissing": "Knowledge-base backend is not reachable. Configure VITE_KB_API_URL.",
+    "operationFailed": "The document operation failed. Please try again.",
+    "documents": "Documents",
     "uploadSuccess": "Document uploaded and queued for indexing.",
     "rollbackSuccess": "Rolled back to the selected version.",
     "reindexSuccess": "Re-index started."
+  },
+  "analytics": {
+    "title": "Analytics",
+    "subtitle": "In-depth analytics and reporting for your communication center.",
+    "export": "Export analytics",
+    "dateRange": {
+      "label": "Date range",
+      "last7": "Last 7 days",
+      "last30": "Last 30 days",
+      "last90": "Last 90 days",
+      "last6months": "Last 6 months"
+    },
+    "channelFilter": {
+      "label": "Channel",
+      "all": "All Channels"
+    },
+    "channels": {
+      "whatsapp": "WhatsApp",
+      "messenger": "Messenger",
+      "sms": "SMS",
+      "voice": "Voice",
+      "email": "Email"
+    },
+    "summary": {
+      "totalSessions": "Total Sessions",
+      "completed": "{{count}} completed",
+      "resolutionRate": "Resolution Rate",
+      "completionRate": "Completion rate",
+      "avgSatisfaction": "Avg Satisfaction",
+      "outOf5": "Out of 5.0",
+      "avgWaitTime": "Avg Wait Time",
+      "beforeResponse": "Before response"
+    },
+    "charts": {
+      "activityTitle": "Activity Over Time",
+      "channelTitle": "Channel Distribution",
+      "satisfactionTitle": "Satisfaction Score Trend"
+    },
+    "series": {
+      "sessions": "Sessions",
+      "messages": "Messages",
+      "calls": "Calls",
+      "satisfaction": "Satisfaction"
+    },
+    "total": "Total",
+    "empty": "No data available",
+    "emptyDescription": "There is no data for the selected scope yet.",
+    "loadErrorTitle": "Couldn't load analytics",
+    "loadErrorDescription": "We couldn't load this visualization. Please try again."
+  },
+  "appShell": {
+    "header": {
+      "searchPlaceholder": "Search conversations, employees...",
+      "activeSessions": "Active AI Sessions",
+      "notifications": "Notifications",
+      "notificationsNew": "{{count}} new",
+      "noNotifications": "No new notifications",
+      "viewAllNotifications": "View all notifications",
+      "loading": "Loading...",
+      "whatsapp": "WhatsApp",
+      "messenger": "Messenger",
+      "logoAlt": "Palestinian Islamic Bank logo",
+      "bankName": "Palestinian Islamic Bank",
+      "account": "Account",
+      "pageContextLabel": "Current page",
+      "pages": {
+        "home": "Home",
+        "dashboard": "Dashboard",
+        "sessions": "Sessions",
+        "queue": "Escalation Queue",
+        "knowledge": "Knowledge Base",
+        "employees": "Employees",
+        "analytics": "Analytics",
+        "settings": "Settings",
+        "notifications": "Notifications",
+        "shortcuts": "Keyboard Shortcuts",
+        "backendTest": "Backend Tester",
+        "notFound": "Page Not Found"
+      }
+    },
+    "sidebar": {
+      "logoAlt": "PIB Logo",
+      "bankNameLine1": "Palestinian Islamic",
+      "bankNameLine2": "Bank",
+      "signOut": "Sign Out",
+      "collapse": "Collapse",
+      "collapseSidebar": "Collapse Sidebar",
+      "expandSidebar": "Expand Sidebar",
+      "userFallback": "User"
+    },
+    "nav": {
+      "dashboard": "Dashboard",
+      "sessions": "Active AI Sessions",
+      "queue": "Escalation Queue",
+      "employees": "Employees",
+      "analytics": "Analytics",
+      "notifications": "Notifications",
+      "shortcuts": "Keyboard Shortcuts",
+      "knowledge": "Knowledge Base",
+      "backendTest": "Backend Tester",
+      "settings": "Settings",
+      "primaryLabel": "Primary",
+      "openMenu": "Open navigation menu",
+      "closeMenu": "Close navigation menu"
+    },
+    "roles": {
+      "admin": "Administrator",
+      "supervisor": "Supervisor",
+      "manager": "Manager",
+      "agent": "Agent",
+      "viewer": "Viewer",
+      "user": "User"
+    }
   }
 }

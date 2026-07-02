@@ -1,8 +1,13 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { useDirection } from "@/hooks/use-direction";
+import type { ViewStatus } from "@/types/presentation";
 import {
   Select,
   SelectContent,
@@ -15,8 +20,6 @@ import { Download, Calendar } from "lucide-react";
 import {
   AreaChart,
   Area,
-  BarChart,
-  Bar,
   LineChart,
   Line,
   XAxis,
@@ -28,13 +31,75 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { format, subDays, startOfDay, eachDayOfInterval } from "date-fns";
+import { format, subDays } from "date-fns";
+
+// Chart series colors reference design tokens only (Requirements 17.1, 17.2)
+// so every visualization shares the documented palette and inherits the
+// contrast-tuned token values in both light and dark themes.
+const CHANNEL_COLOR_TOKENS: Record<string, string> = {
+  whatsapp: "hsl(var(--chart-success))",
+  messenger: "hsl(var(--chart-info))",
+  voice: "hsl(var(--chart-warning))",
+  sms: "hsl(var(--chart-primary))",
+  email: "hsl(var(--status-neutral))",
+};
+
+const AXIS_TICK = { fill: "hsl(var(--muted-foreground))", fontSize: 12 };
+
+interface ChartTooltipEntry {
+  name: string;
+  value: number | string;
+  color?: string;
+}
+
+interface ChartTooltipProps {
+  active?: boolean;
+  payload?: Array<ChartTooltipEntry & { payload?: { color?: string } }>;
+  label?: string;
+}
+
+// Token-styled tooltip so the overlay honors the active theme's surface and
+// border tokens instead of Recharts' hard-coded white default.
+function ChartTooltip({ active, payload, label }: ChartTooltipProps) {
+  if (!active || !payload || payload.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-border bg-card p-3 shadow-elevated">
+      {label ? (
+        <p className="mb-2 text-sm font-semibold text-foreground">{label}</p>
+      ) : null}
+      {payload.map((entry, index) => (
+        <div key={index} className="flex items-center gap-2 text-sm">
+          <span
+            aria-hidden="true"
+            className="h-2 w-2 rounded-full"
+            style={{
+              backgroundColor: entry.color ?? entry.payload?.color,
+            }}
+          />
+          <span className="text-muted-foreground">{entry.name}:</span>
+          <span className="font-semibold text-foreground">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return <Skeleton className="h-80 w-full rounded-lg" aria-hidden="true" />;
+}
 
 export default function AnalyticsPage() {
+  const { t } = useTranslation();
+  const isRtl = useDirection() === "rtl";
   const [dateRange, setDateRange] = useState<number>(30);
   const [channelFilter, setChannelFilter] = useState<string>("all");
 
-  const { data: analyticsData, isLoading } = useQuery({
+  const {
+    data: analyticsData,
+    isLoading: analyticsLoading,
+    isError: analyticsError,
+    refetch: refetchAnalytics,
+  } = useQuery({
     queryKey: ["analytics", dateRange, channelFilter],
     queryFn: async () => {
       const endDate = new Date();
@@ -53,22 +118,27 @@ export default function AnalyticsPage() {
 
       const { data, error } = await query;
 
+      // Surface the failure so react-query flips to `isError` and the affected
+      // visualizations render an Error_State with a retry (Requirement 17.5).
       if (error) {
-        console.error("Error fetching analytics:", error);
-        return null;
+        throw new Error(error.message);
       }
 
-      return data;
+      return data ?? [];
     },
   });
 
-  const { data: summaryStats } = useQuery({
+  const {
+    data: summaryStats,
+    isLoading: summaryLoading,
+    isError: summaryError,
+    refetch: refetchSummary,
+  } = useQuery({
     queryKey: ["analytics-summary", dateRange],
     queryFn: async () => {
       const endDate = new Date();
       const startDate = subDays(endDate, dateRange);
 
-      // Get raw data for calculations
       const { data: sessions } = await supabase
         .from("sessions")
         .select(
@@ -127,16 +197,25 @@ export default function AnalyticsPage() {
     : [];
 
   // Channel distribution
-  const { data: channelData } = useQuery({
+  const {
+    data: channelData,
+    isLoading: channelLoading,
+    isError: channelError,
+    refetch: refetchChannels,
+  } = useQuery({
     queryKey: ["analytics-channels", dateRange],
     queryFn: async () => {
       const endDate = new Date();
       const startDate = subDays(endDate, dateRange);
 
-      const { data: sessions } = await supabase
+      const { data: sessions, error } = await supabase
         .from("sessions")
         .select("channel")
         .gte("started_at", startDate.toISOString());
+
+      if (error) {
+        throw new Error(error.message);
+      }
 
       if (!sessions) return [];
 
@@ -146,228 +225,395 @@ export default function AnalyticsPage() {
       });
 
       const total = sessions.length;
-      const colors = {
-        whatsapp: "hsl(142, 70%, 45%)",
-        messenger: "hsl(220, 90%, 56%)",
-        sms: "hsl(280, 70%, 50%)",
-        voice: "hsl(45, 95%, 50%)",
-        email: "hsl(0, 70%, 50%)",
-      };
 
       return Object.entries(channelCounts).map(([channel, count]) => ({
-        name: channel.charAt(0).toUpperCase() + channel.slice(1),
+        channel,
         value: total > 0 ? Math.round((count / total) * 100) : 0,
         count,
-        color: colors[channel as keyof typeof colors] || "hsl(220, 20%, 70%)",
+        color: CHANNEL_COLOR_TOKENS[channel] ?? "hsl(var(--status-neutral))",
       }));
     },
   });
 
+  // Resolve a localized display name for a channel, falling back to the raw
+  // key so an unknown channel is never rendered blank.
+  const channelName = (channel: string) =>
+    t(`analytics.channels.${channel}`, {
+      defaultValue: channel.charAt(0).toUpperCase() + channel.slice(1),
+    });
+
+  const pieData = (channelData || []).map((entry) => ({
+    ...entry,
+    name: channelName(entry.channel),
+  }));
+
+  // Derive one ViewStatus per visualization so each renders the shared
+  // Skeleton / Empty / Error / loaded presentation independently
+  // (Requirements 17.3, 17.4, 17.5, 10.8).
+  const toStatus = (
+    loading: boolean,
+    error: boolean,
+    isEmpty: boolean,
+  ): ViewStatus =>
+    loading ? "loading" : error ? "error" : isEmpty ? "empty" : "loaded";
+
+  const summaryStatus = toStatus(summaryLoading, summaryError, false);
+  const activityStatus = toStatus(
+    analyticsLoading,
+    analyticsError,
+    chartData.length === 0,
+  );
+  const satisfactionStatus = toStatus(
+    analyticsLoading,
+    analyticsError,
+    chartData.length === 0,
+  );
+  const channelStatus = toStatus(
+    channelLoading,
+    channelError,
+    pieData.length === 0,
+  );
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-display font-bold tracking-tight">
-              Analytics
+              {t("analytics.title")}
             </h1>
-            <p className="text-muted-foreground">
-              In-depth analytics and reporting for your communication center.
-            </p>
+            <p className="text-muted-foreground">{t("analytics.subtitle")}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Select
               value={dateRange.toString()}
               onValueChange={(v) => setDateRange(parseInt(v))}
             >
-              <SelectTrigger className="w-[180px]">
-                <Calendar className="h-4 w-4 mr-2" />
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label={t("analytics.dateRange.label")}
+              >
+                <Calendar className="me-2 h-4 w-4" aria-hidden="true" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="7">Last 7 days</SelectItem>
-                <SelectItem value="30">Last 30 days</SelectItem>
-                <SelectItem value="90">Last 90 days</SelectItem>
-                <SelectItem value="180">Last 6 months</SelectItem>
+                <SelectItem value="7">
+                  {t("analytics.dateRange.last7")}
+                </SelectItem>
+                <SelectItem value="30">
+                  {t("analytics.dateRange.last30")}
+                </SelectItem>
+                <SelectItem value="90">
+                  {t("analytics.dateRange.last90")}
+                </SelectItem>
+                <SelectItem value="180">
+                  {t("analytics.dateRange.last6months")}
+                </SelectItem>
               </SelectContent>
             </Select>
             <Select value={channelFilter} onValueChange={setChannelFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="All Channels" />
+              <SelectTrigger
+                className="w-[180px]"
+                aria-label={t("analytics.channelFilter.label")}
+              >
+                <SelectValue placeholder={t("analytics.channelFilter.all")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Channels</SelectItem>
-                <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                <SelectItem value="messenger">Messenger</SelectItem>
-                <SelectItem value="sms">SMS</SelectItem>
-                <SelectItem value="voice">Voice</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
+                <SelectItem value="all">
+                  {t("analytics.channelFilter.all")}
+                </SelectItem>
+                <SelectItem value="whatsapp">
+                  {t("analytics.channels.whatsapp")}
+                </SelectItem>
+                <SelectItem value="messenger">
+                  {t("analytics.channels.messenger")}
+                </SelectItem>
+                <SelectItem value="sms">
+                  {t("analytics.channels.sms")}
+                </SelectItem>
+                <SelectItem value="voice">
+                  {t("analytics.channels.voice")}
+                </SelectItem>
+                <SelectItem value="email">
+                  {t("analytics.channels.email")}
+                </SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon">
-              <Download className="h-4 w-4" />
+            <Button
+              variant="outline"
+              size="icon"
+              className="min-h-[44px] min-w-[44px]"
+              aria-label={t("analytics.export")}
+            >
+              <Download className="h-4 w-4" aria-hidden="true" />
             </Button>
           </div>
         </div>
 
-        {/* Summary Stats */}
-        {summaryStats && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/*
+          Summary metric cards. Single column below 768px per Requirement 17.7
+          (md = 768). All cards share the same color / spacing / typography /
+          radius / elevation tokens via the Card primitive (Requirement 17.1).
+        */}
+        <AsyncBoundary
+          status={summaryStatus}
+          skeleton={
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton
+                  key={i}
+                  className="h-28 w-full rounded-lg"
+                  aria-hidden="true"
+                />
+              ))}
+            </div>
+          }
+          onRetry={() => refetchSummary()}
+          errorTitle={t("analytics.loadErrorTitle")}
+          errorDescription={t("analytics.loadErrorDescription")}
+        >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Total Sessions
+                  {t("analytics.summary.totalSessions")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {summaryStats.totalSessions}
+                  {summaryStats?.totalSessions ?? 0}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {summaryStats.completedSessions} completed
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("analytics.summary.completed", {
+                    count: summaryStats?.completedSessions ?? 0,
+                  })}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Resolution Rate
+                  {t("analytics.summary.resolutionRate")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {summaryStats.resolutionRate.toFixed(1)}%
+                  {(summaryStats?.resolutionRate ?? 0).toFixed(1)}%
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Completion rate
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("analytics.summary.completionRate")}
                 </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Avg Satisfaction
+                  {t("analytics.summary.avgSatisfaction")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {summaryStats.avgSatisfaction}
+                  {summaryStats?.avgSatisfaction ?? "0.0"}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">Out of 5.0</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("analytics.summary.outOf5")}
+                </p>
               </CardContent>
             </Card>
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Avg Wait Time
+                  {t("analytics.summary.avgWaitTime")}
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {Math.round(summaryStats.avgWaitTime / 60)}m
+                  {Math.round((summaryStats?.avgWaitTime ?? 0) / 60)}m
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Before response
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("analytics.summary.beforeResponse")}
                 </p>
               </CardContent>
             </Card>
           </div>
-        )}
+        </AsyncBoundary>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/*
+          Charts. `lg:grid-cols-2` keeps the layout single-column below 1024px,
+          which satisfies the single-column-below-768px requirement (17.7).
+        */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <Card>
             <CardHeader>
-              <CardTitle>Activity Over Time</CardTitle>
+              <CardTitle>{t("analytics.charts.activityTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Area
-                      type="monotone"
-                      dataKey="sessions"
-                      stackId="1"
-                      stroke="hsl(220, 55%, 35%)"
-                      fill="hsl(220, 55%, 35%)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="messages"
-                      stackId="1"
-                      stroke="hsl(45, 95%, 55%)"
-                      fill="hsl(45, 95%, 55%)"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="calls"
-                      stackId="1"
-                      stroke="hsl(142, 70%, 45%)"
-                      fill="hsl(142, 70%, 45%)"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <AsyncBoundary
+                status={activityStatus}
+                skeleton={<ChartSkeleton />}
+                onRetry={() => refetchAnalytics()}
+                emptyTitle={t("analytics.empty")}
+                emptyDescription={t("analytics.emptyDescription")}
+                errorTitle={t("analytics.loadErrorTitle")}
+                errorDescription={t("analytics.loadErrorDescription")}
+              >
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData}>
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="hsl(var(--border))"
+                      />
+                      <XAxis
+                        dataKey="date"
+                        reversed={isRtl}
+                        tick={AXIS_TICK}
+                        stroke="hsl(var(--border))"
+                      />
+                      <YAxis
+                        orientation={isRtl ? "right" : "left"}
+                        tick={AXIS_TICK}
+                        stroke="hsl(var(--border))"
+                      />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="sessions"
+                        name={t("analytics.series.sessions")}
+                        stackId="1"
+                        stroke="hsl(var(--chart-primary))"
+                        fill="hsl(var(--chart-primary))"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="messages"
+                        name={t("analytics.series.messages")}
+                        stackId="1"
+                        stroke="hsl(var(--chart-secondary))"
+                        fill="hsl(var(--chart-secondary))"
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="calls"
+                        name={t("analytics.series.calls")}
+                        stackId="1"
+                        stroke="hsl(var(--chart-success))"
+                        fill="hsl(var(--chart-success))"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </AsyncBoundary>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>Channel Distribution</CardTitle>
+              <CardTitle>{t("analytics.charts.channelTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={channelData || []}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) =>
-                        `${name} ${(percent * 100).toFixed(0)}%`
-                      }
-                      outerRadius={100}
-                      fill="#8884d8"
-                      dataKey="value"
+              <AsyncBoundary
+                status={channelStatus}
+                skeleton={<ChartSkeleton />}
+                onRetry={() => refetchChannels()}
+                emptyTitle={t("analytics.empty")}
+                emptyDescription={t("analytics.emptyDescription")}
+                errorTitle={t("analytics.loadErrorTitle")}
+                errorDescription={t("analytics.loadErrorDescription")}
+              >
+                <div className="h-80">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        outerRadius={100}
+                        dataKey="value"
+                        nameKey="name"
+                      >
+                        {pieData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip content={<ChartTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                {/*
+                  Text + swatch legend so channel meaning is carried by a label,
+                  not color alone (Requirements 3.5, 17.2), with token-driven
+                  contrast-compliant text.
+                */}
+                <ul className="mt-4 grid grid-cols-2 gap-2">
+                  {pieData.map((item) => (
+                    <li
+                      key={item.channel}
+                      className="flex items-center gap-2 text-sm"
                     >
-                      {(channelData || []).map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="text-muted-foreground">{item.name}</span>
+                      <span className="ms-auto font-semibold text-foreground">
+                        {item.value}%
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </AsyncBoundary>
             </CardContent>
           </Card>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Satisfaction Score Trend</CardTitle>
+            <CardTitle>{t("analytics.charts.satisfactionTitle")}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis domain={[0, 5]} />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="satisfaction"
-                    stroke="hsl(45, 95%, 55%)"
-                    strokeWidth={2}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
+            <AsyncBoundary
+              status={satisfactionStatus}
+              skeleton={<ChartSkeleton />}
+              onRetry={() => refetchAnalytics()}
+              emptyTitle={t("analytics.empty")}
+              emptyDescription={t("analytics.emptyDescription")}
+              errorTitle={t("analytics.loadErrorTitle")}
+              errorDescription={t("analytics.loadErrorDescription")}
+            >
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chartData}>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="hsl(var(--border))"
+                    />
+                    <XAxis
+                      dataKey="date"
+                      reversed={isRtl}
+                      tick={AXIS_TICK}
+                      stroke="hsl(var(--border))"
+                    />
+                    <YAxis
+                      domain={[0, 5]}
+                      orientation={isRtl ? "right" : "left"}
+                      tick={AXIS_TICK}
+                      stroke="hsl(var(--border))"
+                    />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Line
+                      type="monotone"
+                      dataKey="satisfaction"
+                      name={t("analytics.series.satisfaction")}
+                      stroke="hsl(var(--chart-info))"
+                      strokeWidth={2}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </AsyncBoundary>
           </CardContent>
         </Card>
       </div>
