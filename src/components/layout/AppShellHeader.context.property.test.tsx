@@ -61,7 +61,7 @@ const KNOWN_ROUTES: Array<{ prefix: string; label: string }> = [
   { prefix: "/analytics", label: "Analytics" },
   { prefix: "/settings", label: "Settings" },
   { prefix: "/notifications", label: "Notifications" },
-  { prefix: "/shortcuts", label: "Chat Shortcuts" },
+  { prefix: "/shortcuts", label: "Keyboard Shortcuts" },
   { prefix: "/backend-test", label: "Backend Tester" },
 ];
 const HOME_LABEL = "Home";

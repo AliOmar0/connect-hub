@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { render, screen } from "@testing-library/react";
+import { render, screen, act } from "@testing-library/react";
 import "@/i18n";
 import i18n from "@/i18n";
 import { ThemeProvider } from "./theme-provider";
@@ -33,10 +33,14 @@ describe("ThemeToggle", () => {
 
     expect(document.documentElement.classList.contains("dark")).toBe(false);
 
-    await user.click(screen.getByRole("button"));
+    await act(async () => {
+      await user.click(screen.getByRole("button"));
+    });
     expect(document.documentElement.classList.contains("dark")).toBe(true);
 
-    await user.click(screen.getByRole("button"));
+    await act(async () => {
+      await user.click(screen.getByRole("button"));
+    });
     expect(document.documentElement.classList.contains("dark")).toBe(false);
   });
 
@@ -46,7 +50,9 @@ describe("ThemeToggle", () => {
     const button = screen.getByRole("button");
 
     expect(button).toHaveAccessibleName("Switch to dark theme");
-    await user.click(button);
+    await act(async () => {
+      await user.click(button);
+    });
     expect(button).toHaveAccessibleName("Switch to light theme");
   });
 

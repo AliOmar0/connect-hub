@@ -66,8 +66,11 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await result.current.signIn("test@example.com", "password123");
+    await act(async () => {
+      await result.current.signIn("test@example.com", "password123");
+    });
 
     expect(mockSignIn).toHaveBeenCalledWith({
       email: "test@example.com",
@@ -85,8 +88,11 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await result.current.signOut();
+    await act(async () => {
+      await result.current.signOut();
+    });
 
     expect(mockSignOut).toHaveBeenCalled();
   });
@@ -147,6 +153,7 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     await waitFor(() => {
       expect(result.current.userRole).toBeNull();
@@ -164,13 +171,16 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await result.current.signUp(
-      "test@example.com",
-      "password123",
-      "John",
-      "Doe",
-    );
+    await act(async () => {
+      await result.current.signUp(
+        "test@example.com",
+        "password123",
+        "John",
+        "Doe",
+      );
+    });
 
     expect(mockSignUp).toHaveBeenCalledWith({
       email: "test@example.com",
@@ -196,8 +206,11 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await result.current.signUp("test@example.com", "password123");
+    await act(async () => {
+      await result.current.signUp("test@example.com", "password123");
+    });
 
     expect(mockSignUp).toHaveBeenCalledWith({
       email: "test@example.com",
@@ -223,8 +236,12 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    const response = await result.current.signIn("test@example.com", "wrong");
+    let response: any;
+    await act(async () => {
+      response = await result.current.signIn("test@example.com", "wrong");
+    });
 
     expect(response.error).toBe(mockError);
   });
@@ -241,11 +258,12 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
-    const response = await result.current.signUp(
-      "test@example.com",
-      "password123",
-    );
+    let response: any;
+    await act(async () => {
+      response = await result.current.signUp("test@example.com", "password123");
+    });
 
     expect(response.error).toBe(mockError);
   });
@@ -370,7 +388,9 @@ describe("useAuth", () => {
     renderHook(() => useAuth(), { wrapper });
 
     // Wait for the auth state change to trigger and profile/role creation
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
 
     await waitFor(
       () => {
@@ -440,6 +460,7 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     await waitFor(() => {
       // Should not crash, error is logged but handled
@@ -487,6 +508,7 @@ describe("useAuth", () => {
     );
 
     const { result } = renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
 
     await waitFor(() => {
       expect(result.current.user).toBeNull();
@@ -552,7 +574,9 @@ describe("useAuth", () => {
       expect(result.current.user).toEqual(mockUser);
     });
 
-    await result.current.signOut();
+    await act(async () => {
+      await result.current.signOut();
+    });
 
     await waitFor(() => {
       expect(result.current.user).toBeNull();

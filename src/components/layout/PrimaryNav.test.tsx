@@ -49,7 +49,7 @@ describe("PrimaryNav – role filtering (Req 11.3)", () => {
     // Agent sees sessions/queue/shortcuts but not employees/analytics/settings.
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
     expect(screen.getByText("Escalation Queue")).toBeInTheDocument();
-    expect(screen.getByText("Chat Shortcuts")).toBeInTheDocument();
+    expect(screen.getByText("Keyboard Shortcuts")).toBeInTheDocument();
 
     expect(screen.queryByText("Employees")).not.toBeInTheDocument();
     expect(screen.queryByText("Analytics")).not.toBeInTheDocument();
