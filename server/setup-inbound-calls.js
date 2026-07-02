@@ -26,7 +26,9 @@ async function setupInboundCalls() {
 
         await client.incomingPhoneNumbers(number.sid).update({
             voiceUrl: voiceUrl,
-            voiceMethod: 'POST'
+            voiceMethod: 'POST',
+            statusCallback: `${ngrokUrl}/voice/status`,
+            statusCallbackMethod: 'POST'
         });
 
         console.log(`\n✅ SUCCESS! Inbound calls are now enabled!`);

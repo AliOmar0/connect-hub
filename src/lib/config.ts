@@ -3,7 +3,7 @@
 
 // Person 1's FastAPI backend (sessions, messages, escalation actions).
 export const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+  import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
 
 // Node voice/API server (signed media URLs, voice, etc.).
 export const NODE_API_URL =

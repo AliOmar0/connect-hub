@@ -2,67 +2,86 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, MessageSquare, MoreVertical, Clock } from "lucide-react";
+import { Phone, MessageSquare, Clock, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatDistanceToNowStrict } from "date-fns";
 import {
-  formatDistanceToNow,
-  intervalToDuration,
-  formatDuration,
-} from "date-fns";
-import { Session, Customer, Employee, Profile } from "@/types/database";
+  Session,
+  Customer,
+  Employee,
+  Profile,
+  Message,
+} from "@/types/database";
 import { useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react";
+
+type PanelSession = Session & {
+  customer?: Customer;
+  employee?: Employee & { profile?: Profile };
+  messages?: Pick<Message, "content" | "sent_at" | "direction">[];
+};
 
 interface ActiveSessionsPanelProps {
-  sessions?: Array<
-    Session & {
-      customer?: Customer;
-      employee?: Employee & { profile?: Profile };
-    }
-  >;
+  sessions?: PanelSession[];
 }
 
-const statusConfig: Record<string, { label: string; className: string }> = {
+const statusConfig: Record<
+  string,
+  { label: string; className: string; dot: string }
+> = {
   active: {
     label: "Active",
     className: "bg-chart-success/10 text-chart-success border-chart-success/20",
+    dot: "bg-chart-success",
   },
   escalated: {
     label: "Escalated",
     className: "bg-chart-warning/10 text-chart-warning border-chart-warning/20",
+    dot: "bg-chart-warning",
   },
   transferring: {
     label: "Transferring",
     className: "bg-chart-info/10 text-chart-info border-chart-info/20",
+    dot: "bg-chart-info",
   },
   waiting: {
     label: "Waiting",
     className: "bg-chart-info/10 text-chart-info border-chart-info/20",
+    dot: "bg-chart-info",
   },
   "on-hold": {
     label: "On Hold",
     className: "bg-muted text-muted-foreground border-muted/20",
+    dot: "bg-muted-foreground",
   },
 };
 
-const channelIcons: Record<string, string> = {
-  whatsapp: "🟢",
-  messenger: "🔵",
-  voice: "📞",
-  sms: "💬",
-  email: "📧",
+const channelMeta: Record<string, { icon: string; label: string }> = {
+  whatsapp: { icon: "🟢", label: "WhatsApp" },
+  messenger: { icon: "🔵", label: "Messenger" },
+  voice: { icon: "📞", label: "Voice call" },
+  sms: { icon: "💬", label: "SMS" },
+  email: { icon: "📧", label: "Email" },
 };
 
-function formatDurationFromSeconds(seconds: number | null): string {
-  if (!seconds) return "0:00";
-  const duration = intervalToDuration({ start: 0, end: seconds * 1000 });
-  return (
-    formatDuration(duration, { format: ["minutes", "seconds"] })
-      .replace(/ minutes?/, "m")
-      .replace(/ seconds?/, "s") || "0:00"
-  );
+function formatDurationFromSeconds(seconds: number): string {
+  if (!seconds || seconds < 0) return "0:00";
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
-import { useState, useEffect } from "react";
+function lastMessage(session: PanelSession): string | null {
+  const msgs = session.messages;
+  if (!msgs || msgs.length === 0) return null;
+  const sorted = [...msgs].sort(
+    (a, b) => new Date(b.sent_at).valueOf() - new Date(a.sent_at).valueOf(),
+  );
+  const latest = sorted[0];
+  if (!latest?.content) return null;
+  const prefix = latest.direction === "outbound" ? "AI: " : "";
+  return `${prefix}${latest.content}`;
+}
 
 export default function ActiveSessionsPanel({
   sessions = [],
@@ -70,11 +89,16 @@ export default function ActiveSessionsPanel({
   const navigate = useNavigate();
   const displaySessions = sessions.slice(0, 5);
 
+  // Re-render every second so live durations tick up.
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick((t) => t + 1), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  const liveCount = sessions.filter(
+    (s) => s.status === "active" || s.status === "escalated",
+  ).length;
 
   return (
     <Card className="shadow-card">
@@ -84,8 +108,19 @@ export default function ActiveSessionsPanel({
             Active AI Sessions
             <Badge
               variant="secondary"
-              className="bg-gold/10 text-gold border border-gold/20"
+              className="bg-gold/10 text-gold border border-gold/20 gap-1.5"
             >
+              <span className="relative flex h-2 w-2">
+                {liveCount > 0 && (
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-chart-success opacity-75" />
+                )}
+                <span
+                  className={cn(
+                    "relative inline-flex h-2 w-2 rounded-full",
+                    liveCount > 0 ? "bg-chart-success" : "bg-muted-foreground",
+                  )}
+                />
+              </span>
               {sessions.length} live
             </Badge>
           </CardTitle>
@@ -99,94 +134,133 @@ export default function ActiveSessionsPanel({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="space-y-2">
         {displaySessions.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            No active sessions
+          <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
+            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-secondary/50">
+              <MessageSquare className="h-5 w-5 opacity-60" />
+            </div>
+            <p className="text-sm font-medium">No active sessions</p>
+            <p className="text-xs opacity-70">
+              Live calls and chats will appear here in real time.
+            </p>
           </div>
         ) : (
           displaySessions.map((session, index) => {
             const customerName = session.customer?.name || "Unknown";
+            const phone = session.customer?.phone;
             const agentName = session.employee?.profile
               ? `${session.employee.profile.first_name || ""} ${session.employee.profile.last_name || ""}`.trim()
-              : "Unassigned";
-            const duration = session.duration_seconds
-              ? formatDurationFromSeconds(session.duration_seconds)
-              : formatDurationFromSeconds(
-                  Math.floor(
-                    (Date.now() - new Date(session.started_at).getTime()) /
-                      1000,
-                  ),
+              : null;
+            const seconds = session.duration_seconds
+              ? session.duration_seconds
+              : Math.floor(
+                  (Date.now() - new Date(session.started_at).getTime()) / 1000,
                 );
+            const duration = formatDurationFromSeconds(seconds);
             const isCall = session.channel === "voice";
+            const channel = channelMeta[session.channel] || {
+              icon: "💬",
+              label: session.channel,
+            };
+            const status =
+              statusConfig[session.status as keyof typeof statusConfig] ||
+              statusConfig.active;
+            const preview = lastMessage(session);
+            const startedAgo = formatDistanceToNowStrict(
+              new Date(session.started_at),
+              { addSuffix: true },
+            );
 
             return (
-              <div
+              <button
                 key={session.id}
-                className="flex items-center gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors group fade-in-up"
-                style={{ animationDelay: `${index * 100}ms` }}
+                type="button"
+                onClick={() => navigate(`/sessions/${session.id}`)}
+                className="w-full flex items-start gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/60 transition-colors group fade-in-up text-left"
+                style={{ animationDelay: `${index * 80}ms` }}
               >
-                {/* Customer Avatar */}
-                <Avatar className="h-10 w-10 border-2 border-border">
-                  <AvatarFallback className="bg-navy/10 text-navy font-semibold text-sm">
-                    {customerName
-                      .split(" ")
-                      .map((n) => n[0])
-                      .join("")
-                      .toUpperCase() || "?"}
-                  </AvatarFallback>
-                </Avatar>
+                {/* Avatar with channel badge */}
+                <div className="relative shrink-0">
+                  <Avatar className="h-10 w-10 border-2 border-border">
+                    <AvatarFallback
+                      className={cn(
+                        "font-semibold text-sm",
+                        isCall
+                          ? "bg-gold/10 text-gold"
+                          : "bg-navy/10 text-navy",
+                      )}
+                    >
+                      {customerName
+                        .split(" ")
+                        .map((n) => n[0])
+                        .join("")
+                        .slice(0, 2)
+                        .toUpperCase() || "?"}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="absolute -bottom-1 -right-1 text-xs leading-none">
+                    {channel.icon}
+                  </span>
+                </div>
 
-                {/* Session Info */}
+                {/* Session info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-sm truncate">
                       {customerName}
                     </span>
-                    <span className="text-sm">
-                      {channelIcons[session.channel] || "💬"}
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px] font-medium gap-1 py-0",
+                        status.className,
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          status.dot,
+                          (session.status === "active" ||
+                            session.status === "escalated") &&
+                            "animate-pulse",
+                        )}
+                      />
+                      {status.label}
+                    </Badge>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">
+                    {preview ? (
+                      <span dir="auto">{preview}</span>
+                    ) : (
+                      <span className="opacity-70">
+                        {channel.label}
+                        {phone ? ` · ${phone}` : ""}
+                        {agentName ? ` · ${agentName}` : " · Unassigned"}
+                      </span>
+                    )}
+                  </p>
+
+                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                    <span className="flex items-center gap-1">
+                      {isCall ? (
+                        <Phone className="h-3 w-3 text-gold" />
+                      ) : (
+                        <MessageSquare className="h-3 w-3 text-navy" />
+                      )}
+                      {channel.label}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>Agent: {agentName}</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {duration}
+                    </span>
+                    <span className="opacity-70">{startedAgo}</span>
                   </div>
                 </div>
 
-                {/* Duration & Type */}
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground bg-secondary px-2 py-1 rounded">
-                    <Clock className="h-3 w-3" />
-                    {duration}
-                  </div>
-                  {isCall ? (
-                    <Phone className="h-4 w-4 text-gold" />
-                  ) : (
-                    <MessageSquare className="h-4 w-4 text-navy" />
-                  )}
-                </div>
-
-                {/* Status */}
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "text-[10px] font-medium",
-                    statusConfig[session.status as keyof typeof statusConfig]
-                      ?.className || statusConfig.active.className,
-                  )}
-                >
-                  {statusConfig[session.status as keyof typeof statusConfig]
-                    ?.label || "Active"}
-                </Badge>
-
-                {/* Actions */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </Button>
-              </div>
+                <ChevronRight className="h-4 w-4 text-muted-foreground self-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </button>
             );
           })
         )}

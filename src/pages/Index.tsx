@@ -222,7 +222,9 @@ export default function Index() {
           // escalated_to). The employee embed MUST name the FK or PostgREST
           // can't disambiguate and returns an error (data => null), which is why
           // the Active Sessions panel was always empty.
-          "*, customer:customers(*), employee:employees!sessions_employee_id_fkey(*, profile:profiles(*))",
+          // `messages` is embedded so the panel can show a live last-message
+          // preview (voice calls persist their transcript here too).
+          "*, customer:customers(*), employee:employees!sessions_employee_id_fkey(*, profile:profiles(*)), messages(content, sent_at, direction)",
         )
         .in("status", ["active", "waiting", "escalated"])
         .order("started_at", { ascending: false })
@@ -265,6 +267,7 @@ export default function Index() {
         },
         () => {
           refetchStats();
+          refetchActiveSessions();
         },
       )
       .subscribe();

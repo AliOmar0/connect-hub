@@ -88,10 +88,29 @@ export function validateTwilioSignature(req, res, next) {
     }
     const signature = req.headers['x-twilio-signature'];
     const authToken = process.env.TWILIO_AUTH_TOKEN;
-    const url = `${process.env.NGROK_URL || ''}${req.originalUrl}`;
-    const valid = twilio.validateRequest(authToken, signature, url, req.body || {});
+
+    // Twilio signs the exact public URL it requested. Behind ngrok / a proxy,
+    // that URL can differ from a single hard-coded value (protocol, host, or
+    // which reserved domain is fronting this server). To avoid wrongly
+    // rejecting valid inbound calls, we validate against every plausible URL:
+    //   1. The configured public base (NGROK_URL) + path.
+    //   2. The actual proxied host from X-Forwarded-* / Host headers + path.
+    // The request is accepted if the signature matches ANY candidate.
+    const proto = req.headers['x-forwarded-proto']?.split(',')[0].trim() || req.protocol || 'https';
+    const host = req.headers['x-forwarded-host']?.split(',')[0].trim() || req.headers['host'];
+    const candidates = new Set();
+    if (process.env.NGROK_URL) {
+        candidates.add(`${process.env.NGROK_URL.replace(/\/+$/, '')}${req.originalUrl}`);
+    }
+    if (host) {
+        candidates.add(`${proto}://${host}${req.originalUrl}`);
+    }
+
+    const valid = [...candidates].some((url) =>
+        twilio.validateRequest(authToken, signature, url, req.body || {})
+    );
     if (!valid) {
-        req.log?.warn('Rejected Twilio webhook with invalid signature');
+        req.log?.warn({ candidates: [...candidates] }, 'Rejected Twilio webhook with invalid signature');
         return res.status(403).type('text/xml').send('<Response><Reject/></Response>');
     }
     return next();

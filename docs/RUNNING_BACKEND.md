@@ -31,7 +31,7 @@ That's it for day-to-day work. Details below.
 | **Node API**         | 3001 | Twilio voice, web chat, OTP, TTS orchestration | Everything (core)              |
 | **Edge TTS** (free)  | 5070 | Arabic text-to-speech, no API key, no cost     | Hearing voice replies for free |
 | **OTP service**      | 5001 | WhatsApp OTP microservice (FastAPI)            | Testing the standalone OTP API |
-| **WhatsApp backend** | 5000 | WhatsApp channel + Whisper STT (heavy, ~GBs)   | The WhatsApp support channel   |
+| **WhatsApp backend** | 3001 | WhatsApp channel + Whisper STT (heavy, ~GBs)   | The WhatsApp support channel   |
 | **Redis**            | 6379 | Session/dedup/rate-limit state (optional)      | Multi-instance; safe to skip   |
 
 Redis is optional: if it's not running, the Node server automatically falls back
@@ -46,7 +46,7 @@ and the free ngrok plan allows only one tunnel per account at a time. So run the
 **one at a time** — and you can put each on a **separate laptop**.
 
 ```bash
-npm run channel:whatsapp   # Python backend (port 5000) + ngrok -> Active AI Sessions
+npm run channel:whatsapp   # Python backend (port 3001) + ngrok -> Active AI Sessions
 npm run channel:voice      # Node API (port 3001) + edge TTS + ngrok -> Twilio voice
 ```
 
@@ -55,7 +55,7 @@ terminal (colored, prefixed output). Stop with `Ctrl+C`.
 
 | Channel            | Backend                           | Port | Meta/Twilio path              | Powers                            |
 | ------------------ | --------------------------------- | ---- | ----------------------------- | --------------------------------- |
-| `channel:whatsapp` | Python `whatsapp-support-backend` | 5000 | `/webhook`                    | WhatsApp + **Active AI Sessions** |
+| `channel:whatsapp` | Python `whatsapp-support-backend` | 3001 | `/webhook`                    | WhatsApp + **Active AI Sessions** |
 | `channel:voice`    | Node `server/index.js`            | 3001 | `/voice`, `/webhook/whatsapp` | Twilio phone calls                |
 
 ### Per-laptop ngrok config (root `.env`)

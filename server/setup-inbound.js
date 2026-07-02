@@ -24,7 +24,9 @@ async function configureInbound() {
 
         await client.incomingPhoneNumbers(sid).update({
             voiceUrl: `${ngrokUrl}/voice`,
-            voiceMethod: 'POST'
+            voiceMethod: 'POST',
+            statusCallback: `${ngrokUrl}/voice/status`,
+            statusCallbackMethod: 'POST'
         });
 
         console.log("------------------------------------------------");

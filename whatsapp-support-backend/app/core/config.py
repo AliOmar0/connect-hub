@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # DeepSeek (primary answering model when DEEPSEEK_API_KEY is set; OpenRouter
     # is used as fallback). DeepSeek's API is OpenAI-compatible.
     DEEPSEEK_API_KEY: Optional[str] = None
-    DEEPSEEK_MODEL: str = "deepseek-v4-pro"
+    DEEPSEEK_MODEL: str = "deepseek-v4-flash"
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
     # WhatsApp Settings (Defaults, but usually pulled from DB)

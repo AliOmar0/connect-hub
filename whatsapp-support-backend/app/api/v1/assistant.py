@@ -41,6 +41,16 @@ _VOICE_STYLE = (
 # Decisions that mean a human must take over.
 _ESCALATING = {ActionDecision.ESCALATE}
 
+# "Soft" escalation reasons: the decision engine escalates when the intent
+# classifier was merely unsure (Low Intent Confidence) or the vector KB had no
+# matching document (No KB documents found). On a LIVE VOICE call that makes the
+# assistant hand the caller to an agent on the very first turn, which feels
+# broken. For voice we instead answer normally — the LLM already carries the
+# bank system prompt + JSON knowledge base, so it can respond in a grounded way.
+# HARD escalations (explicit agent request, high-risk intents, prompt-injection
+# BLOCK, sensitive-transaction MOCK) are unaffected and still take over/mock.
+_SOFT_ESCALATION_REASONS = ("Low Intent Confidence", "No KB documents found")
+
 
 class ReplyRequest(BaseModel):
     text: str = Field(..., description="Raw user message")
@@ -103,21 +113,47 @@ async def reply(req: ReplyRequest) -> ReplyResponse:
         req.text, history=history, channel=req.channel, session_id=req.session_id
     )
 
-    if result.decision == ActionDecision.RESPOND:
-        extra = _VOICE_STYLE if (req.channel or "").lower() == "voice" else None
+    is_voice = (req.channel or "").lower() == "voice"
+    decision = result.decision
+
+    # Voice: degrade a "soft" escalation (unsure intent / empty vector KB) into a
+    # normal grounded answer instead of dumping the caller to a human on turn one.
+    downgraded = False
+    if (
+        is_voice
+        and decision == ActionDecision.ESCALATE
+        and result.escalation_reason
+        and result.escalation_reason.startswith(_SOFT_ESCALATION_REASONS)
+    ):
+        decision = ActionDecision.RESPOND
+        downgraded = True
+        logger.info(
+            "Voice: softened escalation (%s) into a direct answer",
+            result.escalation_reason,
+        )
+
+    if decision == ActionDecision.RESPOND:
+        extra = _VOICE_STYLE if is_voice else None
         max_words = 60 if extra else 150
         raw = await LLMService.get_ai_response(req.text, history, extra_system=extra)
         message = validate_response(raw, max_words=max_words)
     else:
         message = result.localized_message
 
+    escalate = decision in _ESCALATING
     return ReplyResponse(
-        decision=result.decision.value,
+        decision=decision.value,
         message=message,
-        escalate=result.decision in _ESCALATING,
+        escalate=escalate,
         intent=result.intent.value if result.intent else None,
         language=result.language.value if result.language else None,
-        escalation_reason=result.escalation_reason,
-        escalation_summary=result.escalation_summary,
+        # Keep the internal reason for observability, but flag that voice chose
+        # to answer instead of escalating.
+        escalation_reason=(
+            None if downgraded else result.escalation_reason
+        ),
+        escalation_summary=(
+            None if downgraded else result.escalation_summary
+        ),
         scores=result.scores,
     )

@@ -201,11 +201,24 @@ async def update_message_classification(db: Any, message_id: UUID, classificatio
 
 
 async def get_api_config(db: Any, channel: ChannelType) -> Optional[ApiConfiguration]:
+    # Prefer the ACTIVE configuration, most recently verified first. Falls back to
+    # any config for the channel if none are marked active yet. This avoids the
+    # old behaviour of blindly returning row[0], which broke inbound routing when
+    # more than one row existed for a channel.
     response = supabase.table("api_configurations")\
         .select("*")\
         .eq("channel", channel.value)\
+        .eq("is_active", True)\
+        .order("last_verified_at", desc=True)\
         .execute()
-    
+
+    if not response.data:
+        # No active row — fall back to any config for the channel.
+        response = supabase.table("api_configurations")\
+            .select("*")\
+            .eq("channel", channel.value)\
+            .execute()
+
     if response.data:
         return ApiConfiguration(**response.data[0])
     return None
