@@ -30,9 +30,9 @@ describe("ChatView", () => {
       />,
     );
 
-    expect(screen.getByText("لم يتم اختيار محادثة")).toBeInTheDocument();
+    expect(screen.getByText("No conversation selected")).toBeInTheDocument();
     expect(
-      screen.getByText(/الرجاء اختيار محادثة من القائمة الجانبية/),
+      screen.getByText(/Select a session from the list/),
     ).toBeInTheDocument();
   });
 
@@ -47,7 +47,14 @@ describe("ChatView", () => {
     );
 
     expect(screen.getByText("John Doe")).toBeInTheDocument();
-    expect(screen.getByText(mockCustomers[0].phone!)).toBeInTheDocument();
+    // The phone is rendered through BidiText, which wraps the value in Unicode
+    // isolate characters (Requirement 14.4). Normalize them away when matching.
+    expect(
+      screen.getByText(mockCustomers[0].phone!, {
+        normalizer: (str) =>
+          str.replace(/[\u2066\u2067\u2068\u2069]/g, "").trim(),
+      }),
+    ).toBeInTheDocument();
   });
 
   it("displays channel information", () => {
@@ -73,7 +80,7 @@ describe("ChatView", () => {
       />,
     );
 
-    expect(screen.getByText("active")).toBeInTheDocument();
+    expect(screen.getByText("Active")).toBeInTheDocument();
   });
 
   it("renders loading state", () => {
@@ -101,7 +108,7 @@ describe("ChatView", () => {
       />,
     );
 
-    expect(screen.getByText("لا توجد رسائل بعد")).toBeInTheDocument();
+    expect(screen.getByText("No messages yet")).toBeInTheDocument();
   });
 
   it("renders messages list", () => {
@@ -281,10 +288,11 @@ describe("ChatView", () => {
       />,
     );
 
-    // The justify-end class is on the parent flex container, not the message itself
+    // Authorship redesign (Requirement 14.7): the wrapper aligns messages via
+    // items-end/items-start on the flex-col container.
     const messageText = screen.getByText("How can I help you?");
     const parentContainer = messageText.closest("div.flex");
-    expect(parentContainer).toHaveClass("justify-end");
+    expect(parentContainer).toHaveClass("items-end");
   });
 
   it("displays inbound messages on the left", () => {
@@ -302,10 +310,11 @@ describe("ChatView", () => {
       />,
     );
 
-    // The justify-start class is on the parent flex container, not the message itself
+    // Authorship redesign (Requirement 14.7): the wrapper aligns messages via
+    // items-end/items-start on the flex-col container.
     const messageText = screen.getByText("Hello, I need help");
     const parentContainer = messageText.closest("div.flex");
-    expect(parentContainer).toHaveClass("justify-start");
+    expect(parentContainer).toHaveClass("items-start");
   });
 
   it("displays message timestamp", () => {

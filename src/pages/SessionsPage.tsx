@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import SessionsTable from "@/components/sessions/SessionsTable";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +14,7 @@ import {
   SessionMainType,
   SessionStatus,
 } from "@/types/database";
+import type { ViewStatus } from "@/types/presentation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -32,6 +34,9 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { EmptyState } from "@/components/ui/empty-state";
+import { BidiText } from "@/components/ui/bidi-text";
 import {
   Search,
   Filter,
@@ -42,10 +47,13 @@ import {
   MessageCircle,
   Clock,
   CheckCircle,
+  ArrowLeft,
+  Inbox,
 } from "lucide-react";
 import { subDays } from "date-fns";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { toast } from "sonner";
 import ChatView from "@/components/messages/ChatView";
 
@@ -75,9 +83,14 @@ type FullSession = Session & {
 
 export default function SessionsPage() {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { id: sessionIdParam } = useParams<{ id?: string }>();
   const { userRole } = useAuth();
   const queryClient = useQueryClient();
+  const breakpoint = useBreakpoint();
+  // Below 768px the list and detail become separate navigable views (14.6).
+  const isMobile = breakpoint < 768;
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [channelFilter, setChannelFilter] = useState<string>("all");
@@ -128,6 +141,7 @@ export default function SessionsPage() {
   const {
     data: sessions,
     isLoading,
+    isError: isSessionsError,
     refetch,
   } = useQuery({
     queryKey: [
@@ -206,8 +220,12 @@ export default function SessionsPage() {
         return mappedSessions as FullSession[];
       } catch (error) {
         console.error("Error fetching sessions from backend:", error);
-        // Fallback to empty or handle error
-        return [];
+        // Surface the failure so the view can present an Error_State with a
+        // recovery action (Requirement 14.5). Re-throwing keeps the fetch and
+        // mapping logic unchanged while enabling react-query's error state.
+        throw error instanceof Error
+          ? error
+          : new Error("Failed to fetch sessions");
       }
     },
   });
@@ -315,6 +333,7 @@ export default function SessionsPage() {
   const {
     data: sessionMessages,
     isLoading: messagesLoading,
+    isError: isMessagesError,
     refetch: refetchMessages,
   } = useQuery({
     queryKey: ["session-messages", selectedSession?.id],
@@ -334,7 +353,11 @@ export default function SessionsPage() {
         return data as Message[];
       } catch (error) {
         console.error("Error fetching messages from backend:", error);
-        return [];
+        // Surface the failure so the transcript region can show an Error_State
+        // with a recovery action (Requirement 14.5).
+        throw error instanceof Error
+          ? error
+          : new Error("Failed to fetch messages");
       }
     },
     enabled: !!selectedSession?.id,
@@ -451,21 +474,23 @@ export default function SessionsPage() {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
       toast.success(
         data.employeeId
-          ? "Session assigned successfully"
-          : "Session unassigned",
+          ? t("sessions.toasts.assigned")
+          : t("sessions.toasts.unassigned"),
       );
       setAssignDialogOpen(false);
       setAssigningSession(null);
       setSelectedEmployeeId("unassign");
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Failed to assign session");
+      toast.error(error.message || t("sessions.toasts.assignFailed"));
     },
   });
 
   const handleViewSession = (session: Session) => {
     setSelectedSession(session);
     navigate(`/sessions/${session.id}`);
+    // On narrow viewports, switch to the detail view (14.6).
+    setMobileView("detail");
 
     // Automatically scroll to chat view for better flow
     setTimeout(() => {
@@ -481,7 +506,7 @@ export default function SessionsPage() {
 
   const handleAssignSubmit = () => {
     if (!assigningSession) {
-      toast.error("No session selected");
+      toast.error(t("sessions.toasts.noSessionSelected"));
       return;
     }
 
@@ -519,7 +544,7 @@ export default function SessionsPage() {
       }
 
       // Success
-      toast.success("Message sent");
+      toast.success(t("sessions.toasts.messageSent"));
 
       // Await refetches and invalidation to ensure UI is in sync
       await refetchMessages();
@@ -538,7 +563,7 @@ export default function SessionsPage() {
     } catch (err) {
       const error = err as Error;
       console.error("Error sending message:", error);
-      toast.error(error.message || "Failed to send message");
+      toast.error(error.message || t("sessions.toasts.sendFailed"));
     }
   };
 
@@ -564,7 +589,7 @@ export default function SessionsPage() {
         throw new Error(err.detail || "Failed to update session type");
       }
 
-      toast.success("Session type updated");
+      toast.success(t("sessions.toasts.typeUpdated"));
       // Update local state for immediate feedback
       setSelectedSession({
         ...selectedSession,
@@ -574,7 +599,7 @@ export default function SessionsPage() {
     } catch (err) {
       const error = err as Error;
       console.error("Error updating session type:", error);
-      toast.error(error.message || "Failed to update session type");
+      toast.error(error.message || t("sessions.toasts.typeUpdateFailed"));
     }
   };
 
@@ -600,7 +625,7 @@ export default function SessionsPage() {
         throw new Error(err.detail || "Failed to update session status");
       }
 
-      toast.success(`Session marked as ${status}`);
+      toast.success(t("sessions.toasts.statusUpdated", { status }));
       queryClient.invalidateQueries({ queryKey: ["sessions"] });
 
       // Fetch fresh data for duration/wait_time
@@ -625,13 +650,13 @@ export default function SessionsPage() {
     } catch (err) {
       const error = err as Error;
       console.error("Error updating session status:", error);
-      toast.error(error.message || "Failed to update session status");
+      toast.error(error.message || t("sessions.toasts.statusUpdateFailed"));
     }
   };
 
   const handleDownloadSessions = () => {
-    if (sessions.length === 0) {
-      toast.error("No sessions to download");
+    if (!sessions || sessions.length === 0) {
+      toast.error(t("sessions.toasts.noSessions"));
       return;
     }
 
@@ -684,207 +709,93 @@ export default function SessionsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    toast.success("Sessions exported correctly");
+    toast.success(t("sessions.toasts.exported"));
   };
 
-  return (
-    <DashboardLayout>
-      <div className="flex flex-col space-y-8 pb-10">
-        <div className="flex flex-col gap-1">
-          <h1
-            className="text-3xl font-display font-bold tracking-tight cursor-pointer hover:text-primary transition-colors inline-block"
-            onClick={scrollToChat}
-          >
-            Active AI Sessions
-          </h1>
-          <p className="text-muted-foreground">
-            Monitor and manage all active sessions.{" "}
-            <span
-              className="text-primary/70 font-medium cursor-pointer hover:underline"
-              onClick={scrollToChat}
+  // Derive the list view's ViewStatus for the shared AsyncBoundary so loading,
+  // empty (14.3), and error (14.5) states use the standard feedback patterns.
+  const listStatus: ViewStatus = isLoading
+    ? "loading"
+    : isSessionsError
+      ? "error"
+      : (sessions?.length ?? 0) === 0
+        ? "empty"
+        : "loaded";
+
+  const hasSelection = !!selectedSession;
+
+  // On narrow viewports show either the list or the detail as a separate
+  // navigable view; at >=768px both are visible (14.1 / 14.6).
+  const showList = !isMobile || mobileView === "list";
+  const showDetail = !isMobile || mobileView === "detail";
+
+  const listSection = (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Users className="h-5 w-5 text-primary" aria-hidden="true" />
+          {t("sessions.overviewTitle")}
+        </h2>
+      </div>
+      <AsyncBoundary
+        status={listStatus}
+        onRetry={() => refetch()}
+        emptyTitle={t("sessions.emptyList.title")}
+        emptyDescription={t("sessions.emptyList.description")}
+        emptyIcon={<Inbox />}
+        skeleton={
+          <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm">
+            <SessionsTable sessions={[]} loading />
+          </div>
+        }
+      >
+        <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm max-h-[450px] overflow-y-auto custom-scrollbar">
+          <SessionsTable
+            sessions={sessions || []}
+            sessionTypes={sessionTypes}
+            loading={false}
+            onViewSession={handleViewSession}
+            onAssignAgent={canAssign ? handleAssignAgent : undefined}
+          />
+        </div>
+      </AsyncBoundary>
+    </div>
+  );
+
+  const detailSection = (
+    <div
+      className="border-t border-border pt-8 mt-4 space-y-4"
+      ref={chatContainerRef}
+    >
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          {isMobile && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileView("list")}
+              aria-label={t("sessions.backToList")}
+              className="shrink-0"
             >
-              Jump to Chat ↓
-            </span>
-          </p>
-        </div>
+              <ArrowLeft
+                className="h-5 w-5 rtl:rotate-180"
+                aria-hidden="true"
+              />
+            </Button>
+          )}
+          <MessageSquare className="h-5 w-5 text-primary" aria-hidden="true" />
+          {t("sessions.conversationDetails")}
+        </h2>
+      </div>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by customer, phone, email, or agent..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-[150px]">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="waiting">Waiting</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="escalated">Escalated</SelectItem>
-                  <SelectItem value="missed">Missed</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={channelFilter} onValueChange={setChannelFilter}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Channel" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Channels</SelectItem>
-                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                  <SelectItem value="messenger">Messenger</SelectItem>
-                  <SelectItem value="sms">SMS</SelectItem>
-                  <SelectItem value="voice">Voice</SelectItem>
-                  <SelectItem value="email">Email</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Types</SelectItem>
-                  {sessionTypes?.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      {type.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={dateRange.toString()}
-                onValueChange={(v) => setDateRange(parseInt(v))}
-              >
-                <SelectTrigger className="w-full sm:w-[180px]">
-                  <SelectValue placeholder="Date Range" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Last 24 hours</SelectItem>
-                  <SelectItem value="7">Last 7 days</SelectItem>
-                  <SelectItem value="30">Last 30 days</SelectItem>
-                  <SelectItem value="90">Last 90 days</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                onClick={handleDownloadSessions}
-                variant="outline"
-                size="icon"
-                className="border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all text-primary"
-                title="Export filtered sessions to CSV"
-              >
-                <Download className="h-4 w-4" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Simple Stats Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
-          <Card className="bg-primary/5 border-primary/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  Active Sessions
-                </p>
-                <h4 className="text-xl font-bold text-primary">
-                  {sessions?.filter((s) => s.status === "active").length || 0}
-                </h4>
-              </div>
-              <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <MessageCircle className="h-4 w-4" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-orange-500/5 border-orange-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  Escalated
-                </p>
-                <h4 className="text-xl font-bold text-orange-600">
-                  {sessions?.filter((s) => s.status === "escalated").length ||
-                    0}
-                </h4>
-              </div>
-              <div className="p-2 bg-orange-500/10 rounded-lg text-orange-600">
-                <Clock className="h-4 w-4" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-green-500/5 border-green-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  Completed (24h)
-                </p>
-                <h4 className="text-xl font-bold text-green-600">
-                  {sessions?.filter((s) => s.status === "completed").length ||
-                    0}
-                </h4>
-              </div>
-              <div className="p-2 bg-green-500/10 rounded-lg text-green-600">
-                <CheckCircle className="h-4 w-4" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-blue-500/5 border-blue-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  Total Agents
-                </p>
-                <h4 className="text-xl font-bold text-blue-600">
-                  {employees?.length || 0}
-                </h4>
-              </div>
-              <div className="p-2 bg-blue-500/10 rounded-lg text-blue-600">
-                <Users className="h-4 w-4" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              Sessions Overview
-            </h2>
-          </div>
-          <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm max-h-[450px] overflow-y-auto custom-scrollbar">
-            <SessionsTable
-              sessions={sessions || []}
-              sessionTypes={sessionTypes}
-              loading={isLoading}
-              onViewSession={handleViewSession}
-              onAssignAgent={canAssign ? handleAssignAgent : undefined}
-            />
-          </div>
-        </div>
-
-        {/* Separator */}
-        <div
-          className="border-t border-border pt-8 mt-4"
-          ref={chatContainerRef}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-primary" />
-              Conversation Details
-            </h2>
-          </div>
-        </div>
-
-        {/* Chat & Activity Section - Stacked or Side-by-Side with fixed height for stability */}
+      {!hasSelection ? (
+        // No session selected -> direct the user to pick one (14.2).
+        <EmptyState
+          title={t("sessions.noSelection.title")}
+          description={t("sessions.noSelection.description")}
+          icon={<MessageSquare />}
+        />
+      ) : (
         <div
           className="grid lg:grid-cols-3 gap-6 h-[800px]"
           id="chat-view-container"
@@ -899,6 +810,8 @@ export default function SessionsPage() {
                 onUpdateStatus={handleUpdateSessionStatus}
                 sessionTypes={sessionTypes}
                 loading={messagesLoading}
+                error={isMessagesError}
+                onRetryMessages={() => refetchMessages()}
               />
             </CardContent>
           </Card>
@@ -907,14 +820,18 @@ export default function SessionsPage() {
             <CardContent className="p-6 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between mb-6 shrink-0">
                 <div>
-                  <h3 className="text-lg font-semibold">Activity Timeline</h3>
+                  <h3 className="text-lg font-semibold">
+                    {t("sessions.activity.title")}
+                  </h3>
                   <p className="text-sm text-muted-foreground">
-                    Call history and updates
+                    {t("sessions.activity.subtitle")}
                   </p>
                 </div>
                 {selectedSession && (
-                  <Badge className="capitalize font-medium px-3 py-1">
-                    {selectedSession.status}
+                  <Badge className="font-medium px-3 py-1">
+                    {t(`sessions.status.${selectedSession.status}`, {
+                      defaultValue: selectedSession.status,
+                    })}
                   </Badge>
                 )}
               </div>
@@ -934,13 +851,15 @@ export default function SessionsPage() {
                       className="rounded-xl border border-border p-4 bg-muted/20 space-y-2 hover:border-primary/20 hover:bg-muted/40 transition-all group"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold capitalize flex items-center gap-2">
+                        <span className="text-sm font-semibold flex items-center gap-2">
                           {call.direction === "inbound" ? (
-                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-status-info"></div>
                           ) : (
-                            <div className="w-2.5 h-2.5 rounded-full bg-green-500"></div>
+                            <div className="w-2.5 h-2.5 rounded-full bg-status-success"></div>
                           )}
-                          {call.direction} Call
+                          {call.direction === "inbound"
+                            ? t("sessions.activity.inboundCall")
+                            : t("sessions.activity.outboundCall")}
                         </span>
                         <span className="text-[11px] text-muted-foreground font-medium">
                           {new Date(call.started_at).toLocaleString([], {
@@ -953,13 +872,17 @@ export default function SessionsPage() {
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                         <div className="bg-background/50 p-2 rounded-lg border border-border/50">
-                          <span className="block opacity-60">Status</span>
+                          <span className="block opacity-60">
+                            {t("sessions.activity.status")}
+                          </span>
                           <span className="font-medium text-foreground">
                             {call.status}
                           </span>
                         </div>
                         <div className="bg-background/50 p-2 rounded-lg border border-border/50">
-                          <span className="block opacity-60">Duration</span>
+                          <span className="block opacity-60">
+                            {t("sessions.activity.duration")}
+                          </span>
                           <span className="font-medium text-foreground">
                             {call.duration_seconds
                               ? `${call.duration_seconds}s`
@@ -968,66 +891,289 @@ export default function SessionsPage() {
                         </div>
                       </div>
                       {call.phone_number && (
-                        <p className="text-xs text-muted-foreground px-1">
-                          <span className="opacity-60">ID:</span>{" "}
-                          {call.phone_number}
+                        <p className="text-xs text-muted-foreground px-1 flex items-center gap-1">
+                          <span className="opacity-60">
+                            {t("sessions.activity.id")}:
+                          </span>{" "}
+                          <BidiText value={call.phone_number} />
                         </p>
                       )}
                     </div>
                   ))
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
-                    <Phone className="h-10 w-10 mb-4" />
-                    <p className="text-sm font-medium">No activity yet</p>
+                    <Phone className="h-10 w-10 mb-4" aria-hidden="true" />
+                    <p className="text-sm font-medium">
+                      {t("sessions.activity.empty")}
+                    </p>
                   </div>
                 )}
               </div>
             </CardContent>
           </Card>
         </div>
+      )}
+    </div>
+  );
+
+  return (
+    <DashboardLayout>
+      <div className="flex flex-col space-y-8 pb-10">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-3xl font-display font-bold tracking-tight">
+            {t("sessions.title")}
+          </h1>
+          <p className="text-muted-foreground">{t("sessions.subtitle")}</p>
+        </div>
+
+        {/* Filters */}
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={t("sessions.searchPlaceholder")}
+                  aria-label={t("sessions.searchPlaceholder")}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 rtl:pl-3 rtl:pr-9"
+                />
+              </div>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger
+                  className="w-full sm:w-[150px]"
+                  aria-label={t("sessions.filters.status")}
+                >
+                  <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
+                  <SelectValue placeholder={t("sessions.filters.status")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    {t("sessions.filters.allStatus")}
+                  </SelectItem>
+                  <SelectItem value="active">
+                    {t("sessions.status.active")}
+                  </SelectItem>
+                  <SelectItem value="waiting">
+                    {t("sessions.status.waiting")}
+                  </SelectItem>
+                  <SelectItem value="completed">
+                    {t("sessions.status.completed")}
+                  </SelectItem>
+                  <SelectItem value="escalated">
+                    {t("sessions.status.escalated")}
+                  </SelectItem>
+                  <SelectItem value="missed">
+                    {t("sessions.status.missed")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={channelFilter} onValueChange={setChannelFilter}>
+                <SelectTrigger
+                  className="w-full sm:w-[180px]"
+                  aria-label={t("sessions.filters.channel")}
+                >
+                  <SelectValue placeholder={t("sessions.filters.channel")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    {t("sessions.filters.allChannels")}
+                  </SelectItem>
+                  <SelectItem value="whatsapp">
+                    {t("sessions.channels.whatsapp")}
+                  </SelectItem>
+                  <SelectItem value="messenger">
+                    {t("sessions.channels.messenger")}
+                  </SelectItem>
+                  <SelectItem value="sms">
+                    {t("sessions.channels.sms")}
+                  </SelectItem>
+                  <SelectItem value="voice">
+                    {t("sessions.channels.voice")}
+                  </SelectItem>
+                  <SelectItem value="email">
+                    {t("sessions.channels.email")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
+                <SelectTrigger
+                  className="w-full sm:w-[180px]"
+                  aria-label={t("sessions.filters.type")}
+                >
+                  <SelectValue placeholder={t("sessions.filters.type")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">
+                    {t("sessions.filters.allTypes")}
+                  </SelectItem>
+                  {sessionTypes?.map((type) => (
+                    <SelectItem key={type.id} value={type.id}>
+                      {type.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={dateRange.toString()}
+                onValueChange={(v) => setDateRange(parseInt(v))}
+              >
+                <SelectTrigger
+                  className="w-full sm:w-[180px]"
+                  aria-label={t("sessions.filters.dateRange")}
+                >
+                  <SelectValue placeholder={t("sessions.filters.dateRange")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">
+                    {t("sessions.filters.last24h")}
+                  </SelectItem>
+                  <SelectItem value="7">
+                    {t("sessions.filters.last7d")}
+                  </SelectItem>
+                  <SelectItem value="30">
+                    {t("sessions.filters.last30d")}
+                  </SelectItem>
+                  <SelectItem value="90">
+                    {t("sessions.filters.last90d")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleDownloadSessions}
+                variant="outline"
+                size="icon"
+                className="border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all text-primary"
+                title={t("sessions.exportCsv")}
+                aria-label={t("sessions.exportCsv")}
+              >
+                <Download className="h-4 w-4" aria-hidden="true" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Simple Stats Row */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+          <Card className="bg-status-success/5 border-status-success/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {t("sessions.stats.activeSessions")}
+                </p>
+                <h4 className="text-xl font-bold text-status-success">
+                  {sessions?.filter((s) => s.status === "active").length || 0}
+                </h4>
+              </div>
+              <div className="p-2 bg-status-success/10 rounded-lg text-status-success">
+                <MessageCircle className="h-4 w-4" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-status-error/5 border-status-error/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {t("sessions.stats.escalated")}
+                </p>
+                <h4 className="text-xl font-bold text-status-error">
+                  {sessions?.filter((s) => s.status === "escalated").length ||
+                    0}
+                </h4>
+              </div>
+              <div className="p-2 bg-status-error/10 rounded-lg text-status-error">
+                <Clock className="h-4 w-4" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-status-info/5 border-status-info/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {t("sessions.stats.completed")}
+                </p>
+                <h4 className="text-xl font-bold text-status-info">
+                  {sessions?.filter((s) => s.status === "completed").length ||
+                    0}
+                </h4>
+              </div>
+              <div className="p-2 bg-status-info/10 rounded-lg text-status-info">
+                <CheckCircle className="h-4 w-4" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="bg-primary/5 border-primary/10">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  {t("sessions.stats.totalAgents")}
+                </p>
+                <h4 className="text-xl font-bold text-primary">
+                  {employees?.length || 0}
+                </h4>
+              </div>
+              <div className="p-2 bg-primary/10 rounded-lg text-primary">
+                <Users className="h-4 w-4" aria-hidden="true" />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {showList && listSection}
+        {showDetail && detailSection}
 
         {/* Assign Agent Dialog */}
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Assign Agent to Session</DialogTitle>
+              <DialogTitle>{t("sessions.assign.title")}</DialogTitle>
               <DialogDescription>
-                Select an employee to assign to this session.
+                {t("sessions.assign.description")}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               {assigningSession && (
                 <div className="space-y-2">
-                  <Label>Session</Label>
+                  <Label>{t("sessions.assign.sessionLabel")}</Label>
                   <div className="p-3 bg-muted rounded-lg">
                     <p className="font-medium">
-                      {assigningSession.customer?.name || "Unknown Customer"}
+                      {assigningSession.customer?.name ||
+                        t("sessions.table.unknown")}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Channel: {assigningSession.channel} • Status:{" "}
-                      {assigningSession.status}
+                      {t("sessions.assign.channelStatus", {
+                        channel: assigningSession.channel,
+                        status: assigningSession.status,
+                      })}
                     </p>
                   </div>
                 </div>
               )}
               <div className="space-y-2">
-                <Label htmlFor="employee">Select Employee</Label>
+                <Label htmlFor="employee">
+                  {t("sessions.assign.selectEmployee")}
+                </Label>
                 <Select
                   value={selectedEmployeeId}
                   onValueChange={setSelectedEmployeeId}
                 >
                   <SelectTrigger id="employee">
-                    <SelectValue placeholder="Choose an employee" />
+                    <SelectValue
+                      placeholder={t("sessions.assign.chooseEmployee")}
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="unassign">Unassign</SelectItem>
+                    <SelectItem value="unassign">
+                      {t("sessions.assign.unassign")}
+                    </SelectItem>
                     {employees?.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id}>
                         {emp.profile
                           ? `${emp.profile.first_name || ""} ${emp.profile.last_name || ""}`.trim() ||
                             emp.employee_code ||
-                            "Unknown"
-                          : emp.employee_code || "Unknown"}
+                            t("sessions.table.unknown")
+                          : emp.employee_code || t("sessions.table.unknown")}
                         {emp.department && ` • ${emp.department}`}
                       </SelectItem>
                     ))}
@@ -1043,13 +1189,15 @@ export default function SessionsPage() {
                     setSelectedEmployeeId("unassign");
                   }}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button
                   onClick={handleAssignSubmit}
                   disabled={assignMutation.isPending}
                 >
-                  {assignMutation.isPending ? "Assigning..." : "Assign"}
+                  {assignMutation.isPending
+                    ? t("sessions.assign.assigning")
+                    : t("sessions.assign.assign")}
                 </Button>
               </div>
             </div>

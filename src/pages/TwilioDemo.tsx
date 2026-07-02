@@ -1,37 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  CardDescription,
-  CardFooter,
-} from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Phone,
-  PhoneCall,
-  Loader2,
-  MessageSquare,
-  Send,
-  Settings2,
-  ShieldCheck,
-  Globe,
-} from "lucide-react";
-import { toast } from "sonner";
+import { PhoneCall, Loader2, Send, ShieldCheck, Globe } from "lucide-react";
+import { notifySuccess, notifyError } from "@/lib/feedback";
 import { Device } from "@twilio/voice-sdk";
 
 const TwilioDemo = () => {
+  const { t } = useTranslation();
+
   // Standard Call State
   const [phoneNumber, setPhoneNumber] = useState("");
   const [calling, setCalling] = useState(false);
-  const [callSid, setCallSid] = useState<string | null>(null);
+  const [, setCallSid] = useState<string | null>(null);
 
   // Voice SDK State
-  const [device, setDevice] = useState<Device | null>(null);
-  const [sdkStatus, setSdkStatus] = useState("Offline");
+  const [, setDevice] = useState<Device | null>(null);
+  const [sdkStatus, setSdkStatus] = useState(() =>
+    t("diagnostics.twilio.sdk.offline"),
+  );
+  const [sdkOnline, setSdkOnline] = useState(false);
   const [isIncoming, setIsIncoming] = useState(false);
   const [activeConnection, setActiveConnection] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -55,9 +46,9 @@ const TwilioDemo = () => {
 
   // Initialize Twilio Voice SDK
   const initSDK = async () => {
-    setSdkStatus("Connecting...");
+    setSdkStatus(t("diagnostics.twilio.sdk.connecting"));
+    setSdkOnline(false);
     try {
-      console.log("Fetching token from http://localhost:3001/api/token");
       const response = await fetch("http://localhost:3001/api/token");
 
       if (!response.ok) {
@@ -70,10 +61,9 @@ const TwilioDemo = () => {
       }
 
       const data = await response.json();
-      console.log("Token received, identity:", data.identity);
 
       if (!data.token) {
-        throw new Error("No token returned from server");
+        throw new Error(t("diagnostics.twilio.sdk.noToken"));
       }
 
       // Twilio Voice SDK v2.0+ instantiation
@@ -82,18 +72,25 @@ const TwilioDemo = () => {
       });
 
       newDevice.on("registered", () => {
-        setSdkStatus("Online (agent: " + data.identity + ")");
-        toast.success("Voice SDK Registered!");
+        setSdkStatus(
+          t("diagnostics.twilio.sdk.online", { identity: data.identity }),
+        );
+        setSdkOnline(true);
+        notifySuccess(t("diagnostics.twilio.sdk.registered"));
       });
 
       newDevice.on("error", (error) => {
-        console.error("SDK Error event:", error);
-        setSdkStatus("Error: " + error.message);
-        toast.error("SDK Error: " + error.message);
+        setSdkStatus(
+          t("diagnostics.twilio.sdk.error", { message: error.message }),
+        );
+        setSdkOnline(false);
+        notifyError(
+          t("diagnostics.twilio.sdk.errorToast", { message: error.message }),
+        );
       });
 
       newDevice.on("incoming", (connection) => {
-        toast.info("Incoming Call!");
+        notifySuccess(t("diagnostics.twilio.incoming.toast"));
         setIsIncoming(true);
         setActiveConnection(connection);
 
@@ -107,11 +104,15 @@ const TwilioDemo = () => {
       setDevice(newDevice);
     } catch (err: unknown) {
       const error = err as Error;
-      console.error("SDK Setup Error detail:", error);
       const errorMessage =
-        error?.message || "Unknown error occurred during setup";
-      setSdkStatus("Setup Required: " + errorMessage);
-      toast.error("Voice Setup Error: " + errorMessage);
+        error?.message || t("diagnostics.twilio.sdk.unknownError");
+      setSdkStatus(
+        t("diagnostics.twilio.sdk.setupRequired", { message: errorMessage }),
+      );
+      setSdkOnline(false);
+      notifyError(
+        t("diagnostics.twilio.sdk.setupError", { message: errorMessage }),
+      );
     }
   };
 
@@ -134,11 +135,11 @@ const TwilioDemo = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      toast.success("AI Call initiated!");
+      notifySuccess(t("diagnostics.twilio.voice.success"));
       setCallSid(data.sid);
     } catch (err: unknown) {
       const error = err as Error;
-      toast.error(error.message);
+      notifyError(error.message);
     } finally {
       setCalling(false);
     }
@@ -169,7 +170,9 @@ const TwilioDemo = () => {
       ]);
     } catch (err: unknown) {
       const error = err as Error;
-      toast.error("Chat error: " + error.message);
+      notifyError(
+        t("diagnostics.twilio.chat.error", { message: error.message }),
+      );
     } finally {
       setChatLoading(false);
     }
@@ -178,7 +181,7 @@ const TwilioDemo = () => {
   const handleSms = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!smsNumber || !smsBody) {
-      toast.error("Please fill in both number and message");
+      notifyError(t("diagnostics.twilio.sms.missingFields"));
       return;
     }
     setSmsSending(true);
@@ -189,53 +192,63 @@ const TwilioDemo = () => {
         body: JSON.stringify({ to: smsNumber, message: smsBody }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "Failed to send SMS");
-      toast.success("SMS sent successfully! SID: " + data.sid);
+      if (!response.ok)
+        throw new Error(data.error || t("diagnostics.twilio.sms.failed"));
+      notifySuccess(t("diagnostics.twilio.sms.success", { sid: data.sid }));
     } catch (err: unknown) {
       const error = err as Error;
-      console.error("SMS error:", error);
-      toast.error("SMS error: " + error.message);
+      notifyError(
+        t("diagnostics.twilio.sms.error", { message: error.message }),
+      );
     } finally {
       setSmsSending(false);
     }
   };
 
   return (
-    <div className="container mx-auto p-4 md:p-8 max-w-5xl space-y-8 animate-in fade-in duration-500">
+    <div className="container mx-auto p-4 md:p-8 max-w-5xl space-y-8 motion-safe:animate-in motion-safe:fade-in motion-safe:duration-500">
       <div className="flex justify-between items-start">
         <div className="flex flex-col gap-2">
-          <h1 className="text-4xl font-bold tracking-tight">Connect Hub AI</h1>
+          <h1 className="text-4xl font-bold tracking-tight text-foreground">
+            {t("diagnostics.twilio.title")}
+          </h1>
           <p className="text-lg text-muted-foreground">
-            Premium Voice Gateway for PIB
+            {t("diagnostics.twilio.subtitle")}
           </p>
         </div>
         <div
+          role="status"
           className={`px-4 py-2 rounded-full text-xs font-bold border ${
-            sdkStatus.startsWith("Online")
-              ? "bg-green-500/10 text-green-500 border-green-500/20"
-              : "bg-red-500/10 text-red-500 border-red-500/20"
+            sdkOnline
+              ? "bg-status-success/10 text-status-success border-status-success/20"
+              : "bg-status-error/10 text-status-error border-status-error/20"
           }`}
         >
-          SDK: {sdkStatus}
+          {t("diagnostics.twilio.sdkStatus", { status: sdkStatus })}
         </div>
       </div>
 
       {isIncoming && (
-        <Card className="border-primary animate-bounce bg-primary/10">
+        <Card className="border-primary motion-safe:animate-bounce bg-primary/10">
           <CardContent className="p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <PhoneCall className="animate-pulse text-primary" />
-              <span className="font-bold">Incoming Call...</span>
+              <PhoneCall
+                className="motion-safe:animate-pulse text-primary"
+                aria-hidden="true"
+              />
+              <span className="font-bold">
+                {t("diagnostics.twilio.incoming.title")}
+              </span>
             </div>
             <div className="flex gap-2">
               <Button variant="default" onClick={handleAcceptCall}>
-                Accept
+                {t("diagnostics.twilio.incoming.accept")}
               </Button>
               <Button
                 variant="destructive"
                 onClick={() => activeConnection?.ignore()}
               >
-                Ignore
+                {t("diagnostics.twilio.incoming.ignore")}
               </Button>
             </div>
           </CardContent>
@@ -247,8 +260,8 @@ const TwilioDemo = () => {
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" />
-                Security Settings
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                {t("diagnostics.twilio.security.title")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -257,11 +270,10 @@ const TwilioDemo = () => {
                 className="w-full text-xs"
                 onClick={initSDK}
               >
-                Initialize Voice SDK
+                {t("diagnostics.twilio.security.initialize")}
               </Button>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                Initializing the SDK allows your browser to receive calls
-                directly from the Twilio cloud.
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {t("diagnostics.twilio.security.hint")}
               </p>
             </CardContent>
           </Card>
@@ -269,13 +281,13 @@ const TwilioDemo = () => {
           <Card className="bg-muted/50">
             <CardHeader>
               <CardTitle className="text-sm font-medium">
-                Banking Voice
+                {t("diagnostics.twilio.bankingVoice.title")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-3 text-sm text-primary">
-                <Globe className="h-4 w-4" />
-                <span>Arabic (Polly.Zeina)</span>
+                <Globe className="h-4 w-4" aria-hidden="true" />
+                <span>{t("diagnostics.twilio.bankingVoice.value")}</span>
               </div>
             </CardContent>
           </Card>
@@ -286,9 +298,15 @@ const TwilioDemo = () => {
             <Tabs defaultValue="voice">
               <CardHeader className="border-b bg-muted/20">
                 <TabsList className="grid w-full grid-cols-3 max-w-[500px]">
-                  <TabsTrigger value="voice">AI Voice Call</TabsTrigger>
-                  <TabsTrigger value="sms">SMS Test</TabsTrigger>
-                  <TabsTrigger value="chat">AI Chat Test</TabsTrigger>
+                  <TabsTrigger value="voice">
+                    {t("diagnostics.twilio.tabs.voice")}
+                  </TabsTrigger>
+                  <TabsTrigger value="sms">
+                    {t("diagnostics.twilio.tabs.sms")}
+                  </TabsTrigger>
+                  <TabsTrigger value="chat">
+                    {t("diagnostics.twilio.tabs.chat")}
+                  </TabsTrigger>
                 </TabsList>
               </CardHeader>
 
@@ -296,27 +314,37 @@ const TwilioDemo = () => {
                 <TabsContent value="voice">
                   <form onSubmit={handleCall} className="space-y-6">
                     <div className="space-y-3">
-                      <label className="text-sm font-semibold">
-                        Test Inbound/Outbound AI
-                      </label>
+                      <Label htmlFor="twilio-voice-number">
+                        {t("diagnostics.twilio.voice.label")}
+                      </Label>
                       <div className="flex gap-3">
                         <Input
-                          placeholder="+970..."
+                          id="twilio-voice-number"
+                          placeholder={t(
+                            "diagnostics.twilio.voice.placeholder",
+                          )}
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
                           className="text-lg h-12"
                         />
-                        <Button size="lg" className="h-12" disabled={calling}>
+                        <Button
+                          type="submit"
+                          size="lg"
+                          className="h-12"
+                          disabled={calling}
+                        >
                           {calling ? (
-                            <Loader2 className="animate-spin" />
+                            <Loader2
+                              className="animate-spin"
+                              aria-hidden="true"
+                            />
                           ) : (
-                            "Dial Now"
+                            t("diagnostics.twilio.voice.dial")
                           )}
                         </Button>
                       </div>
-                      <p className="text-[10px] text-muted-foreground italic">
-                        To hear the AI, you can call +1 916 659 6816 or use
-                        "Dial Now".
+                      <p className="text-xs text-muted-foreground italic">
+                        {t("diagnostics.twilio.voice.hint")}
                       </p>
                     </div>
                   </form>
@@ -326,29 +354,42 @@ const TwilioDemo = () => {
                   <form onSubmit={handleSms} className="space-y-6">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <label className="text-sm font-semibold">
-                          Recipient Number
-                        </label>
+                        <Label htmlFor="twilio-sms-number">
+                          {t("diagnostics.twilio.sms.recipient")}
+                        </Label>
                         <Input
-                          placeholder="+970..."
+                          id="twilio-sms-number"
+                          placeholder={t(
+                            "diagnostics.twilio.sms.recipientPlaceholder",
+                          )}
                           value={smsNumber}
                           onChange={(e) => setSmsNumber(e.target.value)}
                         />
                       </div>
                       <div className="space-y-2">
-                        <label className="text-sm font-semibold">Message</label>
+                        <Label htmlFor="twilio-sms-body">
+                          {t("diagnostics.twilio.sms.message")}
+                        </Label>
                         <Input
+                          id="twilio-sms-body"
                           value={smsBody}
                           onChange={(e) => setSmsBody(e.target.value)}
                         />
                       </div>
-                      <Button className="w-full h-12" disabled={smsSending}>
+                      <Button
+                        type="submit"
+                        className="w-full h-12"
+                        disabled={smsSending}
+                      >
                         {smsSending ? (
-                          <Loader2 className="animate-spin mr-2" />
+                          <Loader2
+                            className="animate-spin mr-2"
+                            aria-hidden="true"
+                          />
                         ) : (
-                          <Send className="h-4 w-4 mr-2" />
+                          <Send className="h-4 w-4 mr-2" aria-hidden="true" />
                         )}
-                        Send SMS Message
+                        {t("diagnostics.twilio.sms.send")}
                       </Button>
                     </div>
                   </form>
@@ -357,18 +398,27 @@ const TwilioDemo = () => {
                 <TabsContent value="chat">
                   <div className="space-y-4">
                     <div className="flex items-center gap-2 p-2 bg-muted/30 rounded-lg">
-                      <Globe className="h-4 w-4 text-muted-foreground" />
-                      <label className="text-xs font-semibold text-muted-foreground">
-                        Simulate Phone Identity:
-                      </label>
+                      <Globe
+                        className="h-4 w-4 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                      <Label
+                        htmlFor="twilio-chat-phone"
+                        className="text-xs font-semibold text-muted-foreground"
+                      >
+                        {t("diagnostics.twilio.chat.identityLabel")}
+                      </Label>
                       <Input
+                        id="twilio-chat-phone"
                         className="h-8 text-xs w-48"
-                        placeholder="+970..."
+                        placeholder={t(
+                          "diagnostics.twilio.chat.identityPlaceholder",
+                        )}
                         value={chatPhone}
                         onChange={(e) => setChatPhone(e.target.value)}
                       />
-                      <p className="text-[10px] text-muted-foreground italic">
-                        Use +970599123456 for Ali Omar
+                      <p className="text-xs text-muted-foreground italic">
+                        {t("diagnostics.twilio.chat.identityHint")}
                       </p>
                     </div>
                     <div className="h-[400px] border rounded-xl flex flex-col bg-muted/5">
@@ -384,10 +434,7 @@ const TwilioDemo = () => {
                                   ? "bg-primary text-primary-foreground"
                                   : "bg-card border"
                               }`}
-                              style={{
-                                direction:
-                                  msg.role === "assistant" ? "rtl" : "ltr",
-                              }}
+                              dir={msg.role === "assistant" ? "rtl" : "ltr"}
                             >
                               {msg.content}
                             </div>
@@ -399,19 +446,28 @@ const TwilioDemo = () => {
                         className="p-4 border-t flex gap-2"
                       >
                         <Input
-                          placeholder="Ask the AI..."
+                          aria-label={t("diagnostics.twilio.chat.placeholder")}
+                          placeholder={t("diagnostics.twilio.chat.placeholder")}
                           value={chatMessage}
                           onChange={(e) => setChatMessage(e.target.value)}
-                          className="h-11 border-none focus-visible:ring-0"
-                          style={{ direction: "rtl" }}
+                          className="h-11"
+                          dir="rtl"
                         />
                         <Button
                           type="submit"
                           size="icon"
                           className="rounded-full h-11 w-11"
                           disabled={chatLoading}
+                          aria-label={t("diagnostics.twilio.chat.send")}
                         >
-                          <Send className="h-4 w-4" />
+                          {chatLoading ? (
+                            <Loader2
+                              className="h-4 w-4 animate-spin"
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <Send className="h-4 w-4" aria-hidden="true" />
+                          )}
                         </Button>
                       </form>
                     </div>

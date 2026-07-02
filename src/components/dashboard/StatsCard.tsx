@@ -1,6 +1,6 @@
-import { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { LucideIcon, TrendingUp, TrendingDown } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface StatsCardProps {
   title: string;
@@ -43,12 +43,12 @@ export default function StatsCard({
     success: {
       card: "bg-card",
       icon: "bg-chart-success/10 text-chart-success",
-      iconGlow: "shadow-[0_0_20px_hsl(150_60%_45%/0.2)]",
+      iconGlow: "shadow-[0_0_20px_hsl(var(--chart-success)/0.2)]",
     },
     warning: {
       card: "bg-card",
       icon: "bg-chart-warning/10 text-chart-warning",
-      iconGlow: "shadow-[0_0_20px_hsl(35_95%_55%/0.2)]",
+      iconGlow: "shadow-[0_0_20px_hsl(var(--chart-warning)/0.2)]",
     },
   };
 
@@ -100,6 +100,32 @@ export default function StatsCard({
         >
           <Icon className="h-5 w-5" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Loading placeholder for a {@link StatsCard}. It reproduces the card's
+ * footprint — the same radius, border, padding, and elevation tokens — so the
+ * layout does not shift when the real metric resolves (Requirement 12.2).
+ */
+export function StatsCardSkeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "relative rounded-xl border border-border bg-card p-5 shadow-card",
+        className,
+      )}
+      aria-hidden="true"
+    >
+      <div className="flex items-start justify-between">
+        <div className="space-y-3">
+          <Skeleton className="h-4 w-24" />
+          <Skeleton className="h-8 w-16" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+        <Skeleton className="h-11 w-11 rounded-xl" />
       </div>
     </div>
   );

@@ -27,6 +27,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import pibLogo from "@/assets/pib-logo.png";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useTranslation } from "react-i18next";
 
 interface NavItemProps {
   to: string;
@@ -97,6 +98,7 @@ export default function DashboardSidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const { user, userRole, signOut } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const { data: profile } = useQuery({
     queryKey: ["user-profile", user?.id],
@@ -148,7 +150,7 @@ export default function DashboardSidebar() {
     if (profile?.first_name || profile?.last_name) {
       return `${profile.first_name || ""} ${profile.last_name || ""}`.trim();
     }
-    return user?.email?.split("@")[0] || "User";
+    return user?.email?.split("@")[0] || t("appShell.sidebar.userFallback");
   };
 
   const getUserInitials = () => {
@@ -166,13 +168,13 @@ export default function DashboardSidebar() {
 
   const getRoleLabel = () => {
     const roleLabels: Record<string, string> = {
-      admin: "Administrator",
-      supervisor: "Supervisor",
-      manager: "Manager",
-      agent: "Agent",
-      viewer: "Viewer",
+      admin: t("appShell.roles.admin"),
+      supervisor: t("appShell.roles.supervisor"),
+      manager: t("appShell.roles.manager"),
+      agent: t("appShell.roles.agent"),
+      viewer: t("appShell.roles.viewer"),
     };
-    return roleLabels[userRole || "viewer"] || "User";
+    return roleLabels[userRole || "viewer"] || t("appShell.roles.user");
   };
 
   // Define all navigation items with real badge counts
@@ -180,32 +182,32 @@ export default function DashboardSidebar() {
     {
       to: "/dashboard",
       icon: LayoutDashboard,
-      label: "Dashboard",
+      label: t("appShell.nav.dashboard"),
       roles: ["admin", "supervisor", "manager", "viewer"],
     },
     {
       to: "/sessions",
       icon: Headphones,
-      label: "Active AI Sessions",
+      label: t("appShell.nav.sessions"),
       badge: activeSessionsCount || 0,
       roles: ["admin", "supervisor", "manager", "agent", "viewer"],
     },
     {
       to: "/queue",
       icon: Inbox,
-      label: "Escalation Queue",
+      label: t("appShell.nav.queue"),
       roles: ["admin", "supervisor", "manager", "agent"],
     },
     {
       to: "/employees",
       icon: Users,
-      label: "Employees",
+      label: t("appShell.nav.employees"),
       roles: ["admin", "supervisor", "manager"],
     },
     {
       to: "/analytics",
       icon: BarChart3,
-      label: "Analytics",
+      label: t("appShell.nav.analytics"),
       roles: ["admin", "supervisor", "manager"],
     },
   ];
@@ -214,32 +216,32 @@ export default function DashboardSidebar() {
     {
       to: "/notifications",
       icon: Bell,
-      label: "Notifications",
+      label: t("appShell.nav.notifications"),
       badge: unreadNotifications || 0,
       roles: ["admin", "supervisor", "manager", "agent", "viewer"],
     },
     {
       to: "/shortcuts",
       icon: Zap,
-      label: "Chat Shortcuts",
+      label: t("appShell.nav.shortcuts"),
       roles: ["admin", "supervisor", "manager", "agent"],
     },
     {
       to: "/knowledge",
       icon: BookOpen,
-      label: "Knowledge Base",
+      label: t("appShell.nav.knowledge"),
       roles: ["admin", "supervisor", "manager"],
     },
     {
       to: "/backend-test",
       icon: FlaskConical,
-      label: "Backend Tester",
+      label: t("appShell.nav.backendTest"),
       roles: ["admin", "supervisor", "manager"],
     },
     {
       to: "/settings",
       icon: Settings,
-      label: "Settings",
+      label: t("appShell.nav.settings"),
       roles: ["admin", "supervisor", "manager"],
     },
   ];
@@ -269,16 +271,16 @@ export default function DashboardSidebar() {
       >
         <img
           src={pibLogo}
-          alt="PIB Logo"
+          alt={t("appShell.sidebar.logoAlt")}
           className="h-10 w-10 object-contain"
         />
         {!collapsed && (
           <div className="flex flex-col">
             <span className="font-display font-bold text-sm text-sidebar-foreground leading-tight">
-              Palestinian Islamic
+              {t("appShell.sidebar.bankNameLine1")}
             </span>
             <span className="font-display font-bold text-sm text-sidebar-primary leading-tight">
-              Bank
+              {t("appShell.sidebar.bankNameLine2")}
             </span>
           </div>
         )}
@@ -332,7 +334,7 @@ export default function DashboardSidebar() {
               size="icon"
               className="h-8 w-8 text-sidebar-foreground/60 hover:text-sidebar-foreground"
               onClick={handleSignOut}
-              aria-label="Sign Out"
+              aria-label={t("appShell.sidebar.signOut")}
             >
               <LogOut className="h-4 w-4" />
             </Button>
@@ -343,7 +345,7 @@ export default function DashboardSidebar() {
               <button
                 className="flex items-center justify-center"
                 onClick={handleSignOut}
-                aria-label="Sign Out"
+                aria-label={t("appShell.sidebar.signOut")}
               >
                 <Avatar className="h-9 w-9 border border-sidebar-border shadow-sm hover:ring-2 hover:ring-sidebar-primary transition-all">
                   <AvatarImage
@@ -370,7 +372,11 @@ export default function DashboardSidebar() {
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
-          aria-label={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          aria-label={
+            collapsed
+              ? t("appShell.sidebar.expandSidebar")
+              : t("appShell.sidebar.collapseSidebar")
+          }
           className={cn(
             "w-full text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent",
             collapsed && "justify-center",
@@ -381,7 +387,7 @@ export default function DashboardSidebar() {
           ) : (
             <>
               <ChevronLeft className="h-4 w-4" />
-              <span>Collapse</span>
+              <span>{t("appShell.sidebar.collapse")}</span>
             </>
           )}
         </Button>

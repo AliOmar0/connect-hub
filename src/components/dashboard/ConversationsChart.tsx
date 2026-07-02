@@ -8,6 +8,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useDirection } from "@/hooks/use-direction";
 
 interface ConversationsChartProps {
   data?: Array<{ name: string; messages: number; calls: number }>;
@@ -45,6 +46,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
 export default function ConversationsChart({
   data = [],
 }: ConversationsChartProps) {
+  const isRtl = useDirection() === "rtl";
   const chartData =
     data.length > 0
       ? data
@@ -65,11 +67,11 @@ export default function ConversationsChart({
           Weekly Activity
           <div className="flex items-center gap-4 text-sm font-normal">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-gradient-to-r from-navy to-navy-light" />
+              <div className="w-3 h-3 rounded-full bg-chart-primary" />
               <span className="text-muted-foreground">Messages</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-gradient-to-r from-gold to-gold-light" />
+              <div className="w-3 h-3 rounded-full bg-chart-secondary" />
               <span className="text-muted-foreground">Calls</span>
             </div>
           </div>
@@ -92,24 +94,24 @@ export default function ConversationsChart({
                 >
                   <stop
                     offset="5%"
-                    stopColor="hsl(220, 55%, 35%)"
+                    stopColor="hsl(var(--chart-primary))"
                     stopOpacity={0.4}
                   />
                   <stop
                     offset="95%"
-                    stopColor="hsl(220, 55%, 35%)"
+                    stopColor="hsl(var(--chart-primary))"
                     stopOpacity={0}
                   />
                 </linearGradient>
                 <linearGradient id="callsGradient" x1="0" y1="0" x2="0" y2="1">
                   <stop
                     offset="5%"
-                    stopColor="hsl(45, 95%, 55%)"
+                    stopColor="hsl(var(--chart-secondary))"
                     stopOpacity={0.4}
                   />
                   <stop
                     offset="95%"
-                    stopColor="hsl(45, 95%, 55%)"
+                    stopColor="hsl(var(--chart-secondary))"
                     stopOpacity={0}
                   />
                 </linearGradient>
@@ -121,11 +123,13 @@ export default function ConversationsChart({
               />
               <XAxis
                 dataKey="name"
+                reversed={isRtl}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
               />
               <YAxis
+                orientation={isRtl ? "right" : "left"}
                 axisLine={false}
                 tickLine={false}
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
@@ -134,7 +138,7 @@ export default function ConversationsChart({
               <Area
                 type="monotone"
                 dataKey="messages"
-                stroke="hsl(220, 55%, 35%)"
+                stroke="hsl(var(--chart-primary))"
                 strokeWidth={2}
                 fill="url(#messagesGradient)"
                 animationDuration={1500}
@@ -142,7 +146,7 @@ export default function ConversationsChart({
               <Area
                 type="monotone"
                 dataKey="calls"
-                stroke="hsl(45, 95%, 55%)"
+                stroke="hsl(var(--chart-secondary))"
                 strokeWidth={2}
                 fill="url(#callsGradient)"
                 animationDuration={1500}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import EmployeeCard from "@/components/employees/EmployeeCard";
@@ -15,6 +16,16 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -23,25 +34,50 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Search, Plus, Users, Star, Upload, Camera } from "lucide-react";
-import { toast } from "sonner";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { LiveRegion } from "@/components/ui/live-region";
+import {
+  Search,
+  Plus,
+  Users,
+  Star,
+  Upload,
+  Camera,
+  Loader2,
+} from "lucide-react";
+import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAuth } from "@/hooks/useAuth";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AppRole } from "@/types/database";
-import { Loader2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import type { ViewStatus } from "@/types/presentation";
 
 export default function EmployeesPage() {
+  const { t } = useTranslation();
   const { userRole } = useAuth();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  // Human-readable failure surfaced inside the create/edit dialog. Rendered via
+  // an ErrorState (role="alert") so it is announced to AT, while the form's own
+  // state retains the user's entered values (Requirement 18.4).
+  const [formError, setFormError] = useState<string | null>(null);
+  // Employee pending explicit delete confirmation (Requirement 18.8).
+  const [employeeToDelete, setEmployeeToDelete] = useState<Employee | null>(
+    null,
+  );
 
   const canManage =
     userRole === "admin" || userRole === "supervisor" || userRole === "manager";
 
-  const { data: employees, isLoading } = useQuery({
+  const {
+    data: employees,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["employees"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -49,10 +85,7 @@ export default function EmployeesPage() {
         .select("*, profile:profiles(*)")
         .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Error fetching employees:", error);
-        return [];
-      }
+      if (error) throw error;
 
       return (data || []) as Array<Employee & { profile?: Profile }>;
     },
@@ -84,11 +117,14 @@ export default function EmployeesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
-      toast.success("Employee created successfully");
+      notifySuccess(t("employees.toasts.createdSuccess"));
+      setFormError(null);
       setIsDialogOpen(false);
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Failed to create employee");
+      const message = error.message || t("employees.toasts.createFailed");
+      setFormError(message);
+      notifyError(message);
     },
   });
 
@@ -103,12 +139,15 @@ export default function EmployeesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
-      toast.success("Employee updated successfully");
+      notifySuccess(t("employees.toasts.updatedSuccess"));
+      setFormError(null);
       setIsDialogOpen(false);
       setEditingEmployee(null);
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Failed to update employee");
+      const message = error.message || t("employees.toasts.updateFailed");
+      setFormError(message);
+      notifyError(message);
     },
   });
 
@@ -119,10 +158,11 @@ export default function EmployeesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["employees"] });
-      toast.success("Employee deleted successfully");
+      notifySuccess(t("employees.toasts.deletedSuccess"));
+      setEmployeeToDelete(null);
     },
     onError: (error: Error) => {
-      toast.error(error.message || "Failed to delete employee");
+      notifyError(error.message || t("employees.toasts.deleteFailed"));
     },
   });
 
@@ -140,15 +180,26 @@ export default function EmployeesPage() {
   });
 
   const handleEdit = (employee: Employee) => {
+    setFormError(null);
     setEditingEmployee(employee);
     setIsDialogOpen(true);
   };
 
+  // Opening the delete dialog only stages the record; the deletion itself is
+  // performed once the user explicitly confirms (Requirement 18.8).
   const handleDelete = (employee: Employee) => {
-    if (confirm(`Are you sure you want to delete this employee?`)) {
-      deleteMutation.mutate(employee.id);
-    }
+    setEmployeeToDelete(employee);
   };
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending;
+
+  const listStatus: ViewStatus = isError
+    ? "error"
+    : isLoading
+      ? "loading"
+      : filteredEmployees && filteredEmployees.length > 0
+        ? "loaded"
+        : "empty";
 
   return (
     <DashboardLayout>
@@ -156,30 +207,41 @@ export default function EmployeesPage() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-3xl font-display font-bold tracking-tight text-primary">
-              Employee Management
+              {t("employees.title")}
             </h1>
-            <p className="text-muted-foreground">
-              Manage your team, roles, and individual permissions.
-            </p>
+            <p className="text-muted-foreground">{t("employees.subtitle")}</p>
           </div>
           {canManage && (
             <div className="flex gap-3">
               <CreateUserDialog />
-              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <Dialog
+                open={isDialogOpen}
+                onOpenChange={(open) => {
+                  setIsDialogOpen(open);
+                  setFormError(null);
+                  if (!open) setEditingEmployee(null);
+                }}
+              >
                 <DialogTrigger asChild>
                   <Button
                     variant="outline"
                     className="border-primary/20 hover:bg-primary/5"
                   >
-                    <Plus className="h-4 w-4 mr-2 text-primary" />
-                    Add Employee
+                    <Plus
+                      className="h-4 w-4 me-2 text-primary"
+                      aria-hidden="true"
+                    />
+                    {t("employees.addEmployee")}
                   </Button>
                 </DialogTrigger>
                 <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                   <EmployeeForm
                     employee={editingEmployee}
                     profiles={profiles || []}
+                    isSubmitting={isSubmitting}
+                    submitError={formError}
                     onSubmit={(data) => {
+                      setFormError(null);
                       if (editingEmployee) {
                         updateMutation.mutate({
                           id: editingEmployee.id,
@@ -192,6 +254,7 @@ export default function EmployeesPage() {
                     onCancel={() => {
                       setIsDialogOpen(false);
                       setEditingEmployee(null);
+                      setFormError(null);
                     }}
                   />
                 </DialogContent>
@@ -206,39 +269,39 @@ export default function EmployeesPage() {
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  Total Team
+                  {t("employees.stats.totalTeam")}
                 </p>
                 <h4 className="text-2xl font-bold text-primary">
                   {employees?.length || 0}
                 </h4>
               </div>
               <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                <Users className="h-5 w-5" />
+                <Users className="h-5 w-5" aria-hidden="true" />
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-green-500/5 border-green-500/10 shadow-sm">
+          <Card className="bg-status-success/5 border-status-success/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  Active Now
+                  {t("employees.stats.activeNow")}
                 </p>
-                <h4 className="text-2xl font-bold text-green-600">
+                <h4 className="text-2xl font-bold text-status-success">
                   {employees?.filter((e) => e.is_active).length || 0}
                 </h4>
               </div>
-              <div className="h-10 w-10 bg-green-500/10 rounded-xl flex items-center justify-center text-green-600">
-                <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
+              <div className="h-10 w-10 bg-status-success/10 rounded-xl flex items-center justify-center text-status-success">
+                <div className="w-2.5 h-2.5 rounded-full bg-status-success motion-safe:animate-pulse" />
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-yellow-500/5 border-yellow-500/10 shadow-sm">
+          <Card className="bg-status-warning/5 border-status-warning/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  Avg Performance
+                  {t("employees.stats.avgPerformance")}
                 </p>
-                <h4 className="text-2xl font-bold text-yellow-600">
+                <h4 className="text-2xl font-bold text-status-warning-foreground">
                   {employees && employees.length > 0
                     ? (
                         (employees.reduce(
@@ -252,54 +315,67 @@ export default function EmployeesPage() {
                   %
                 </h4>
               </div>
-              <div className="h-10 w-10 bg-yellow-500/10 rounded-xl flex items-center justify-center text-yellow-600">
-                <Star className="h-5 w-5 fill-yellow-600" />
+              <div className="h-10 w-10 bg-status-warning/10 rounded-xl flex items-center justify-center text-status-warning-foreground">
+                <Star className="h-5 w-5 fill-current" aria-hidden="true" />
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-blue-500/5 border-blue-500/10 shadow-sm">
+          <Card className="bg-status-info/5 border-status-info/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  Active Depts
+                  {t("employees.stats.activeDepts")}
                 </p>
-                <h4 className="text-2xl font-bold text-blue-600">
+                <h4 className="text-2xl font-bold text-status-info-foreground">
                   {new Set(employees?.map((e) => e.department).filter(Boolean))
                     .size || 0}
                 </h4>
               </div>
-              <div className="h-10 w-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-600">
-                <Users className="h-5 w-5" />
+              <div className="h-10 w-10 bg-status-info/10 rounded-xl flex items-center justify-center text-status-info-foreground">
+                <Users className="h-5 w-5" aria-hidden="true" />
               </div>
             </CardContent>
           </Card>
         </div>
 
         {/* Search */}
-        <Card className="border-none shadow-none bg-transparent">
-          <CardContent className="p-0">
-            <div className="relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors" />
-              <Input
-                placeholder="Search employees by name, code, or department..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-12 h-14 bg-card border-border/40 shadow-sm text-lg focus-visible:ring-primary/20 rounded-2xl"
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <div className="relative group">
+          <Search
+            className="absolute start-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors"
+            aria-hidden="true"
+          />
+          <Label htmlFor="employee-search" className="sr-only">
+            {t("employees.searchLabel")}
+          </Label>
+          <Input
+            id="employee-search"
+            placeholder={t("employees.searchPlaceholder")}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="ps-12 h-14 bg-card border-border/40 shadow-sm text-lg focus-visible:ring-primary/20 rounded-2xl"
+          />
+        </div>
 
-        {/* Employees Grid */}
-        {isLoading ? (
+        {/* Employees Grid — cards stack to a single column below md (768px) so
+            every field is reachable without horizontal scrolling (Req 18.2). */}
+        <AsyncBoundary
+          status={listStatus}
+          skeleton={
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[...Array(6)].map((_, i) => (
+                <Skeleton key={i} className="h-64 rounded-lg" />
+              ))}
+            </div>
+          }
+          onRetry={() => refetch()}
+          emptyTitle={t("employees.emptyTitle")}
+          emptyDescription={t("employees.emptyDescription")}
+          emptyIcon={<Users />}
+          errorTitle={t("employees.errorTitle")}
+          errorDescription={t("employees.errorDescription")}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[...Array(6)].map((_, i) => (
-              <Card key={i} className="h-64 animate-pulse" />
-            ))}
-          </div>
-        ) : filteredEmployees && filteredEmployees.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredEmployees.map((employee) => (
+            {filteredEmployees?.map((employee) => (
               <EmployeeCard
                 key={employee.id}
                 employee={employee}
@@ -308,15 +384,53 @@ export default function EmployeesPage() {
               />
             ))}
           </div>
-        ) : (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <Users className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground">No employees found</p>
-            </CardContent>
-          </Card>
-        )}
+        </AsyncBoundary>
       </div>
+
+      {/* Explicit delete confirmation (Requirement 18.8) with a loading state on
+          the confirm control that blocks duplicate submission (Requirement 18.6). */}
+      <AlertDialog
+        open={employeeToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleteMutation.isPending) setEmployeeToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("employees.delete.title")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("employees.delete.description")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>
+              {t("employees.delete.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deleteMutation.isPending}
+              onClick={(e) => {
+                // Keep the dialog open while the deletion is in flight so the
+                // loading state remains visible.
+                e.preventDefault();
+                if (employeeToDelete)
+                  deleteMutation.mutate(employeeToDelete.id);
+              }}
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2
+                    className="me-2 h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  {t("employees.delete.deleting")}
+                </>
+              ) : (
+                t("employees.delete.confirm")
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DashboardLayout>
   );
 }
@@ -324,14 +438,19 @@ export default function EmployeesPage() {
 function EmployeeForm({
   employee,
   profiles,
+  isSubmitting,
+  submitError,
   onSubmit,
   onCancel,
 }: {
   employee?: Employee | null;
   profiles: Profile[];
+  isSubmitting: boolean;
+  submitError?: string | null;
   onSubmit: (data: Partial<Employee>) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     profile_id: employee?.profile_id || "",
     employee_code: employee?.employee_code || "",
@@ -346,6 +465,12 @@ function EmployeeForm({
     employee?.profile?.avatar_url || "",
   );
   const [uploading, setUploading] = useState(false);
+  // Upload-step failures surfaced inline (announced via role="alert").
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const busy = uploading || isSubmitting;
+  // Precedence: a mutation failure from the parent, else a local upload failure.
+  const errorMessage = submitError ?? uploadError;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -365,6 +490,9 @@ function EmployeeForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Prevent duplicate submission while a save/upload is in flight (Req 18.6).
+    if (busy) return;
+    setUploadError(null);
     setUploading(true);
 
     try {
@@ -374,7 +502,7 @@ function EmployeeForm({
         const fileExt = selectedFile.name.split(".").pop();
         const filePath = `${formData.profile_id}/${Math.random()}.${fileExt}`;
 
-        const { error: uploadError, data } = await supabase.storage
+        const { error: uploadError } = await supabase.storage
           .from("avatars")
           .upload(filePath, selectedFile, { upsert: true });
 
@@ -397,7 +525,12 @@ function EmployeeForm({
 
       onSubmit(formData);
     } catch (error) {
-      toast.error("Failed to upload image");
+      const message =
+        error instanceof Error && error.message
+          ? error.message
+          : t("employees.form.uploadFailed");
+      setUploadError(message);
+      notifyError(message);
       console.error(error);
     } finally {
       setUploading(false);
@@ -416,56 +549,75 @@ function EmployeeForm({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>{employee ? "Edit Employee" : "Add Employee"}</DialogTitle>
+        <DialogTitle>
+          {employee
+            ? t("employees.form.editTitle")
+            : t("employees.form.addTitle")}
+        </DialogTitle>
         <DialogDescription>
           {employee
-            ? "Update employee information and settings."
-            : "Create a new employee record and link it to a user profile."}
+            ? t("employees.form.editDescription")
+            : t("employees.form.addDescription")}
         </DialogDescription>
       </DialogHeader>
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Operation-failure error, announced to AT (role="alert") while the
+            entered values above remain intact (Requirement 18.4). */}
+        {errorMessage ? (
+          <div
+            role="alert"
+            className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          >
+            <p className="font-semibold">{t("employees.form.errorTitle")}</p>
+            <p className="text-destructive/90">{errorMessage}</p>
+          </div>
+        ) : null}
+
         <div className="flex flex-col items-center gap-4 py-4 bg-muted/30 rounded-2xl border border-dashed border-border/60">
           <div className="relative group">
             <Avatar className="h-24 w-24 ring-4 ring-background shadow-md">
               <AvatarImage src={previewUrl} />
               <AvatarFallback className="bg-primary/10 text-primary text-xl font-bold">
                 {employee?.profile?.first_name?.charAt(0) || (
-                  <Camera className="h-8 w-8 opacity-40" />
+                  <Camera className="h-8 w-8 opacity-40" aria-hidden="true" />
                 )}
               </AvatarFallback>
             </Avatar>
             <Label
               htmlFor="avatar-upload"
-              className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity cursor-pointer"
             >
-              <Upload className="h-6 w-6" />
+              <Upload className="h-6 w-6" aria-hidden="true" />
+              <span className="sr-only">{t("employees.form.uploadPhoto")}</span>
             </Label>
             <input
               id="avatar-upload"
               type="file"
               accept="image/*"
               onChange={handleFileChange}
-              className="hidden"
+              className="sr-only"
             />
           </div>
           <div className="text-center">
-            <p className="text-sm font-semibold">Employee Photo</p>
+            <p className="text-sm font-semibold">
+              {t("employees.form.photoTitle")}
+            </p>
             <p className="text-xs text-muted-foreground">
-              Click to upload or drag and drop
+              {t("employees.form.photoHint")}
             </p>
           </div>
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="profile_id">User Profile</Label>
+          <Label htmlFor="profile_id">{t("employees.form.userProfile")}</Label>
           <Select
             value={formData.profile_id}
             onValueChange={(value) =>
               setFormData((prev) => ({ ...prev, profile_id: value }))
             }
           >
-            <SelectTrigger>
-              <SelectValue placeholder="Select a user profile" />
+            <SelectTrigger id="profile_id">
+              <SelectValue placeholder={t("employees.form.selectProfile")} />
             </SelectTrigger>
             <SelectContent>
               {profiles.map((profile) => (
@@ -478,7 +630,9 @@ function EmployeeForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="employee_code">Employee Code</Label>
+          <Label htmlFor="employee_code">
+            {t("employees.form.employeeCode")}
+          </Label>
           <Input
             id="employee_code"
             value={formData.employee_code}
@@ -493,7 +647,7 @@ function EmployeeForm({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="department">Department</Label>
+          <Label htmlFor="department">{t("employees.form.department")}</Label>
           <Input
             id="department"
             value={formData.department}
@@ -506,7 +660,9 @@ function EmployeeForm({
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="shift_start">Shift Start</Label>
+            <Label htmlFor="shift_start">
+              {t("employees.form.shiftStart")}
+            </Label>
             <Input
               id="shift_start"
               type="time"
@@ -520,7 +676,7 @@ function EmployeeForm({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="shift_end">Shift End</Label>
+            <Label htmlFor="shift_end">{t("employees.form.shiftEnd")}</Label>
             <Input
               id="shift_end"
               type="time"
@@ -533,7 +689,7 @@ function EmployeeForm({
         </div>
 
         <div className="space-y-2">
-          <Label>Assigned Channels</Label>
+          <Label>{t("employees.form.assignedChannels")}</Label>
           <div className="grid grid-cols-2 gap-2">
             {channels.map((channel) => (
               <div key={channel} className="flex items-center space-x-2">
@@ -544,9 +700,9 @@ function EmployeeForm({
                 />
                 <Label
                   htmlFor={channel}
-                  className="text-sm font-normal capitalize cursor-pointer"
+                  className="text-sm font-normal cursor-pointer"
                 >
-                  {channel}
+                  {t(`sessions.channels.${channel}`)}
                 </Label>
               </div>
             ))}
@@ -568,22 +724,25 @@ function EmployeeForm({
             htmlFor="is_active"
             className="text-sm font-normal cursor-pointer"
           >
-            Active
+            {t("employees.form.active")}
           </Label>
         </div>
 
         <div className="flex justify-end gap-2 pt-4">
           <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
+            {t("common.cancel")}
           </Button>
-          <Button type="submit" disabled={uploading}>
-            {uploading ? (
+          <Button type="submit" disabled={busy}>
+            {busy ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
+                <Loader2
+                  className="me-2 h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
+                {t("employees.form.processing")}
               </>
             ) : (
-              "Save Changes"
+              t("employees.form.saveChanges")
             )}
           </Button>
         </div>
@@ -593,10 +752,11 @@ function EmployeeForm({
 }
 
 function CreateUserDialog() {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [formData, setFormData] = useState({
     email: "",
     password: "",
@@ -618,32 +778,39 @@ function CreateUserDialog() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // Block duplicate submission while a request is in flight (Req 18.6).
+    if (isLoading) return;
 
     if (formData.password !== formData.confirmPassword) {
-      toast.error("Passwords do not match");
+      const msg = t("employees.createDialog.passwordsMismatch");
+      setErrorMessage(msg);
+      notifyError(msg);
       return;
     }
 
     if (formData.password.length < 6) {
-      toast.error("Password must be at least 6 characters");
+      const msg = t("employees.createDialog.passwordTooShort");
+      setErrorMessage(msg);
+      notifyError(msg);
       return;
     }
 
+    setErrorMessage(null);
     setIsLoading(true);
 
     try {
-      // Get the session token
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
       if (!session) {
-        toast.error("You must be logged in to create users");
+        const msg = t("employees.createDialog.mustBeLoggedIn");
+        setErrorMessage(msg);
+        notifyError(msg);
         setIsLoading(false);
         return;
       }
 
-      // Call the Edge Function
       const { data, error } = await supabase.functions.invoke("create-user", {
         body: {
           email: formData.email,
@@ -656,17 +823,16 @@ function CreateUserDialog() {
         },
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      toast.success(
-        `User ${formData.email} created successfully with role ${formData.role}`,
+      notifySuccess(
+        t("employees.createDialog.createdSuccess", {
+          email: formData.email,
+          role: t(`appShell.roles.${formData.role}`),
+        }),
       );
+      setErrorMessage(null);
       setIsOpen(false);
       setFormData({
         email: "",
@@ -679,38 +845,67 @@ function CreateUserDialog() {
         department: "",
       });
 
-      // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: ["profiles"] });
       queryClient.invalidateQueries({ queryKey: ["employees"] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Failed to create user";
-      toast.error(errorMessage);
+      const message =
+        error instanceof Error
+          ? error.message
+          : t("employees.createDialog.createFailed");
+      // Retain the user's entered values and announce the failure (Req 18.4).
+      setErrorMessage(message);
+      notifyError(message);
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={(open) => {
+        setIsOpen(open);
+        if (!open) setErrorMessage(null);
+      }}
+    >
       <DialogTrigger asChild>
         <Button>
-          <Plus className="h-4 w-4 mr-2" />
-          Create User
+          <Plus className="h-4 w-4 me-2" aria-hidden="true" />
+          {t("employees.createUser")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create New User</DialogTitle>
+          <DialogTitle>{t("employees.createDialog.title")}</DialogTitle>
           <DialogDescription>
-            Create a new user account with email, password, and assign their
-            role and permissions.
+            {t("employees.createDialog.description")}
           </DialogDescription>
         </DialogHeader>
+        {/* Live region ensures the failure is announced to AT within 1s even
+            though the ErrorState below also carries role="alert" (Req 18.4). */}
+        <LiveRegion
+          message={errorMessage ?? ""}
+          politeness="assertive"
+          role="alert"
+        />
         <form onSubmit={handleSubmit} className="space-y-4">
+          {errorMessage ? (
+            <div
+              role="alert"
+              className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+            >
+              <p className="font-semibold">
+                {t("employees.createDialog.errorTitle")}
+              </p>
+              <p className="text-destructive/90">{errorMessage}</p>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="first_name">First Name</Label>
+              <Label htmlFor="first_name">
+                {t("employees.createDialog.firstName")}
+              </Label>
               <Input
                 id="first_name"
                 value={formData.first_name}
@@ -724,7 +919,9 @@ function CreateUserDialog() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="last_name">Last Name</Label>
+              <Label htmlFor="last_name">
+                {t("employees.createDialog.lastName")}
+              </Label>
               <Input
                 id="last_name"
                 value={formData.last_name}
@@ -740,7 +937,7 @@ function CreateUserDialog() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">Email *</Label>
+            <Label htmlFor="email">{t("employees.createDialog.email")} *</Label>
             <Input
               id="email"
               type="email"
@@ -755,7 +952,9 @@ function CreateUserDialog() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="password">Password *</Label>
+              <Label htmlFor="password">
+                {t("employees.createDialog.password")} *
+              </Label>
               <Input
                 id="password"
                 type="password"
@@ -769,7 +968,9 @@ function CreateUserDialog() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password *</Label>
+              <Label htmlFor="confirmPassword">
+                {t("employees.createDialog.confirmPassword")} *
+              </Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -788,20 +989,20 @@ function CreateUserDialog() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="role">Role *</Label>
+            <Label htmlFor="role">{t("employees.createDialog.role")} *</Label>
             <Select
               value={formData.role}
               onValueChange={(value) =>
                 setFormData((prev) => ({ ...prev, role: value as AppRole }))
               }
             >
-              <SelectTrigger>
+              <SelectTrigger id="role">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {roles.map((role) => (
                   <SelectItem key={role} value={role}>
-                    {role.charAt(0).toUpperCase() + role.slice(1)}
+                    {t(`appShell.roles.${role}`)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -810,7 +1011,7 @@ function CreateUserDialog() {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
+              <Label htmlFor="phone">{t("employees.createDialog.phone")}</Label>
               <Input
                 id="phone"
                 type="tel"
@@ -822,9 +1023,11 @@ function CreateUserDialog() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="department">Department</Label>
+              <Label htmlFor="create_department">
+                {t("employees.createDialog.department")}
+              </Label>
               <Input
-                id="department"
+                id="create_department"
                 value={formData.department}
                 onChange={(e) =>
                   setFormData((prev) => ({
@@ -844,16 +1047,19 @@ function CreateUserDialog() {
               onClick={() => setIsOpen(false)}
               disabled={isLoading}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button type="submit" disabled={isLoading}>
               {isLoading ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating...
+                  <Loader2
+                    className="me-2 h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  {t("employees.createDialog.creating")}
                 </>
               ) : (
-                "Create User"
+                t("employees.createDialog.submit")
               )}
             </Button>
           </div>

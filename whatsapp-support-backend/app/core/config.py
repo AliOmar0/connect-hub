@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     # When unset, signature verification is skipped (logs a warning) so local/dev
     # setups keep working; set it in production to reject forged webhook calls.
     WHATSAPP_APP_SECRET: Optional[str] = None
+
+    # Set to False to skip signature verification entirely (local dev / simulators).
+    # Must be True in production when WHATSAPP_APP_SECRET is also set.
+    WHATSAPP_VERIFY_SIGNATURE: bool = True
     
     # App
     BACKEND_CORS_ORIGINS: List[str] = ["*"]

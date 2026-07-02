@@ -18,10 +18,13 @@ import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { Notification } from "@/types/database";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useTranslation } from "react-i18next";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 
 export default function DashboardHeader() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   // Fetch real notification count and recent notifications
   const { data: notifications } = useQuery({
@@ -89,7 +92,7 @@ export default function DashboardHeader() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             type="search"
-            placeholder="Search conversations, employees..."
+            placeholder={t("appShell.header.searchPlaceholder")}
             className="pl-10 bg-secondary/50 border-0 focus-visible:ring-1"
           />
         </div>
@@ -102,17 +105,20 @@ export default function DashboardHeader() {
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-chart-success pulse-green" />
             <span className="text-xs font-medium text-muted-foreground">
-              WhatsApp
+              {t("appShell.header.whatsapp")}
             </span>
           </div>
           <div className="w-px h-4 bg-border" />
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-chart-success pulse-green" />
             <span className="text-xs font-medium text-muted-foreground">
-              Messenger
+              {t("appShell.header.messenger")}
             </span>
           </div>
         </div>
+
+        {/* Language Switcher */}
+        <LanguageSwitcher />
 
         {/* Quick Action: Jump to Active AI Sessions */}
         <Button
@@ -120,7 +126,7 @@ export default function DashboardHeader() {
           size="icon"
           className="relative"
           onClick={() => navigate("/sessions")}
-          aria-label="Active AI Sessions"
+          aria-label={t("appShell.header.activeSessions")}
         >
           <Headphones className="h-4 w-4" />
         </Button>
@@ -132,7 +138,7 @@ export default function DashboardHeader() {
               variant="outline"
               size="icon"
               className="relative"
-              aria-label="Notifications"
+              aria-label={t("appShell.header.notifications")}
             >
               <Bell className="h-4 w-4" />
               {notifications && notifications.count > 0 && (
@@ -144,9 +150,13 @@ export default function DashboardHeader() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
             <DropdownMenuLabel className="flex items-center justify-between">
-              Notifications
+              {t("appShell.header.notifications")}
               {notifications && notifications.count > 0 && (
-                <Badge variant="secondary">{notifications.count} new</Badge>
+                <Badge variant="secondary">
+                  {t("appShell.header.notificationsNew", {
+                    count: notifications.count,
+                  })}
+                </Badge>
               )}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
@@ -197,7 +207,7 @@ export default function DashboardHeader() {
                   disabled
                   className="text-center text-sm text-muted-foreground py-4"
                 >
-                  No new notifications
+                  {t("appShell.header.noNotifications")}
                 </DropdownMenuItem>
               )}
             </div>
@@ -206,7 +216,7 @@ export default function DashboardHeader() {
               className="text-center justify-center text-sm text-primary font-medium"
               onClick={() => navigate("/notifications")}
             >
-              View all notifications
+              {t("appShell.header.viewAllNotifications")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -223,7 +233,7 @@ export default function DashboardHeader() {
             <span className="text-xs text-muted-foreground truncate max-w-[100px]">
               {profile
                 ? `${profile.first_name || ""} ${profile.last_name || ""}`
-                : "Loading..."}
+                : t("appShell.header.loading")}
             </span>
           </div>
 

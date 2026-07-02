@@ -23,10 +23,16 @@ def _verify_whatsapp_signature(raw_body: bytes, signature_header: Optional[str])
     """
     Verify Meta's X-Hub-Signature-256 header against the raw request body.
 
-    Returns True when verification passes OR when no app secret is configured
-    (skip mode for local/dev). Returns False only when a secret is configured
-    and the signature is missing or does not match.
+    Short-circuits to True when WHATSAPP_VERIFY_SIGNATURE=false (dev/local mode).
+    Returns True when verification passes OR when no app secret is configured.
+    Returns False only when a secret is configured and the signature is missing
+    or does not match.
     """
+    # Honour the opt-out flag (set in .env for local/dev environments).
+    if not settings.WHATSAPP_VERIFY_SIGNATURE:
+        logger.debug("Webhook signature verification disabled via WHATSAPP_VERIFY_SIGNATURE=false")
+        return True
+
     app_secret = settings.WHATSAPP_APP_SECRET
     if not app_secret:
         logger.warning(
@@ -34,13 +40,27 @@ def _verify_whatsapp_signature(raw_body: bytes, signature_header: Optional[str])
             "verification. Set it in production to reject forged requests."
         )
         return True
+
     if not signature_header or not signature_header.startswith("sha256="):
+        logger.warning(
+            "Webhook rejected: X-Hub-Signature-256 header missing or malformed. "
+            f"Received: {signature_header!r}"
+        )
         return False
+
     expected = "sha256=" + hmac.new(
         app_secret.encode("utf-8"), raw_body, hashlib.sha256
     ).hexdigest()
-    # Constant-time comparison to avoid timing side channels.
-    return hmac.compare_digest(expected, signature_header)
+
+    match = hmac.compare_digest(expected, signature_header)
+    if not match:
+        logger.warning(
+            "Webhook signature mismatch. "
+            f"Expected prefix: {expected[:20]}... | "
+            f"Received prefix: {signature_header[:20]}... | "
+            "Check that WHATSAPP_APP_SECRET matches your Meta App's App Secret."
+        )
+    return match
 
 
 # In-memory store for OTP sessions (Similar to Node.js backend)
@@ -480,6 +500,10 @@ async def extract_webhook(
             return {"status": "ignored", "reason": "no changes"}
             
         value = changes[0].get("value", {})
+
+        # Extract the phone_number_id Meta used to RECEIVE this message.
+        # This is always the ground truth — the DB config may be stale.
+        webhook_phone_number_id = value.get("metadata", {}).get("phone_number_id")
         
         # Check for messages
         messages = value.get("messages", [])
@@ -586,10 +610,34 @@ async def extract_webhook(
             api_config = await crud.get_api_config(db, ChannelType.whatsapp)
             config_data = {}
             if api_config and api_config.is_active:
+                db_phone_id = api_config.phone_number_id
+                # Always prefer the phone_number_id from the webhook metadata:
+                # it is the ID Meta used to receive this message and the one
+                # that must be used when replying. The DB value may be stale.
+                effective_phone_id = webhook_phone_number_id or db_phone_id
+                if db_phone_id and webhook_phone_number_id and db_phone_id != webhook_phone_number_id:
+                    logger.warning(
+                        f"[Config Mismatch] DB phone_number_id ({db_phone_id}) differs from "
+                        f"webhook metadata phone_number_id ({webhook_phone_number_id}). "
+                        "Using webhook value. Update the DB config to suppress this warning."
+                    )
                 config_data = {
-                    "phone_number_id": api_config.phone_number_id,
+                    "phone_number_id": effective_phone_id,
                     "access_token": api_config.access_token_encrypted
                 }
+            elif webhook_phone_number_id:
+                # DB config missing/inactive but we still have the phone ID from
+                # the webhook — populate it so at least mark-as-read can resolve
+                # the URL correctly (send_text will still fail without a token).
+                config_data = {
+                    "phone_number_id": webhook_phone_number_id,
+                    "access_token": None
+                }
+                logger.warning(
+                    "No active WhatsApp API config found in DB. "
+                    f"Using phone_number_id={webhook_phone_number_id!r} from webhook metadata only. "
+                    "Outbound messages will fail until an access_token is configured."
+                )
             
             # 5. Trigger AI process or Voice Transcription
             if msg_type == "text":

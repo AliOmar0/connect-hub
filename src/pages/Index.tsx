@@ -1,13 +1,16 @@
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import StatsCard from "@/components/dashboard/StatsCard";
+import StatsCard, { StatsCardSkeleton } from "@/components/dashboard/StatsCard";
 import ConversationsChart from "@/components/dashboard/ConversationsChart";
 import ChannelDistributionChart from "@/components/dashboard/ChannelDistributionChart";
 import ActiveSessionsPanel from "@/components/dashboard/ActiveSessionsPanel";
 import EmployeesTable from "@/components/dashboard/EmployeesTable";
 import IntegrationStatus from "@/components/dashboard/IntegrationStatus";
 import ResponseTimeChart from "@/components/dashboard/ResponseTimeChart";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { Skeleton } from "@/components/ui/skeleton";
+import type { ViewStatus } from "@/types/presentation";
 import {
   MessageSquare,
   Phone,
@@ -23,6 +26,7 @@ export default function Index() {
   const {
     data: stats,
     isLoading: statsLoading,
+    isError: statsError,
     refetch: refetchStats,
   } = useQuery({
     queryKey: ["dashboard-stats"],
@@ -135,7 +139,12 @@ export default function Index() {
     },
   });
 
-  const { data: weeklyData } = useQuery({
+  const {
+    data: weeklyData,
+    isLoading: weeklyLoading,
+    isError: weeklyError,
+    refetch: refetchWeekly,
+  } = useQuery({
     queryKey: ["dashboard-weekly"],
     queryFn: async () => {
       const days = [];
@@ -169,7 +178,12 @@ export default function Index() {
     },
   });
 
-  const { data: channelData } = useQuery({
+  const {
+    data: channelData,
+    isLoading: channelLoading,
+    isError: channelError,
+    refetch: refetchChannels,
+  } = useQuery({
     queryKey: ["dashboard-channels"],
     queryFn: async () => {
       const { data: sessions } = await supabase
@@ -197,12 +211,12 @@ export default function Index() {
           value: total > 0 ? Math.round((count / total) * 100) : 0,
           color:
             channel === "whatsapp"
-              ? "hsl(142, 70%, 45%)"
+              ? "hsl(var(--chart-success))"
               : channel === "messenger"
-                ? "hsl(220, 90%, 56%)"
+                ? "hsl(var(--chart-info))"
                 : channel === "voice"
-                  ? "hsl(45, 95%, 50%)"
-                  : "hsl(220, 20%, 70%)",
+                  ? "hsl(var(--chart-warning))"
+                  : "hsl(var(--status-neutral))",
         };
       });
     },
@@ -289,7 +303,12 @@ export default function Index() {
     },
   });
 
-  const { data: responseTimeData } = useQuery({
+  const {
+    data: responseTimeData,
+    isLoading: responseTimeLoading,
+    isError: responseTimeError,
+    refetch: refetchResponseTime,
+  } = useQuery({
     queryKey: ["dashboard-response-time"],
     queryFn: async () => {
       const today = new Date();
@@ -327,6 +346,78 @@ export default function Index() {
     return num.toString();
   };
 
+  const toStatus = (loading: boolean, error: boolean): ViewStatus =>
+    loading ? "loading" : error ? "error" : "loaded";
+
+  const statsStatus = toStatus(statsLoading, statsError);
+
+  // Metric definitions. Each card renders through its own AsyncBoundary so a
+  // load failure surfaces a per-card ErrorState with a retry action
+  // (Requirements 12.2, 12.3), while sharing one set of color/spacing/
+  // typography/radius/elevation tokens via StatsCard (Requirement 12.1).
+  const metricCards = [
+    {
+      key: "messages",
+      title: "Total Messages",
+      value: formatNumber(stats?.messages.count || 0),
+      icon: MessageSquare,
+      trend: stats?.messages.trend
+        ? {
+            value: Math.abs(stats.messages.trend),
+            isPositive: stats.messages.trend > 0,
+          }
+        : undefined,
+      subtitle: "This month",
+      variant: "navy" as const,
+    },
+    {
+      key: "calls",
+      title: "Total Calls",
+      value: formatNumber(stats?.calls.count || 0),
+      icon: Phone,
+      trend: stats?.calls.trend
+        ? {
+            value: Math.abs(stats.calls.trend),
+            isPositive: stats.calls.trend > 0,
+          }
+        : undefined,
+      subtitle: "This month",
+      variant: "gold" as const,
+    },
+    {
+      key: "activeSessions",
+      title: "Active Sessions",
+      value: (stats?.activeSessions || 0).toString(),
+      icon: Headphones,
+      subtitle: "Right now",
+      variant: "success" as const,
+    },
+    {
+      key: "activeAgents",
+      title: "Active Agents",
+      value: (stats?.activeAgents || 0).toString(),
+      icon: Users,
+      subtitle: "Online",
+      variant: "default" as const,
+    },
+    {
+      key: "avgResponse",
+      title: "Avg. Response",
+      value: stats?.avgResponseTime || "0m",
+      icon: Clock,
+      subtitle: "Today",
+      variant: "warning" as const,
+    },
+    {
+      key: "resolutionRate",
+      title: "Resolution Rate",
+      value: `${stats?.resolutionRate || 0}%`,
+      icon: CheckCircle2,
+      subtitle: "This week",
+      variant: "success" as const,
+    },
+  ];
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -337,76 +428,50 @@ export default function Index() {
           </h1>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          <StatsCard
-            title="Total Messages"
-            value={
-              statsLoading ? "..." : formatNumber(stats?.messages.count || 0)
-            }
-            icon={MessageSquare}
-            trend={
-              stats?.messages.trend
-                ? {
-                    value: Math.abs(stats.messages.trend),
-                    isPositive: stats.messages.trend > 0,
-                  }
-                : undefined
-            }
-            subtitle="This month"
-            variant="navy"
-          />
-          <StatsCard
-            title="Total Calls"
-            value={statsLoading ? "..." : formatNumber(stats?.calls.count || 0)}
-            icon={Phone}
-            trend={
-              stats?.calls.trend
-                ? {
-                    value: Math.abs(stats.calls.trend),
-                    isPositive: stats.calls.trend > 0,
-                  }
-                : undefined
-            }
-            subtitle="This month"
-            variant="gold"
-          />
-          <StatsCard
-            title="Active Sessions"
-            value={
-              statsLoading ? "..." : (stats?.activeSessions || 0).toString()
-            }
-            icon={Headphones}
-            subtitle="Right now"
-            variant="success"
-          />
-          <StatsCard
-            title="Active Agents"
-            value={statsLoading ? "..." : (stats?.activeAgents || 0).toString()}
-            icon={Users}
-            subtitle="Online"
-            variant="default"
-          />
-          <StatsCard
-            title="Avg. Response"
-            value={statsLoading ? "..." : stats?.avgResponseTime || "0m"}
-            icon={Clock}
-            subtitle="Today"
-            variant="warning"
-          />
-          <StatsCard
-            title="Resolution Rate"
-            value={statsLoading ? "..." : `${stats?.resolutionRate || 0}%`}
-            icon={CheckCircle2}
-            subtitle="This week"
-            variant="success"
-          />
+        {/*
+          Stats Grid. Single column below 768px per Requirement 12.6 (md = 768).
+          Under RTL the grid mirrors automatically because the container inherits
+          the document direction, so metric-card order follows RTL reading order
+          (Requirement 12.5).
+        */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+          {metricCards.map((card) => (
+            <AsyncBoundary
+              key={card.key}
+              status={statsStatus}
+              skeleton={<StatsCardSkeleton />}
+              onRetry={() => refetchStats()}
+            >
+              <StatsCard
+                title={card.title}
+                value={card.value}
+                icon={card.icon}
+                trend={card.trend}
+                subtitle={card.subtitle}
+                variant={card.variant}
+              />
+            </AsyncBoundary>
+          ))}
         </div>
 
         {/* Main Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <ConversationsChart data={weeklyData || []} />
-          <ChannelDistributionChart data={channelData || []} />
+          <div className="lg:col-span-2">
+            <AsyncBoundary
+              status={toStatus(weeklyLoading, weeklyError)}
+              skeleton={<Skeleton className="h-[360px] w-full rounded-xl" />}
+              onRetry={() => refetchWeekly()}
+            >
+              <ConversationsChart data={weeklyData || []} />
+            </AsyncBoundary>
+          </div>
+          <AsyncBoundary
+            status={toStatus(channelLoading, channelError)}
+            skeleton={<Skeleton className="h-[360px] w-full rounded-xl" />}
+            onRetry={() => refetchChannels()}
+          >
+            <ChannelDistributionChart data={channelData || []} />
+          </AsyncBoundary>
         </div>
 
         {/* Active Sessions & Response Time */}
@@ -414,7 +479,13 @@ export default function Index() {
           <div className="lg:col-span-2">
             <ActiveSessionsPanel sessions={activeSessions || []} />
           </div>
-          <ResponseTimeChart data={responseTimeData || []} />
+          <AsyncBoundary
+            status={toStatus(responseTimeLoading, responseTimeError)}
+            skeleton={<Skeleton className="h-[280px] w-full rounded-xl" />}
+            onRetry={() => refetchResponseTime()}
+          >
+            <ResponseTimeChart data={responseTimeData || []} />
+          </AsyncBoundary>
         </div>
 
         {/* Team & Integrations */}

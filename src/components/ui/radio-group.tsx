@@ -26,7 +26,11 @@ const RadioGroupItem = React.forwardRef<
     <RadioGroupPrimitive.Item
       ref={ref}
       className={cn(
-        "aspect-square h-4 w-4 rounded-full border border-primary text-primary ring-offset-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+        // Token-driven states (Requirements 10.1, 1.2, 3.6, 3.7, 4.2): default
+        // outlined with `--primary`; hover strengthens the border; the selected
+        // indicator fills with the primary token; focus-visible shows the
+        // `--ring` ring; disabled dims. Transition uses `duration-fast`.
+        "aspect-square h-4 w-4 rounded-full border border-primary text-primary ring-offset-background transition-colors duration-fast hover:border-primary/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-[invalid=true]:border-destructive disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...props}

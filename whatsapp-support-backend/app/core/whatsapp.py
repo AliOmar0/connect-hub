@@ -25,6 +25,10 @@ class WhatsAppClient:
             "Content-Type": "application/json"
         }
 
+    def _is_configured(self) -> bool:
+        """Return True only when both credentials are present."""
+        return bool(self.phone_number_id and self.access_token)
+
     async def send_text_message(self, to_phone: str, text: str):
         payload = {
             "messaging_product": "whatsapp",
@@ -94,7 +98,16 @@ class WhatsAppClient:
     async def mark_message_as_read(self, message_id: str):
         """
         Mark a message as read.
+        Silently skips the API call when credentials are not configured to
+        avoid spurious 400 errors from Meta when config_data is empty.
         """
+        if not self._is_configured():
+            logger.debug(
+                "mark_message_as_read skipped: WhatsApp credentials not configured "
+                f"(phone_number_id={self.phone_number_id!r})"
+            )
+            return None
+
         payload = {
             "messaging_product": "whatsapp",
             "status": "read",
@@ -110,6 +123,12 @@ class WhatsAppClient:
                 )
                 response.raise_for_status()
                 return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.warning(
+                    f"WhatsApp Mark as Read Error: {e} "
+                    f"| Response: {e.response.text if e.response else 'N/A'}"
+                )
+                return None
             except httpx.HTTPError as e:
                 logger.warning(f"WhatsApp Mark as Read Error: {e}")
                 return None

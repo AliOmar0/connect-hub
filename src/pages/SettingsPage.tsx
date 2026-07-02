@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
 import TwilioDemo from "@/pages/TwilioDemo";
@@ -19,24 +20,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { toast } from "sonner";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Settings,
   Key,
   Bell,
   Shield,
   Save,
-  User,
-  Mail,
-  Phone,
-  Globe,
   LayoutList,
   Loader2,
   Plus,
@@ -46,8 +36,14 @@ import {
   AlertCircle,
   Search,
   X,
+  Palette,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/components/theme-provider";
+import { notifySuccess, notifyError } from "@/lib/feedback";
+import { useAsyncAction } from "@/hooks/use-async-action";
 import {
   Dialog,
   DialogContent,
@@ -69,6 +65,8 @@ const channels: ChannelType[] = [
 ];
 
 export default function SettingsPage() {
+  const { t } = useTranslation();
+  const { theme, setTheme } = useTheme();
   const { user, userRole } = useAuth();
   const [configs, setConfigs] = useState<
     Record<ChannelType, ApiConfigRow | null>
@@ -142,12 +140,12 @@ export default function SettingsPage() {
 
     if (error) {
       console.error("Error fetching session types:", error);
-      toast.error("Failed to load session types");
+      notifyError(t("settings.sessionTypes.saveFailed"));
     } else {
       setSessionTypes((data as unknown as SessionMainType[]) || []);
     }
     setSessionTypesLoading(false);
-  }, []);
+  }, [t]);
 
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
@@ -171,7 +169,7 @@ export default function SettingsPage() {
     updateData: Record<string, unknown>,
   ) => {
     if (!isAdmin) {
-      toast.error("You must be an admin to modify integrations.");
+      notifyError(t("settings.integrations.adminOnly"));
       return;
     }
 
@@ -198,33 +196,49 @@ export default function SettingsPage() {
 
     if (error) {
       console.error("Error saving configuration:", error);
-      toast.error(`Error saving configuration: ${error.message}`);
+      // Surface a recoverable Error_State; the previously saved config is left
+      // unchanged because we only refetch on success (Requirement 19.4).
+      notifyError(t("settings.saveFailed"), { description: error.message });
       throw error;
     }
 
-    toast.success(`${channel} configuration saved`);
+    notifySuccess(t("settings.integrations.saveSuccess"));
     fetchConfigs();
   };
 
-  const handleSaveProfile = async () => {
-    if (!user?.id || !profile) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({
-        first_name: profile.first_name,
-        last_name: profile.last_name,
-        email: profile.email,
-        phone: profile.phone,
-        department: profile.department,
-      })
-      .eq("user_id", user.id);
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Profile updated successfully");
-    }
-  };
+  // Profile save wrapped in useAsyncAction: presents a loading state on the save
+  // control, blocks duplicate submission while in flight (Requirement 19.6), and
+  // exposes a retry recovery action on failure. Entered values stay in `profile`
+  // state and previously saved settings are only refreshed on success, so a
+  // failure leaves saved settings unchanged (Requirement 19.4).
+  const saveProfileAction = useAsyncAction<[], void>(
+    async () => {
+      if (!user?.id || !profile) return;
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          first_name: profile.first_name,
+          last_name: profile.last_name,
+          email: profile.email,
+          phone: profile.phone,
+          department: profile.department,
+        })
+        .eq("user_id", user.id);
+      if (error) throw new Error(error.message);
+    },
+    {
+      onSuccess: () => notifySuccess(t("settings.profile.saveSuccess")),
+      onError: (err) =>
+        notifyError(t("settings.saveFailed"), {
+          description: err.message,
+          action: {
+            label: t("feedback.retry"),
+            onClick: () => saveProfileAction.retry(),
+          },
+        }),
+    },
+  );
+  const handleSaveProfile = () => saveProfileAction.run();
 
   const [avatarUploading, setAvatarUploading] = useState(false);
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -254,39 +268,56 @@ export default function SettingsPage() {
       if (updateError) throw updateError;
 
       setProfile((prev) => (prev ? { ...prev, avatar_url: publicUrl } : null));
-      toast.success("Profile photo updated");
+      notifySuccess(t("settings.profile.photoSuccess"));
     } catch (error) {
       const err = error as Error;
-      toast.error(err.message || "Failed to update avatar");
+      notifyError(err.message || t("settings.profile.photoFailed"));
     } finally {
       setAvatarUploading(false);
     }
   };
 
-  const handleChangePassword = async () => {
+  // Password change wrapped in useAsyncAction for the loading state and
+  // duplicate-submit prevention (Requirement 19.6). On failure the entered
+  // values are retained (we only clear them on success) and a retry recovery
+  // action is offered (Requirement 19.4).
+  const changePasswordAction = useAsyncAction<[], void>(
+    async () => {
+      const { error } = await supabase.auth.updateUser({
+        password: passwordData.newPassword,
+      });
+      if (error) throw new Error(error.message);
+    },
+    {
+      onSuccess: () => {
+        notifySuccess(t("settings.security.updateSuccess"));
+        setPasswordData({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+      },
+      onError: (err) =>
+        notifyError(t("settings.saveFailed"), {
+          description: err.message,
+          action: {
+            label: t("feedback.retry"),
+            onClick: () => changePasswordAction.retry(),
+          },
+        }),
+    },
+  );
+
+  const handleChangePassword = () => {
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast.error("Passwords do not match");
+      notifyError(t("settings.security.mismatch"));
       return;
     }
     if (passwordData.newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters");
+      notifyError(t("settings.security.tooShort"));
       return;
     }
-
-    const { error } = await supabase.auth.updateUser({
-      password: passwordData.newPassword,
-    });
-
-    if (error) {
-      toast.error(error.message);
-    } else {
-      toast.success("Password updated successfully");
-      setPasswordData({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
-      });
-    }
+    changePasswordAction.run();
   };
 
   const handleSaveNotifPrefs = () => {
@@ -295,7 +326,7 @@ export default function SettingsPage() {
       "notification_preferences",
       JSON.stringify(notifPrefs),
     );
-    toast.success("Notification preferences saved");
+    notifySuccess(t("settings.notifications.saveSuccess"));
   };
 
   const handleAddSessionType = () => {
@@ -310,12 +341,12 @@ export default function SettingsPage() {
 
   const handleSaveSessionType = async () => {
     if (!isAdmin) {
-      toast.error("You must be an admin to manage session types.");
+      notifyError(t("settings.sessionTypes.adminOnlyManage"));
       return;
     }
 
     if (!editingType?.name?.trim()) {
-      toast.error("Name is required");
+      notifyError(t("settings.sessionTypes.nameRequired"));
       return;
     }
 
@@ -345,9 +376,15 @@ export default function SettingsPage() {
 
     if (error) {
       console.error("Error saving session type:", error);
-      toast.error("Failed to save session type");
+      notifyError(t("settings.sessionTypes.saveFailed"), {
+        description: error.message,
+      });
     } else {
-      toast.success(id ? "Updated successfully" : "Added successfully");
+      notifySuccess(
+        id
+          ? t("settings.sessionTypes.updateSuccess")
+          : t("settings.sessionTypes.createSuccess"),
+      );
       setIsTypeDialogOpen(false);
       setEditingType(null);
       fetchSessionTypes();
@@ -356,15 +393,11 @@ export default function SettingsPage() {
 
   const handleDeleteSessionType = async (id: string) => {
     if (!isAdmin) {
-      toast.error("You must be an admin to delete session types.");
+      notifyError(t("settings.sessionTypes.adminOnlyDelete"));
       return;
     }
 
-    if (
-      !confirm(
-        "Are you sure you want to delete this session type? This might affect existing sessions.",
-      )
-    ) {
+    if (!confirm(t("settings.sessionTypes.deleteConfirm"))) {
       return;
     }
 
@@ -375,9 +408,11 @@ export default function SettingsPage() {
 
     if (error) {
       console.error("Error deleting session type:", error);
-      toast.error("Failed to delete session type");
+      notifyError(t("settings.sessionTypes.deleteFailed"), {
+        description: error.message,
+      });
     } else {
-      toast.success("Session type deleted successfully");
+      notifySuccess(t("settings.sessionTypes.deleteSuccess"));
       fetchSessionTypes();
     }
   };
@@ -390,7 +425,7 @@ export default function SettingsPage() {
 
   const handleSendTestSms = async () => {
     if (!smsData.to || !smsData.message) {
-      toast.error("Please provide both a phone number and a message");
+      notifyError(t("settings.integrations.smsMissingFields"));
       return;
     }
     setSmsSending(true);
@@ -402,13 +437,17 @@ export default function SettingsPage() {
       });
       const data = await response.json();
       if (response.ok) {
-        toast.success(`SMS sent successfully! SID: ${data.sid}`);
+        notifySuccess(t("settings.integrations.smsSuccess"), {
+          description: `SID: ${data.sid}`,
+        });
       } else {
         throw new Error(data.error);
       }
     } catch (err: unknown) {
       const error = err as Error;
-      toast.error(`Failed to send SMS: ${error.message}`);
+      notifyError(t("settings.integrations.smsFailed"), {
+        description: error.message,
+      });
     } finally {
       setSmsSending(false);
     }
@@ -420,7 +459,7 @@ export default function SettingsPage() {
         const response = await fetch("http://localhost:3001/api/token");
         const data = await response.json();
         if (response.ok && data.token) {
-          toast.success("Voice Gateway is Online and Ready");
+          notifySuccess("Voice Gateway is Online and Ready");
           return true;
         } else {
           throw new Error(data.error || "Failed to get token");
@@ -429,7 +468,7 @@ export default function SettingsPage() {
         // Simple health check or ping
         const response = await fetch("http://localhost:3001/");
         if (response.ok) {
-          toast.success("SMS Gateway Server is Responsive");
+          notifySuccess("SMS Gateway Server is Responsive");
           return true;
         } else {
           throw new Error("Gateway server unreachable");
@@ -441,7 +480,7 @@ export default function SettingsPage() {
         // Vercel app this can't reach your local backend.
         const response = await fetch("http://localhost:5000/health");
         if (response.ok) {
-          toast.success("WhatsApp Backend is Online");
+          notifySuccess("WhatsApp Backend is Online");
           return true;
         } else {
           throw new Error("WhatsApp backend unreachable");
@@ -450,7 +489,7 @@ export default function SettingsPage() {
       return false;
     } catch (err: unknown) {
       const error = err as Error;
-      toast.error(`Test failed: ${error.message}`);
+      notifyError(`Test failed: ${error.message}`);
       return false;
     }
   };
@@ -460,48 +499,51 @@ export default function SettingsPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-display font-bold tracking-tight">
-            Settings
+            {t("settings.title")}
           </h1>
-          <p className="text-muted-foreground">
-            Configure integrations, API keys, and system preferences.
-          </p>
+          <p className="text-muted-foreground">{t("settings.subtitle")}</p>
         </div>
 
         <Tabs defaultValue="integrations" className="space-y-6">
           <TabsList>
             <TabsTrigger value="integrations" className="gap-2">
-              <Key className="h-4 w-4" />
-              Integrations
+              <Key className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.integrations")}
             </TabsTrigger>
             <TabsTrigger value="notifications" className="gap-2">
-              <Bell className="h-4 w-4" />
-              Notifications
+              <Bell className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.notifications")}
             </TabsTrigger>
             <TabsTrigger value="security" className="gap-2">
-              <Shield className="h-4 w-4" />
-              Security
+              <Shield className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.security")}
+            </TabsTrigger>
+            <TabsTrigger value="appearance" className="gap-2">
+              <Palette className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.appearance")}
             </TabsTrigger>
             <TabsTrigger value="general" className="gap-2">
-              <Settings className="h-4 w-4" />
-              General
+              <Settings className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.general")}
             </TabsTrigger>
             <TabsTrigger value="session-types" className="gap-2">
-              <LayoutList className="h-4 w-4" />
-              Session Types
+              <LayoutList className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.sessionTypes")}
             </TabsTrigger>
             <TabsTrigger value="twilio" className="gap-2">
-              <Mic className="h-4 w-4" />
-              Voice Testing
+              <Mic className="h-4 w-4" aria-hidden="true" />
+              {t("settings.tabs.voiceTesting")}
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="integrations" className="space-y-4">
             <Card className="border-border/50 bg-muted/20">
               <CardHeader>
-                <CardTitle className="text-lg">Channel Integrations</CardTitle>
+                <CardTitle className="text-lg">
+                  {t("settings.integrations.title")}
+                </CardTitle>
                 <CardDescription>
-                  Configure API keys and credentials for each communication
-                  channel.
+                  {t("settings.integrations.description")}
                 </CardDescription>
               </CardHeader>
             </Card>
@@ -529,12 +571,14 @@ export default function SettingsPage() {
                       <Card className="border-dashed border-primary/20 bg-primary/5">
                         <CardHeader className="py-3">
                           <CardTitle className="text-sm">
-                            Quick SMS Test
+                            {t("settings.integrations.smsTest")}
                           </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-3 pb-4">
                           <div className="flex gap-2">
                             <Input
+                              id="sms-test-to"
+                              aria-label={t("settings.integrations.smsTest")}
                               placeholder="+970..."
                               size={30}
                               value={smsData.to}
@@ -544,13 +588,18 @@ export default function SettingsPage() {
                             />
                             <Button
                               size="sm"
+                              className="min-h-[44px]"
                               disabled={smsSending}
+                              aria-busy={smsSending}
                               onClick={handleSendTestSms}
                             >
                               {smsSending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2
+                                  className="h-4 w-4 animate-spin"
+                                  aria-hidden="true"
+                                />
                               ) : (
-                                "Send Test"
+                                t("settings.integrations.sendTest")
                               )}
                             </Button>
                           </div>
@@ -566,48 +615,69 @@ export default function SettingsPage() {
           <TabsContent value="notifications" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Notification Preferences</CardTitle>
+                <CardTitle>{t("settings.notifications.title")}</CardTitle>
                 <CardDescription>
-                  Configure how and when you receive notifications.
+                  {t("settings.notifications.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div className="space-y-0.5">
-                    <Label>Email Notifications</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Receive notifications via email
+                    <Label htmlFor="notif-email">
+                      {t("settings.notifications.email")}
+                    </Label>
+                    <p
+                      id="notif-email-desc"
+                      className="text-sm text-muted-foreground"
+                    >
+                      {t("settings.notifications.emailDescription")}
                     </p>
                   </div>
                   <Switch
+                    id="notif-email"
+                    aria-describedby="notif-email-desc"
                     checked={notifPrefs.email}
                     onCheckedChange={(checked) =>
                       setNotifPrefs((prev) => ({ ...prev, email: checked }))
                     }
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div className="space-y-0.5">
-                    <Label>In-App Notifications</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Show notifications in the application
+                    <Label htmlFor="notif-inapp">
+                      {t("settings.notifications.inApp")}
+                    </Label>
+                    <p
+                      id="notif-inapp-desc"
+                      className="text-sm text-muted-foreground"
+                    >
+                      {t("settings.notifications.inAppDescription")}
                     </p>
                   </div>
                   <Switch
+                    id="notif-inapp"
+                    aria-describedby="notif-inapp-desc"
                     checked={notifPrefs.inApp}
                     onCheckedChange={(checked) =>
                       setNotifPrefs((prev) => ({ ...prev, inApp: checked }))
                     }
                   />
                 </div>
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <div className="space-y-0.5">
-                    <Label>Quiet Hours</Label>
-                    <p className="text-sm text-muted-foreground">
-                      Disable notifications during specific hours
+                    <Label htmlFor="notif-quiet">
+                      {t("settings.notifications.quietHours")}
+                    </Label>
+                    <p
+                      id="notif-quiet-desc"
+                      className="text-sm text-muted-foreground"
+                    >
+                      {t("settings.notifications.quietHoursDescription")}
                     </p>
                   </div>
                   <Switch
+                    id="notif-quiet"
+                    aria-describedby="notif-quiet-desc"
                     checked={notifPrefs.quietHours}
                     onCheckedChange={(checked) =>
                       setNotifPrefs((prev) => ({
@@ -620,8 +690,11 @@ export default function SettingsPage() {
                 {notifPrefs.quietHours && (
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Start Time</Label>
+                      <Label htmlFor="notif-quiet-start">
+                        {t("settings.notifications.startTime")}
+                      </Label>
                       <Input
+                        id="notif-quiet-start"
                         type="time"
                         value={notifPrefs.quietStart}
                         onChange={(e) =>
@@ -633,8 +706,11 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>End Time</Label>
+                      <Label htmlFor="notif-quiet-end">
+                        {t("settings.notifications.endTime")}
+                      </Label>
                       <Input
+                        id="notif-quiet-end"
                         type="time"
                         value={notifPrefs.quietEnd}
                         onChange={(e) =>
@@ -647,10 +723,73 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
-                <Button onClick={handleSaveNotifPrefs}>
-                  <Save className="h-4 w-4 mr-2" />
-                  Save Preferences
+                <Button onClick={handleSaveNotifPrefs} className="min-h-[44px]">
+                  <Save className="h-4 w-4 me-2" aria-hidden="true" />
+                  {t("settings.notifications.save")}
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="appearance" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>{t("settings.appearance.title")}</CardTitle>
+                <CardDescription>
+                  {t("settings.appearance.description")}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-2">
+                  <Label id="theme-label">
+                    {t("settings.appearance.theme")}
+                  </Label>
+                  <p id="theme-desc" className="text-sm text-muted-foreground">
+                    {t("settings.appearance.themeDescription")}
+                  </p>
+                  {/*
+                    Theme switching between light and dark (Requirement 19.5).
+                    Selecting an option calls setTheme, which toggles the `.dark`
+                    class on the document root so the token set resolves across
+                    every page within 1s and without a reload (Requirement 19.7).
+                  */}
+                  <RadioGroup
+                    aria-labelledby="theme-label"
+                    aria-describedby="theme-desc"
+                    value={theme}
+                    onValueChange={(value) =>
+                      setTheme(value === "dark" ? "dark" : "light")
+                    }
+                    className="grid max-w-md grid-cols-2 gap-3 pt-2"
+                  >
+                    <Label
+                      htmlFor="theme-light"
+                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-4 hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:ring-2 has-[:checked]:ring-primary/30"
+                    >
+                      <RadioGroupItem value="light" id="theme-light" />
+                      <Sun
+                        className="h-5 w-5 text-status-warning"
+                        aria-hidden="true"
+                      />
+                      <span className="font-medium">
+                        {t("settings.appearance.light")}
+                      </span>
+                    </Label>
+                    <Label
+                      htmlFor="theme-dark"
+                      className="flex cursor-pointer items-center gap-3 rounded-lg border border-border bg-card p-4 hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:ring-2 has-[:checked]:ring-primary/30"
+                    >
+                      <RadioGroupItem value="dark" id="theme-dark" />
+                      <Moon
+                        className="h-5 w-5 text-primary"
+                        aria-hidden="true"
+                      />
+                      <span className="font-medium">
+                        {t("settings.appearance.dark")}
+                      </span>
+                    </Label>
+                  </RadioGroup>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -658,17 +797,20 @@ export default function SettingsPage() {
           <TabsContent value="security" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Change Password</CardTitle>
+                <CardTitle>{t("settings.security.title")}</CardTitle>
                 <CardDescription>
-                  Update your account password for better security.
+                  {t("settings.security.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="current-password">Current Password</Label>
+                  <Label htmlFor="current-password">
+                    {t("settings.security.currentPassword")}
+                  </Label>
                   <Input
                     id="current-password"
                     type="password"
+                    autoComplete="current-password"
                     value={passwordData.currentPassword}
                     onChange={(e) =>
                       setPasswordData((prev) => ({
@@ -676,14 +818,19 @@ export default function SettingsPage() {
                         currentPassword: e.target.value,
                       }))
                     }
-                    placeholder="Enter current password"
+                    placeholder={t(
+                      "settings.security.currentPasswordPlaceholder",
+                    )}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="new-password">New Password</Label>
+                  <Label htmlFor="new-password">
+                    {t("settings.security.newPassword")}
+                  </Label>
                   <Input
                     id="new-password"
                     type="password"
+                    autoComplete="new-password"
                     value={passwordData.newPassword}
                     onChange={(e) =>
                       setPasswordData((prev) => ({
@@ -691,14 +838,17 @@ export default function SettingsPage() {
                         newPassword: e.target.value,
                       }))
                     }
-                    placeholder="Enter new password (min 6 characters)"
+                    placeholder={t("settings.security.newPasswordPlaceholder")}
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-password">Confirm Password</Label>
+                  <Label htmlFor="confirm-password">
+                    {t("settings.security.confirmPassword")}
+                  </Label>
                   <Input
                     id="confirm-password"
                     type="password"
+                    autoComplete="new-password"
                     value={passwordData.confirmPassword}
                     onChange={(e) =>
                       setPasswordData((prev) => ({
@@ -706,26 +856,41 @@ export default function SettingsPage() {
                         confirmPassword: e.target.value,
                       }))
                     }
-                    placeholder="Confirm new password"
+                    placeholder={t(
+                      "settings.security.confirmPasswordPlaceholder",
+                    )}
                   />
                 </div>
-                <Button onClick={handleChangePassword}>
-                  <Shield className="h-4 w-4 mr-2" />
-                  Update Password
+                <Button
+                  onClick={handleChangePassword}
+                  className="min-h-[44px]"
+                  disabled={changePasswordAction.isLoading}
+                  aria-busy={changePasswordAction.isLoading}
+                >
+                  {changePasswordAction.isLoading ? (
+                    <Loader2
+                      className="h-4 w-4 me-2 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Shield className="h-4 w-4 me-2" aria-hidden="true" />
+                  )}
+                  {changePasswordAction.isLoading
+                    ? t("settings.security.updating")
+                    : t("settings.security.update")}
                 </Button>
               </CardContent>
             </Card>
             <Card>
               <CardHeader>
-                <CardTitle>Active Sessions</CardTitle>
+                <CardTitle>{t("settings.security.sessionsTitle")}</CardTitle>
                 <CardDescription>
-                  Manage your active sessions across devices.
+                  {t("settings.security.sessionsDescription")}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Session management coming soon. You can sign out from all
-                  devices by signing out and back in.
+                  {t("settings.security.sessionsHint")}
                 </p>
               </CardContent>
             </Card>
@@ -734,17 +899,20 @@ export default function SettingsPage() {
           <TabsContent value="general" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Profile Settings</CardTitle>
+                <CardTitle>{t("settings.profile.title")}</CardTitle>
                 <CardDescription>
-                  Update your personal information and profile picture.
+                  {t("settings.profile.description")}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-8">
                 {profileLoading ? (
                   <div className="text-center py-12 flex flex-col items-center gap-4">
-                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                    <Loader2
+                      className="h-8 w-8 animate-spin text-primary"
+                      aria-hidden="true"
+                    />
                     <p className="text-sm text-muted-foreground font-medium">
-                      Loading profile data...
+                      {t("settings.profile.loading")}
                     </p>
                   </div>
                 ) : profile ? (
@@ -773,9 +941,10 @@ export default function SettingsPage() {
                         </div>
                         <Label
                           htmlFor="settings-avatar-upload"
+                          aria-label={t("settings.profile.changePhoto")}
                           className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full shadow-md border-2 border-background bg-secondary flex items-center justify-center hover:bg-secondary/80 transition-colors cursor-pointer opacity-100"
                         >
-                          <Edit2 className="h-3 w-3" />
+                          <Edit2 className="h-3 w-3" aria-hidden="true" />
                         </Label>
                         <input
                           id="settings-avatar-upload"
@@ -804,7 +973,9 @@ export default function SettingsPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div className="space-y-2">
-                        <Label htmlFor="first-name">First Name</Label>
+                        <Label htmlFor="first-name">
+                          {t("settings.profile.firstName")}
+                        </Label>
                         <Input
                           id="first-name"
                           value={profile.first_name || ""}
@@ -819,7 +990,9 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="last-name">Last Name</Label>
+                        <Label htmlFor="last-name">
+                          {t("settings.profile.lastName")}
+                        </Label>
                         <Input
                           id="last-name"
                           value={profile.last_name || ""}
@@ -834,7 +1007,9 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="email">Email Address</Label>
+                        <Label htmlFor="email">
+                          {t("settings.profile.email")}
+                        </Label>
                         <Input
                           id="email"
                           type="email"
@@ -848,10 +1023,13 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="phone">Phone Number</Label>
+                        <Label htmlFor="phone">
+                          {t("settings.profile.phone")}
+                        </Label>
                         <Input
                           id="phone"
                           type="tel"
+                          dir="ltr"
                           value={profile.phone || ""}
                           onChange={(e) =>
                             setProfile((prev) =>
@@ -862,7 +1040,9 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="department">Department</Label>
+                        <Label htmlFor="department">
+                          {t("settings.profile.department")}
+                        </Label>
                         <Input
                           id="department"
                           value={profile.department || ""}
@@ -880,16 +1060,27 @@ export default function SettingsPage() {
                     <div className="pt-4 flex justify-end">
                       <Button
                         onClick={handleSaveProfile}
+                        disabled={saveProfileAction.isLoading}
+                        aria-busy={saveProfileAction.isLoading}
                         className="px-8 h-12 text-md font-bold shadow-lg shadow-primary/20"
                       >
-                        <Save className="h-5 w-5 mr-3" />
-                        Save Changes
+                        {saveProfileAction.isLoading ? (
+                          <Loader2
+                            className="h-5 w-5 me-3 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Save className="h-5 w-5 me-3" aria-hidden="true" />
+                        )}
+                        {saveProfileAction.isLoading
+                          ? t("settings.profile.saving")
+                          : t("settings.profile.save")}
                       </Button>
                     </div>
                   </>
                 ) : (
                   <div className="text-center py-12 text-muted-foreground font-medium">
-                    Profile settings not found.
+                    {t("settings.profile.notFound")}
                   </div>
                 )}
               </CardContent>
@@ -899,75 +1090,93 @@ export default function SettingsPage() {
           <TabsContent value="session-types" className="space-y-4">
             <Card>
               <CardHeader className="space-y-4">
-                <div className="flex flex-row items-center justify-between">
+                <div className="flex flex-row items-center justify-between gap-4">
                   <div>
-                    <CardTitle>Session Types & AI Knowledge</CardTitle>
+                    <CardTitle>{t("settings.sessionTypes.title")}</CardTitle>
                     <CardDescription>
-                      Manage categories and factual knowledge used by the AI
-                      assistant.
+                      {t("settings.sessionTypes.description")}
                     </CardDescription>
                   </div>
                   {isAdmin && (
-                    <Button onClick={handleAddSessionType} size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      New Type
+                    <Button
+                      onClick={handleAddSessionType}
+                      size="sm"
+                      className="min-h-[44px]"
+                    >
+                      <Plus className="h-4 w-4 me-2" aria-hidden="true" />
+                      {t("settings.sessionTypes.newType")}
                     </Button>
                   )}
                 </div>
 
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Search
+                    className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   <Input
-                    placeholder="Search by name, category, or content..."
-                    className="pl-9 pr-9"
+                    aria-label={t("settings.sessionTypes.searchPlaceholder")}
+                    placeholder={t("settings.sessionTypes.searchPlaceholder")}
+                    className="ps-9 pe-9"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                   {searchTerm && (
                     <button
+                      type="button"
+                      aria-label={t("settings.sessionTypes.clearSearch")}
                       onClick={() => setSearchTerm("")}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                     >
-                      <X className="h-4 w-4" />
+                      <X className="h-4 w-4" aria-hidden="true" />
                     </button>
                   )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
                 {!isAdmin && (
-                  <div className="bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 p-3 rounded-lg flex items-start gap-2 text-sm">
-                    <AlertCircle className="h-4 w-4 mt-0.5" />
-                    <p>
-                      Only administrators can modify session types and AI
-                      knowledge.
-                    </p>
+                  <div
+                    role="note"
+                    className="bg-status-warning/10 text-status-warning p-3 rounded-lg flex items-start gap-2 text-sm"
+                  >
+                    <AlertCircle
+                      className="h-4 w-4 mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <p>{t("settings.sessionTypes.adminOnly")}</p>
                   </div>
                 )}
 
                 {sessionTypesLoading ? (
                   <div className="flex justify-center p-8">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                    <Loader2
+                      className="h-8 w-8 animate-spin text-muted-foreground"
+                      aria-hidden="true"
+                    />
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {sessionTypes.length === 0 ? (
                       <div className="text-center py-12 border-2 border-dashed rounded-xl border-muted">
-                        <LayoutList className="h-12 w-12 text-muted mx-auto mb-4" />
+                        <LayoutList
+                          className="h-12 w-12 text-muted mx-auto mb-4"
+                          aria-hidden="true"
+                        />
                         <p className="text-muted-foreground">
-                          No session types defined yet.
+                          {t("settings.sessionTypes.empty")}
                         </p>
                       </div>
                     ) : (
                       (() => {
                         const filtered = sessionTypes.filter(
-                          (t) =>
-                            t.name
+                          (item) =>
+                            item.name
                               .toLowerCase()
                               .includes(searchTerm.toLowerCase()) ||
-                            t.parent_category
+                            item.parent_category
                               ?.toLowerCase()
                               .includes(searchTerm.toLowerCase()) ||
-                            t.description
+                            item.description
                               ?.toLowerCase()
                               .includes(searchTerm.toLowerCase()),
                         );
@@ -976,14 +1185,16 @@ export default function SettingsPage() {
                           return (
                             <div className="text-center py-12">
                               <p className="text-muted-foreground">
-                                No matches found for "{searchTerm}"
+                                {t("settings.sessionTypes.noMatches", {
+                                  term: searchTerm,
+                                })}
                               </p>
                               <Button
                                 variant="ghost"
-                                className="mt-2"
+                                className="mt-2 min-h-[44px]"
                                 onClick={() => setSearchTerm("")}
                               >
-                                Clear search
+                                {t("settings.sessionTypes.clearSearch")}
                               </Button>
                             </div>
                           );
@@ -992,7 +1203,9 @@ export default function SettingsPage() {
                         // Group by parent_category
                         const grouped: Record<string, SessionMainType[]> = {};
                         filtered.forEach((type) => {
-                          const cat = type.parent_category || "أخرى / Other";
+                          const cat =
+                            type.parent_category ||
+                            t("settings.sessionTypes.otherCategory");
                           if (!grouped[cat]) grouped[cat] = [];
                           grouped[cat].push(type);
                         });
@@ -1008,7 +1221,7 @@ export default function SettingsPage() {
                                     key={type.id}
                                     className="group flex items-start justify-between p-4 border rounded-xl bg-card hover:bg-muted/30 transition-all shadow-sm"
                                   >
-                                    <div className="flex flex-col gap-1 pr-4">
+                                    <div className="flex flex-col gap-1 pe-4">
                                       <span className="font-semibold text-primary">
                                         {type.name}
                                       </span>
@@ -1018,28 +1231,46 @@ export default function SettingsPage() {
                                         </p>
                                       )}
                                     </div>
-                                    <div className="flex gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className="flex gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
                                       {isAdmin && (
                                         <>
                                           <Button
                                             variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0"
+                                            size="icon"
+                                            className="h-11 w-11"
+                                            aria-label={t(
+                                              "settings.sessionTypes.edit",
+                                            )}
+                                            title={t(
+                                              "settings.sessionTypes.edit",
+                                            )}
                                             onClick={() =>
                                               handleEditSessionType(type)
                                             }
                                           >
-                                            <Edit2 className="h-4 w-4 text-muted-foreground" />
+                                            <Edit2
+                                              className="h-4 w-4 text-muted-foreground"
+                                              aria-hidden="true"
+                                            />
                                           </Button>
                                           <Button
                                             variant="ghost"
-                                            size="sm"
-                                            className="h-8 w-8 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                            size="icon"
+                                            className="h-11 w-11 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                            aria-label={t(
+                                              "settings.sessionTypes.delete",
+                                            )}
+                                            title={t(
+                                              "settings.sessionTypes.delete",
+                                            )}
                                             onClick={() =>
                                               handleDeleteSessionType(type.id)
                                             }
                                           >
-                                            <Trash2 className="h-4 w-4" />
+                                            <Trash2
+                                              className="h-4 w-4"
+                                              aria-hidden="true"
+                                            />
                                           </Button>
                                         </>
                                       )}
@@ -1062,20 +1293,21 @@ export default function SettingsPage() {
                 <DialogHeader>
                   <DialogTitle>
                     {editingType?.id
-                      ? "Edit Session Type"
-                      : "Create New Session Type"}
+                      ? t("settings.sessionTypes.editTitle")
+                      : t("settings.sessionTypes.createTitle")}
                   </DialogTitle>
                   <DialogDescription>
-                    Define a session category and provide detailed knowledge for
-                    the AI assistant.
+                    {t("settings.sessionTypes.dialogDescription")}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="grid gap-4 py-4">
                   <div className="grid gap-2">
-                    <Label htmlFor="type-name">Name (English or Arabic)</Label>
+                    <Label htmlFor="type-name">
+                      {t("settings.sessionTypes.nameLabel")}
+                    </Label>
                     <Input
                       id="type-name"
-                      placeholder="e.g. تمويل السيارات or Car Financing"
+                      placeholder={t("settings.sessionTypes.namePlaceholder")}
                       value={editingType?.name || ""}
                       onChange={(e) =>
                         setEditingType((prev) => ({
@@ -1086,10 +1318,14 @@ export default function SettingsPage() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="type-category">Category (Grouping)</Label>
+                    <Label htmlFor="type-category">
+                      {t("settings.sessionTypes.categoryLabel")}
+                    </Label>
                     <Input
                       id="type-category"
-                      placeholder="e.g. استفسارات or خدمات"
+                      placeholder={t(
+                        "settings.sessionTypes.categoryPlaceholder",
+                      )}
                       value={editingType?.parent_category || ""}
                       onChange={(e) =>
                         setEditingType((prev) => ({
@@ -1101,11 +1337,14 @@ export default function SettingsPage() {
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="type-description">
-                      AI Knowledge / Description
+                      {t("settings.sessionTypes.knowledgeLabel")}
                     </Label>
                     <Textarea
                       id="type-description"
-                      placeholder="Provide detailed information that the AI should use when responding to this type of inquiry..."
+                      aria-describedby="type-description-hint"
+                      placeholder={t(
+                        "settings.sessionTypes.knowledgePlaceholder",
+                      )}
                       className="min-h-[200px]"
                       value={editingType?.description || ""}
                       onChange={(e) =>
@@ -1115,20 +1354,28 @@ export default function SettingsPage() {
                         }))
                       }
                     />
-                    <p className="text-xs text-muted-foreground">
-                      This content will be dynamically provided to the AI during
-                      conversations.
+                    <p
+                      id="type-description-hint"
+                      className="text-xs text-muted-foreground"
+                    >
+                      {t("settings.sessionTypes.knowledgeHint")}
                     </p>
                   </div>
                 </div>
                 <DialogFooter>
                   <Button
                     variant="outline"
+                    className="min-h-[44px]"
                     onClick={() => setIsTypeDialogOpen(false)}
                   >
-                    Cancel
+                    {t("settings.sessionTypes.cancel")}
                   </Button>
-                  <Button onClick={handleSaveSessionType}>Save Changes</Button>
+                  <Button
+                    className="min-h-[44px]"
+                    onClick={handleSaveSessionType}
+                  >
+                    {t("settings.sessionTypes.save")}
+                  </Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>

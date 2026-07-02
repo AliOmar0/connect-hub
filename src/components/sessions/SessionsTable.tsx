@@ -27,6 +27,11 @@ import {
   Clock,
   ArrowUpRight,
   Users,
+  CircleDot,
+  Hourglass,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
 } from "lucide-react";
 import {
   format,
@@ -41,6 +46,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
+import { BidiText } from "@/components/ui/bidi-text";
 
 interface SessionsTableProps {
   sessions: (Session & { customer?: Customer; employee?: Employee })[];
@@ -59,11 +66,21 @@ const channelIcons: Record<ChannelType, React.ElementType> = {
 };
 
 const statusStyles: Record<string, { bg: string; text: string }> = {
-  active: { bg: "bg-green-500/10", text: "text-green-600" },
-  waiting: { bg: "bg-yellow-500/10", text: "text-yellow-600" },
-  completed: { bg: "bg-blue-500/10", text: "text-blue-600" },
-  escalated: { bg: "bg-orange-500/10", text: "text-orange-600" },
-  missed: { bg: "bg-red-500/10", text: "text-red-600" },
+  active: { bg: "bg-status-success/10", text: "text-status-success" },
+  waiting: { bg: "bg-status-warning/10", text: "text-status-warning" },
+  completed: { bg: "bg-status-info/10", text: "text-status-info" },
+  escalated: { bg: "bg-status-error/10", text: "text-status-error" },
+  missed: { bg: "bg-status-neutral/10", text: "text-status-neutral" },
+};
+
+// Non-color cue for session status (Requirement 3.5): each status pairs its
+// color with a lucide icon (shape) in addition to the translated text label.
+const statusIcons: Record<string, React.ElementType> = {
+  active: CircleDot,
+  waiting: Hourglass,
+  completed: CheckCircle2,
+  escalated: AlertTriangle,
+  missed: XCircle,
 };
 
 function formatSessionDuration(seconds: number | null): string {
@@ -83,21 +100,22 @@ export default function SessionsTable({
   onViewSession,
   onAssignAgent,
 }: SessionsTableProps) {
+  const { t } = useTranslation();
   if (loading) {
     return (
       <div className="w-full">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Channel</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Agent</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Wait Time</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Satisfaction</TableHead>
-              <TableHead>Started</TableHead>
+              <TableHead>{t("sessions.table.channel")}</TableHead>
+              <TableHead>{t("sessions.table.customer")}</TableHead>
+              <TableHead>{t("sessions.table.agent")}</TableHead>
+              <TableHead>{t("sessions.table.type")}</TableHead>
+              <TableHead>{t("sessions.table.status")}</TableHead>
+              <TableHead>{t("sessions.table.waitTime")}</TableHead>
+              <TableHead>{t("sessions.table.duration")}</TableHead>
+              <TableHead>{t("sessions.table.satisfaction")}</TableHead>
+              <TableHead>{t("sessions.table.started")}</TableHead>
               <TableHead className="w-12"></TableHead>
             </TableRow>
           </TableHeader>
@@ -122,15 +140,33 @@ export default function SessionsTable({
       <Table>
         <TableHeader>
           <TableRow className="bg-muted/30">
-            <TableHead className="font-semibold">Channel</TableHead>
-            <TableHead className="font-semibold">Customer</TableHead>
-            <TableHead className="font-semibold">Agent</TableHead>
-            <TableHead className="font-semibold">Type</TableHead>
-            <TableHead className="font-semibold">Status</TableHead>
-            <TableHead className="font-semibold">Wait Time</TableHead>
-            <TableHead className="font-semibold">Duration</TableHead>
-            <TableHead className="font-semibold">Satisfaction</TableHead>
-            <TableHead className="font-semibold">Started</TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.channel")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.customer")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.agent")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.type")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.status")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.waitTime")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.duration")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.satisfaction")}
+            </TableHead>
+            <TableHead className="font-semibold">
+              {t("sessions.table.started")}
+            </TableHead>
             <TableHead className="w-12"></TableHead>
           </TableRow>
         </TableHeader>
@@ -141,7 +177,7 @@ export default function SessionsTable({
                 colSpan={10}
                 className="h-32 text-center text-muted-foreground"
               >
-                No sessions found
+                {t("sessions.table.empty")}
               </TableCell>
             </TableRow>
           ) : (
@@ -168,27 +204,33 @@ export default function SessionsTable({
                       <div
                         className={cn(
                           "p-1.5 rounded-lg",
-                          session.channel === "whatsapp" && "bg-green-500/10",
-                          session.channel === "messenger" && "bg-blue-500/10",
-                          session.channel === "sms" && "bg-purple-500/10",
-                          session.channel === "voice" && "bg-orange-500/10",
-                          session.channel === "email" && "bg-red-500/10",
-                          !channelIcons[session.channel] && "bg-gray-500/10",
+                          session.channel === "whatsapp" &&
+                            "bg-chart-success/10",
+                          session.channel === "messenger" && "bg-chart-info/10",
+                          session.channel === "sms" && "bg-chart-secondary/10",
+                          session.channel === "voice" && "bg-chart-warning/10",
+                          session.channel === "email" && "bg-chart-primary/10",
+                          !channelIcons[session.channel] &&
+                            "bg-status-neutral/10",
                         )}
                       >
                         <ChannelIcon
                           className={cn(
                             "h-4 w-4",
-                            session.channel === "whatsapp" && "text-green-600",
-                            session.channel === "messenger" && "text-blue-600",
-                            session.channel === "sms" && "text-purple-600",
-                            session.channel === "voice" && "text-orange-600",
-                            session.channel === "email" && "text-red-600",
+                            session.channel === "whatsapp" &&
+                              "text-chart-success",
+                            session.channel === "messenger" &&
+                              "text-chart-info",
+                            session.channel === "sms" && "text-chart-secondary",
+                            session.channel === "voice" && "text-chart-warning",
+                            session.channel === "email" && "text-chart-primary",
                           )}
                         />
                       </div>
                       <span className="text-sm capitalize">
-                        {session.channel}
+                        {t(`sessions.channels.${session.channel}`, {
+                          defaultValue: session.channel,
+                        })}
                       </span>
                     </div>
                   </TableCell>
@@ -201,11 +243,19 @@ export default function SessionsTable({
                       </Avatar>
                       <div className="flex flex-col">
                         <span className="font-medium text-sm">
-                          {session.customer?.name || "Unknown"}
+                          {session.customer?.name ||
+                            t("sessions.table.unknown")}
                         </span>
-                        <span className="text-xs text-muted-foreground">
-                          {session.customer?.phone || "-"}
-                        </span>
+                        {session.customer?.phone ? (
+                          <BidiText
+                            value={session.customer.phone}
+                            className="text-xs text-muted-foreground"
+                          />
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            -
+                          </span>
+                        )}
                       </div>
                     </div>
                   </TableCell>
@@ -224,7 +274,7 @@ export default function SessionsTable({
                       </div>
                     ) : (
                       <span className="text-sm text-muted-foreground">
-                        Unassigned
+                        {t("sessions.table.unassigned")}
                       </span>
                     )}
                   </TableCell>
@@ -238,7 +288,7 @@ export default function SessionsTable({
                           <div className="flex flex-col gap-0.5">
                             <Badge
                               variant="outline"
-                              className="bg-blue-500/10 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-400 dark:border-blue-800 text-xs"
+                              className="bg-status-info/10 text-status-info border-status-info/20 text-xs"
                             >
                               {matchedType.name}
                             </Badge>
@@ -259,12 +309,25 @@ export default function SessionsTable({
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={cn(style.bg, style.text, "border-transparent")}
-                    >
-                      {session.status}
-                    </Badge>
+                    {(() => {
+                      const StatusIcon =
+                        statusIcons[session.status] ?? CircleDot;
+                      return (
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            style.bg,
+                            style.text,
+                            "border-transparent gap-1",
+                          )}
+                        >
+                          <StatusIcon className="h-3 w-3" aria-hidden="true" />
+                          {t(`sessions.status.${session.status}`, {
+                            defaultValue: session.status,
+                          })}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {session.wait_time_seconds ? (
@@ -317,14 +380,14 @@ export default function SessionsTable({
                           onClick={() => onViewSession?.(session)}
                         >
                           <ArrowUpRight className="h-4 w-4 mr-2" />
-                          View Details
+                          {t("sessions.viewConversation")}
                         </DropdownMenuItem>
                         {onAssignAgent && (
                           <DropdownMenuItem
                             onClick={() => onAssignAgent(session)}
                           >
                             <Users className="h-4 w-4 mr-2" />
-                            Assign Agent
+                            {t("sessions.assign.title")}
                           </DropdownMenuItem>
                         )}
                       </DropdownMenuContent>
