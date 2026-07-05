@@ -12,6 +12,21 @@ import { createClient } from "@supabase/supabase-js";
 import { logger, correlationMiddleware } from "./lib/logger.js";
 import { requireAuth, requireRole } from "./lib/auth.js";
 import {
+  AppError,
+  ValidationError,
+  AuthenticationError,
+  AuthorizationError,
+  NotFoundError,
+  RateLimitError,
+  ExternalServiceError,
+  DatabaseError,
+  ErrorCodes,
+  formatErrorResponse,
+  asyncHandler,
+} from "./lib/errors.js";
+import { Schemas, validateBody } from "./lib/validation.js";
+import { responseFormatterMiddleware } from "./lib/response.js";
+import {
   buildCorsOptions,
   ipRateLimiter,
   sessionRateLimiter,
@@ -53,10 +68,22 @@ const wss = new WebSocketServer({ noServer: true });
 // Prefer dedicated env var to avoid conflicts with generic PORT in some environments
 const port = Number(process.env.TWILIO_SERVER_PORT || process.env.PORT || 3001);
 
+import { validateStartup } from "./lib/startup.js";
+
+// Validate critical configuration at startup
+const startupResult = validateStartup();
+if (!startupResult.valid) {
+  logger.error("Critical configuration missing. Server may not function correctly.");
+  // Log detailed errors for debugging
+  for (const error of startupResult.errors) {
+    logger.error(error.message);
+  }
+}
+
 const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
 if (!OPENROUTER_KEY) {
-  console.warn(
-    "[Config] OPENROUTER_API_KEY is not set. AI responses will fail until it is configured in the environment.",
+  logger.warn(
+    "OPENROUTER_API_KEY is not set. AI responses will fail until it is configured in the environment.",
   );
 }
 // Capable, free, Arabic-strong models on OpenRouter. We send up to 3 as a
@@ -100,6 +127,7 @@ app.use(
 
 app.use(correlationMiddleware);
 app.use(metricsMiddleware);
+app.use(responseFormatterMiddleware);
 
 // Global IP rate limit (G14). Health/metrics are exempted below by ordering.
 registerObservabilityRoutes(app);
@@ -497,54 +525,43 @@ app.post(
   "/api/make-call",
   requireAuth,
   requireRole("agent"),
-  async (req, res) => {
+  validateBody(Schemas.makeCall),
+  asyncHandler(async (req, res) => {
     const { to } = req.body;
-    if (!to)
-      return res.status(400).json({ error: "Missing 'to' phone number" });
 
-    try {
-      console.log(`[Twilio] Initiating outbound AI call to: ${to}`);
-      const call = await client.calls.create({
-        url: `${process.env.NGROK_URL}/voice`,
-        to: to,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        statusCallback: `${process.env.NGROK_URL}/voice/status`,
-        statusCallbackMethod: "POST",
-        statusCallbackEvent: ["completed"],
-      });
-      res.json({ success: true, sid: call.sid });
-    } catch (error) {
-      console.error("Outbound Call Error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  },
+    logger.info({ to: to.slice(-4) }, "Initiating outbound AI call");
+    const call = await client.calls.create({
+      url: `${process.env.NGROK_URL}/voice`,
+      to: to,
+      from: process.env.TWILIO_PHONE_NUMBER,
+      statusCallback: `${process.env.NGROK_URL}/voice/status`,
+      statusCallbackMethod: "POST",
+      statusCallbackEvent: ["completed"],
+    });
+    
+    res.success({ success: true, sid: call.sid });
+  }),
 );
 
-app.get("/api/token", requireAuth, requireRole("agent"), (req, res) => {
+app.get("/api/token", requireAuth, requireRole("agent"), (req, res, next) => {
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const apiKey = process.env.TWILIO_API_KEY;
   const apiSecret = process.env.TWILIO_API_SECRET;
   const outgoingApplicationSid = process.env.TWIML_APP_SID;
 
-  console.log(
-    `[Token] Generating for account: ${accountSid?.substring(0, 5)}...`,
-  );
   if (!apiKey || !apiSecret || !outgoingApplicationSid) {
     const missing = [];
     if (!apiKey) missing.push("TWILIO_API_KEY");
     if (!apiSecret) missing.push("TWILIO_API_SECRET");
     if (!outgoingApplicationSid) missing.push("TWIML_APP_SID");
-    console.error(`[Token] Failed: Missing ${missing.join(", ")}`);
-    return res
-      .status(500)
-      .json({ error: `Missing environment variables: ${missing.join(", ")}` });
+    return next(new ExternalServiceError("Twilio", `Missing configuration: ${missing.join(", ")}`));
   }
 
-  const { AccessToken } = twilio.jwt;
-  const { VoiceGrant } = AccessToken;
-  const identity = "pib_agent";
-
   try {
+    const { AccessToken } = twilio.jwt;
+    const { VoiceGrant } = AccessToken;
+    const identity = "pib_agent";
+
     const accessToken = new AccessToken(accountSid, apiKey, apiSecret, {
       identity,
     });
@@ -555,41 +572,30 @@ app.get("/api/token", requireAuth, requireRole("agent"), (req, res) => {
       }),
     );
     const jwt = accessToken.toJwt();
-    console.log(`[Token] Success for identity: ${identity}`);
-    res.json({ token: jwt, identity });
+    
+    req.log?.info({ identity }, "Token generated successfully");
+    res.success({ token: jwt, identity });
   } catch (error) {
-    console.error("[Token] Generation Error:", error);
-    res
-      .status(500)
-      .json({
-        error:
-          error.message || "An internal error occurred during token generation",
-      });
+    req.log?.error({ err: error.message }, "Token generation failed");
+    next(new ExternalServiceError("Twilio", "Failed to generate token"));
   }
 });
 
-app.post("/api/chat", sessionRateLimiter, async (req, res) => {
+app.post("/api/chat", sessionRateLimiter, validateBody(Schemas.chatMessage), asyncHandler(async (req, res) => {
   const { message, history, sessionId, phone } = req.body;
-  if (!message)
-    return res.status(400).json({ error: "Missing 'message' field" });
-
   const sessionKey = sessionId || "web-chat-default";
 
-  try {
-    await appendTurn(sessionKey, "user", message);
-    const response = await processMessage(
-      message,
-      sessionKey,
-      phone,
-      history || [],
-    );
-    await appendTurn(sessionKey, "assistant", response);
-    res.json({ content: response });
-  } catch (error) {
-    req.log?.error({ err: error.message }, "Chat error");
-    res.status(500).json({ error: "Failed to process message." });
-  }
-});
+  await appendTurn(sessionKey, "user", message);
+  const response = await processMessage(
+    message,
+    sessionKey,
+    phone,
+    history || [],
+  );
+  await appendTurn(sessionKey, "assistant", response);
+  
+  res.success({ content: response });
+}));
 
 // --- Dev-only diagnostics & test endpoints --------------------------------
 // These bypass Twilio signature checks and auth so the frontend "Backend Tester"
@@ -716,26 +722,20 @@ if (TEST_ENDPOINTS_ENABLED) {
   );
 }
 
-app.post("/api/sms", requireAuth, requireRole("agent"), async (req, res) => {
+app.post("/api/sms", requireAuth, requireRole("agent"), asyncHandler(async (req, res) => {
   const { to, message } = req.body;
   if (!to || !message) {
-    return res.status(400).json({ error: "Missing 'to' or 'message' field." });
+    return res.badRequest("Missing 'to' or 'message' field.");
   }
 
-  try {
-    console.log(
-      `[Manual SMS] To: ${to}, Message: ${message} (Twilio Disabled to save credits)`,
-    );
-    res.json({
-      success: true,
-      sid: "SMS_DISABLED_CREDIT_SAFETY",
-      note: "Use the Notification Bell for OTPs",
-    });
-  } catch (error) {
-    console.error("SMS error:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  logger.info({ to: to.slice(-4) }, "Manual SMS requested (disabled for credit safety)");
+  
+  res.success({
+    success: true,
+    sid: "SMS_DISABLED_CREDIT_SAFETY",
+    note: "Use the Notification Bell for OTPs",
+  });
+}));
 
 // --- Private media access via short-lived signed URLs (G27) ---
 // Role check happens BEFORE signing, so only authorized agents can read media.
@@ -743,24 +743,20 @@ app.get(
   "/api/media/sign",
   requireAuth,
   requireRole("agent"),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const path = req.query.path;
     if (!path || typeof path !== "string") {
-      return res.status(400).json({ error: "Missing 'path' query parameter." });
+      return res.badRequest("Missing 'path' query parameter.");
     }
     if (!isMediaConfigured()) {
-      return res
-        .status(503)
-        .json({ error: "Media storage is not configured." });
+      return res.serviceUnavailable("Media storage");
     }
     const signedUrl = await signExistingPath(path);
     if (!signedUrl) {
-      return res
-        .status(404)
-        .json({ error: "Could not sign the requested object." });
+      return res.notFound("Requested media object");
     }
-    return res.json({ url: signedUrl });
-  },
+    return res.success({ url: signedUrl });
+  }),
 );
 
 // --- WhatsApp Cloud API webhook (G23) ---
@@ -862,6 +858,83 @@ httpServer.on("upgrade", (request, socket, head) => {
   } else {
     socket.destroy();
   }
+});
+
+// --- Global Error Handler -------------------------------------------------
+// Must be registered AFTER all routes so it catches errors from any handler
+
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  // Log the error with context
+  req.log?.error(
+    {
+      err: {
+        message: err.message,
+        code: err.code,
+        statusCode: err.statusCode,
+        stack: err.isOperational ? undefined : err.stack,
+      },
+    },
+    "Request error"
+  );
+
+  // Handle known operational errors
+  if (err instanceof AppError) {
+    const response = formatErrorResponse(err, req.correlationId);
+    if (err instanceof RateLimitError && err.retryAfter) {
+      res.set("Retry-After", err.retryAfter);
+    }
+    return res.status(err.statusCode).json(response);
+  }
+
+  // Handle Twilio-specific errors
+  if (err.code === 20429 || err.status === 429) {
+    return res.status(429).json(
+      formatErrorResponse(
+        new RateLimitError(60),
+        req.correlationId
+      )
+    );
+  }
+
+  // Handle JSON parsing errors
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json(
+      formatErrorResponse(
+        new ValidationError("Invalid JSON in request body"),
+        req.correlationId
+      )
+    );
+  }
+
+  // Handle payload too large
+  if (err.type === "entity.too.large") {
+    return res.status(413).json(
+      formatErrorResponse(
+        new ValidationError("Request payload too large. Maximum is 1MB."),
+        req.correlationId
+      )
+    );
+  }
+
+  // Unknown error - return generic message without leaking details
+  logger.error({ err: err.stack }, "Unhandled error");
+  return res.status(500).json(
+    formatErrorResponse(
+      new AppError("An unexpected error occurred. Please try again.", 500, ErrorCodes.INTERNAL_ERROR),
+      req.correlationId
+    )
+  );
+});
+
+// --- 404 Handler for unmatched routes --------------------------------------
+app.use((req, res) => {
+  res.status(404).json(
+    formatErrorResponse(
+      new NotFoundError("Endpoint"),
+      req.correlationId
+    )
+  );
 });
 
 httpServer.listen(port, "0.0.0.0", () =>

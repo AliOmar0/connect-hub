@@ -17,6 +17,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.core.decision_engine import DecisionEngine
+from app.core.nlp.engine import nlp_engine
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -44,11 +45,28 @@ async def evaluate(req: DecisionRequest) -> Dict[str, Any]:
 
     The response is masked (sensitive entity values and the escalation summary
     never contain raw identifiers).
+    Includes NLP metadata for observability.
     """
+    # Get NLP analysis for structured metadata
+    nlp_result = nlp_engine.analyze(req.text)
+    nlp_metadata = nlp_result.safe_dict()
+    
     result = await DecisionEngine.evaluate(
         req.text,
         history=req.history,
         channel=req.channel,
         session_id=req.session_id,
     )
-    return result.safe_dict()
+    
+    # Build response with NLP metadata
+    response = result.safe_dict()
+    response["nlp"] = nlp_metadata
+    
+    # Add RAG metadata if available
+    if result.top_documents:
+        response["rag"] = {
+            "top_score": result.scores.get("rag_top_score"),
+            "documents_count": len(result.top_documents)
+        }
+    
+    return response

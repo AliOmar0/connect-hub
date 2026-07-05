@@ -19,12 +19,12 @@ from app.models.nlp import IntentLabel, LanguageLabel
 class ActionDecision(str, enum.Enum):
     """The single, channel-agnostic set of outcomes."""
 
-    RESPOND = "RESPOND"                    # answer from the knowledge base
-    CLARIFY_LANGUAGE = "CLARIFY_LANGUAGE"  # language undetermined, ask user
-    CLARIFY_INTENT = "CLARIFY_INTENT"      # intent unclear, ask user
-    MOCK_TRANSACTION = "MOCK_TRANSACTION"  # sensitive op -> sandbox, never live
-    ESCALATE = "ESCALATE"                  # hand over to a human agent
-    BLOCK = "BLOCK"                        # unsafe input (e.g. prompt injection)
+    RESPOND = "RESPOND"                    # High confidence (> 0.85): answer from the knowledge base
+    CLARIFY_LANGUAGE = "CLARIFY_LANGUAGE"  # Language confidence < 0.70: ask user to confirm language
+    CLARIFY_INTENT = "CLARIFY_INTENT"       # Medium confidence (0.50-0.85): ask user for clarification
+    MOCK_TRANSACTION = "MOCK_TRANSACTION"  # Sensitive operation -> sandbox, never live
+    ESCALATE = "ESCALATE"                  # Low confidence (< 0.50) or high-risk: hand over to human agent
+    BLOCK = "BLOCK"                        # Unsafe input (e.g. prompt injection)
 
     @classmethod
     def values(cls) -> List[str]:

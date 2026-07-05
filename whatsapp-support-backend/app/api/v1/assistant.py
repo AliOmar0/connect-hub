@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from app.core.decision_engine import DecisionEngine
 from app.core.llm import LLMService
 from app.core.prompts import validate_response
+from app.core.nlp.engine import nlp_engine
 from app.models.decision import ActionDecision
 
 logger = logging.getLogger(__name__)
@@ -81,6 +82,11 @@ class ReplyResponse(BaseModel):
     escalation_reason: Optional[str] = Field(None, description="Internal reason (not user-facing)")
     escalation_summary: Optional[str] = Field(None, description="<=100 chars, PII-masked")
     scores: Dict[str, Optional[float]] = {}
+    nlp: Optional[Dict[str, Any]] = Field(None, description="Structured NLP analysis: intent, language, entities, confidence scores")
+    rag: Optional[Dict[str, Any]] = Field(None, description="RAG retrieval metadata: top_score, documents_count")
+    # New fields for NLP and RAG metadata
+    nlp: Optional[Dict[str, Any]] = Field(None, description="Structured NLP analysis with confidence scores")
+    rag: Optional[Dict[str, Any]] = Field(None, description="RAG retrieval metadata")
 
     model_config = {
         "json_schema_extra": {
@@ -94,6 +100,19 @@ class ReplyResponse(BaseModel):
                     "escalation_reason": "Explicit Agent Request",
                     "escalation_summary": "Explicit Agent Request: بدي احكي مع موظف",
                     "scores": {"intent_confidence": 0.97, "language_confidence": 0.95, "rag_top_score": None},
+                    "nlp": {
+                        "intent": "ESCALATION_REQUEST",
+                        "intent_confidence": 0.97,
+                        "language": "LEVANTINE_PS",
+                        "language_confidence": 0.95,
+                        "entities": [],
+                        "requires_confirmation": False,
+                        "fallback_triggered": False
+                    },
+                    "rag": {
+                        "top_score": None,
+                        "documents_count": 0
+                    }
                 }
             ]
         }
@@ -109,6 +128,11 @@ _RESPONSES = {
 @router.post("/assistant/reply", response_model=ReplyResponse, responses=_RESPONSES)
 async def reply(req: ReplyRequest) -> ReplyResponse:
     history = req.history or []
+    
+    # Get NLP analysis first for structured metadata
+    nlp_result = nlp_engine.analyze(req.text)
+    nlp_metadata = nlp_result.safe_dict()
+    
     result = await DecisionEngine.evaluate(
         req.text, history=history, channel=req.channel, session_id=req.session_id
     )
@@ -141,6 +165,15 @@ async def reply(req: ReplyRequest) -> ReplyResponse:
         message = result.localized_message
 
     escalate = decision in _ESCALATING
+    
+    # Build RAG metadata from decision result
+    rag_metadata = None
+    if result.top_documents:
+        rag_metadata = {
+            "top_score": result.scores.get("rag_top_score"),
+            "documents_count": len(result.top_documents)
+        }
+    
     return ReplyResponse(
         decision=decision.value,
         message=message,
@@ -156,4 +189,6 @@ async def reply(req: ReplyRequest) -> ReplyResponse:
             None if downgraded else result.escalation_summary
         ),
         scores=result.scores,
+        nlp=nlp_metadata,
+        rag=rag_metadata,
     )

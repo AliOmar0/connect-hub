@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     NGROK_URL: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_URL", "URL"))
     OTP_SERVICE_URL: str = "https://cupulate-azaria-tented.ngrok-free.dev/generate"
     
+    # JWT Authentication (shared with Node.js backend - uses same Supabase JWT secret)
+    SUPABASE_JWT_SECRET: str = Field(..., validation_alias=AliasChoices("SUPABASE_JWT_SECRET", "JWT_SECRET"))
+    JWT_ALGORITHM: str = "HS256"
+    JWT_AUTHORIZED_ROLES: List[str] = ["viewer", "agent", "manager", "supervisor", "admin"]
+    
     # RAG Configuration (FR-03.03)
     QDRANT_URL: Optional[str] = None  # Remote Qdrant URL (optional, uses local if not set)
     QDRANT_STORAGE_PATH: str = "./qdrant_storage"  # Local storage path

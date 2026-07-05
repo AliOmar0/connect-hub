@@ -10,6 +10,8 @@ Features:
 - PII redaction for compliance
 - 150-word maximum enforcement
 - Retrieval logging and metrics
+- Fallback integration with JSON knowledge base
+- Document deduplication via checksum
 """
 import os
 import re
@@ -17,6 +19,7 @@ import uuid
 import hashlib
 import logging
 import time
+import json
 from typing import List, Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -54,6 +57,7 @@ DEFAULT_CHUNK_OVERLAP = 50  # words
 EMBEDDING_DIMENSION = 384  # all-MiniLM-L6-v2 dimension
 MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 WORD_LIMIT = 150
+JSON_KNOWLEDGE_BASE_PATH = os.path.join(os.path.dirname(__file__), "..", "dataset", "bank_dataset_web.json")
 
 
 @dataclass
@@ -109,6 +113,102 @@ class RAGConfig:
 rag_config = RAGConfig()
 
 
+# ---------------------------------------------------------------------------
+# JSON Knowledge Base Fallback (used when RAG has no results or embeddings unavailable)
+# ---------------------------------------------------------------------------
+_json_knowledge_base: Optional[List[Dict[str, Any]]] = None
+
+def _load_json_knowledge_base() -> List[Dict[str, Any]]:
+    """Load the JSON knowledge base for fallback retrieval."""
+    global _json_knowledge_base
+    
+    if _json_knowledge_base is not None:
+        return _json_knowledge_base
+    
+    try:
+        if os.path.exists(JSON_KNOWLEDGE_BASE_PATH):
+            with open(JSON_KNOWLEDGE_BASE_PATH, "r", encoding="utf-8") as f:
+                _json_knowledge_base = json.load(f)
+            logger.info(f"Loaded JSON knowledge base: {len(_json_knowledge_base)} pages from {JSON_KNOWLEDGE_BASE_PATH}")
+        else:
+            logger.warning(f"JSON knowledge base not found at {JSON_KNOWLEDGE_BASE_PATH}")
+            _json_knowledge_base = []
+    except Exception as e:
+        logger.error(f"Error loading JSON knowledge base: {e}")
+        _json_knowledge_base = []
+    
+    return _json_knowledge_base
+
+
+def retrieve_from_json_knowledge_base(query: str, top_n: int = 3) -> List[Dict[str, Any]]:
+    """
+    Retrieve relevant documents from JSON knowledge base using keyword matching.
+    This serves as a fallback when vector search is unavailable or returns no results.
+    
+    Args:
+        query: Search query
+        top_n: Maximum number of results
+        
+    Returns:
+        List of matching documents with title, url, content, and score
+    """
+    dataset = _load_json_knowledge_base()
+    if not dataset or not query:
+        return []
+    
+    query_lower = query.lower().strip()
+    matches = []
+    
+    for item in dataset:
+        score = 0
+        title = item.get("title", "").lower()
+        content = item.get("content", "").lower()
+        
+        # Exact phrase match in title (highest boost)
+        if query_lower in title:
+            score += 100
+        
+        # Exact phrase match in content
+        if query_lower in content:
+            score += 50
+        
+        # Individual word matches
+        words = query_lower.split()
+        for word in words:
+            if len(word) < 2:
+                continue
+            
+            if word in title:
+                score += 20
+            if word in content:
+                score += 10
+        
+        if score > 0:
+            matches.append({
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "content": item.get("content", ""),
+                "score": score,
+                "source": "json_kb"
+            })
+    
+    # Sort by score descending
+    matches.sort(key=lambda x: x["score"], reverse=True)
+    
+    # Deduplicate by URL
+    seen_urls = set()
+    unique_matches = []
+    for match in matches:
+        url = match.get("url")
+        if url not in seen_urls:
+            seen_urls.add(url)
+            unique_matches.append(match)
+            if len(unique_matches) >= top_n:
+                break
+    
+    return unique_matches
+
+
 class EmbeddingModel:
     """Singleton wrapper for embedding model."""
     _instance = None
@@ -156,11 +256,12 @@ def embed_single(text: str) -> List[float]:
 
 # Global Qdrant client
 _qdrant_client: Optional[QdrantClient] = None
+_qdrant_healthy: bool = False
 
 
 def _get_client() -> QdrantClient:
-    """Get or create Qdrant client."""
-    global _qdrant_client
+    """Get or create Qdrant client with health check and reconnection."""
+    global _qdrant_client, _qdrant_healthy
     
     if _qdrant_client is None:
         if rag_config.qdrant_url:
@@ -173,6 +274,27 @@ def _get_client() -> QdrantClient:
             os.makedirs(storage_path, exist_ok=True)
             _qdrant_client = QdrantClient(path=storage_path)
             logger.info(f"Using local Qdrant storage at {storage_path}")
+    
+    # Health check - verify connection is still alive
+    try:
+        _qdrant_client.get_collections()
+        _qdrant_healthy = True
+    except Exception as e:
+        logger.warning(f"Qdrant health check failed: {e}. Attempting reconnection...")
+        _qdrant_healthy = False
+        # Try to reconnect
+        try:
+            if rag_config.qdrant_url:
+                _qdrant_client = QdrantClient(url=rag_config.qdrant_url)
+            else:
+                _qdrant_client = QdrantClient(path=rag_config.qdrant_storage_path)
+            _qdrant_client.get_collections()  # Verify reconnection
+            _qdrant_healthy = True
+            logger.info("Qdrant reconnected successfully")
+        except Exception as reconnect_error:
+            logger.error(f"Qdrant reconnection failed: {reconnect_error}")
+            _qdrant_client = None
+            raise RuntimeError(f"Qdrant connection unavailable: {reconnect_error}")
     
     return _qdrant_client
 
@@ -265,11 +387,56 @@ def chunk_text(
     return chunks
 
 
+def compute_document_checksum(text: str) -> str:
+    """
+    Compute SHA-256 checksum for document content.
+    Used for deduplication to prevent re-indexing unchanged documents.
+    """
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
+
+
+def check_document_exists_by_checksum(checksum: str) -> Optional[str]:
+    """
+    Check if a document with the given checksum already exists.
+    
+    Returns:
+        Existing document_id if found, None otherwise
+    """
+    client = _get_client()
+    collection_name = rag_config.qdrant_collection
+    
+    try:
+        # Search for documents with this checksum
+        filter_obj = Filter(
+            must=[
+                FieldCondition(
+                    key="content_checksum",
+                    match=MatchValue(value=checksum)
+                )
+            ]
+        )
+        
+        result = client.scroll(
+            collection_name=collection_name,
+            scroll_filter=filter_obj,
+            limit=1,
+            with_payload=True
+        )
+        
+        if result[0]:
+            return result[0][0].payload.get("document_id")
+    except Exception as e:
+        logger.debug(f"Checksum check error (collection may not exist): {e}")
+    
+    return None
+
+
 def index_document(
     document_id: str,
     text: str,
-    metadata: Optional[Dict[str, Any]] = None
-) -> int:
+    metadata: Optional[Dict[str, Any]] = None,
+    skip_if_unchanged: bool = True
+) -> Tuple[int, bool]:
     """
     Index a document into the vector store.
     
@@ -277,23 +444,38 @@ def index_document(
         document_id: Unique identifier for the document
         text: Full text content of the document
         metadata: Optional metadata to store with each chunk
+        skip_if_unchanged: Skip indexing if document with same content exists
         
     Returns:
-        Number of chunks indexed
+        Tuple of (number of chunks indexed, was_skipped_due_to_checksum)
     """
     if not text:
         logger.warning(f"Empty text for document {document_id}")
-        return 0
+        return 0, False
+    
+    # Check for duplicate content
+    if skip_if_unchanged:
+        checksum = compute_document_checksum(text)
+        existing_doc_id = check_document_exists_by_checksum(checksum)
+        if existing_doc_id:
+            logger.info(
+                f"Document with identical content already exists (id={existing_doc_id}). "
+                f"Skipping indexing of {document_id}"
+            )
+            return 0, True
     
     client = _get_client()
     collection_name = rag_config.qdrant_collection
     init_qdrant()
     
+    # Compute checksum for this version
+    content_checksum = compute_document_checksum(text)
+    
     # Chunk the text
     chunks = chunk_text(text)
     
     if not chunks:
-        return 0
+        return 0, False
     
     # Generate embeddings for all chunks at once (batch is faster)
     embeddings = embed(chunks)
@@ -307,6 +489,7 @@ def index_document(
             "chunk_index": i,
             "content": chunk,
             "total_chunks": len(chunks),
+            "content_checksum": content_checksum,
             "indexed_at": datetime.utcnow().isoformat(),
             **(metadata or {})
         }
@@ -318,13 +501,26 @@ def index_document(
         ))
     
     # Upsert to Qdrant
-    client.upsert(
-        collection_name=collection_name,
-        points=points
-    )
+    try:
+        client.upsert(
+            collection_name=collection_name,
+            points=points
+        )
+    except Exception as e:
+        logger.error(f"Qdrant upsert failed for document {document_id}: {e}")
+        raise RuntimeError(f"Failed to index document into Qdrant: {e}")
     
-    logger.info(f"Indexed {len(points)} chunks for document {document_id}")
-    return len(points)
+    # Verify persistence - confirm points were written
+    try:
+        total_points = client.count(
+            collection_name=collection_name,
+            exact=True
+        )
+        logger.info(f"✅ Verified {len(points)} chunks indexed for document {document_id}. Total points in collection: {total_points.count} (checksum: {content_checksum[:12]}...)")
+    except Exception as e:
+        logger.warning(f"Could not verify Qdrant persistence for {document_id}: {e}")
+    
+    return len(points), False
 
 
 def delete_document_chunks(document_id: str) -> int:
@@ -540,8 +736,16 @@ def log_retrieval(result: RetrievalResult, session_id: Optional[str] = None) -> 
     
     logger.info(f"RAG Retrieval: {log_entry}")
     
-    # TODO: Persist to database for FR-06 compliance
-    # This could be stored in a rag_retrieval_logs table
+    # Persist to database for FR-06 compliance
+    # Best-effort; suppress failures so retrieval never blocks
+    try:
+        from app.database import supabase
+        supabase.table("rag_retrieval_logs").insert(log_entry).execute()
+    except ImportError:
+        pass  # Supabase client not yet available (module-level init)
+    except Exception as e:
+        # e.g., table not created or connection error
+        logger.warning(f"Failed to persist RAG log to database: {e}")
 
 
 def enforce_word_limit(text: str, limit: int = WORD_LIMIT) -> str:
@@ -695,18 +899,68 @@ def retrieve_with_audit(
     session_id: Optional[str] = None,
     top_k: int = None,
     threshold: float = None,
+    use_json_fallback: bool = True,
 ) -> Tuple[List[RetrievedChunk], bool]:
-    """Audited retrieval used by the decision engine.
-
+    """
+    Audited retrieval used by the decision engine.
+    
     Wraps :func:`retrieve_with_logging` (PII-redacted logging + metrics) and
     returns a simple ``(chunks, fallback_triggered)`` tuple. ``fallback_triggered``
     is True when no chunk cleared the similarity threshold, signalling the
     decision engine to escalate rather than answer without grounding.
+    
+    When RAG returns no results and use_json_fallback=True, falls back to
+    JSON knowledge base keyword matching for graceful degradation.
+    
+    Args:
+        query: Search query
+        session_id: Optional session ID for logging
+        top_k: Maximum number of results
+        threshold: Minimum similarity score
+        use_json_fallback: Whether to use JSON KB fallback when RAG fails
+        
+    Returns:
+        Tuple of (chunks, fallback_triggered)
     """
     result = retrieve_with_logging(
         query, top_k=top_k, threshold=threshold, session_id=session_id
     )
-    return result.chunks, result.fallback_triggered
+    
+    # If RAG returned results, use them
+    if result.chunks:
+        return result.chunks, result.fallback_triggered
+    
+    # RAG returned no results - try JSON knowledge base fallback
+    if use_json_fallback:
+        logger.info(f"RAG returned no results. Falling back to JSON knowledge base for query: {query[:50]}...")
+        json_results = retrieve_from_json_knowledge_base(query, top_n=top_k or rag_config.top_k)
+        
+        if json_results:
+            # Convert JSON results to RetrievedChunk format
+            chunks = []
+            for i, item in enumerate(json_results):
+                # Normalize scores to 0-1 range for consistency
+                normalized_score = min(item.get("score", 50) / 100, 1.0)
+                
+                chunk = RetrievedChunk(
+                    id=f"json_kb_{i}",
+                    document_id=item.get("url", "unknown"),
+                    chunk_index=0,
+                    content=item.get("content", ""),
+                    score=normalized_score,
+                    metadata={
+                        "title": item.get("title", ""),
+                        "url": item.get("url", ""),
+                        "source": "json_kb_fallback"
+                    }
+                )
+                chunks.append(chunk)
+            
+            logger.info(f"JSON knowledge base fallback returned {len(chunks)} results")
+            return chunks, False  # fallback_triggered=False since we have results
+    
+    # No results from either source
+    return result.chunks, True
 
 
 # Migration/Initialization script

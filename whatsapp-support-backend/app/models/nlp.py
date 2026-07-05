@@ -34,10 +34,14 @@ from pydantic import BaseModel, Field, field_validator
 # ---------------------------------------------------------------------------
 # Language confidence strictly below this value forces a confirmation turn.
 LANGUAGE_CONFIRM_THRESHOLD: float = 0.70
-# Intent confidence at or below this value triggers the low-confidence branch.
-# NOTE: the comparison is ``<=`` so that *exactly* 0.60 follows the SRS
-# low-confidence branch (see acceptance criteria).
-INTENT_LOW_CONFIDENCE_THRESHOLD: float = 0.60
+
+# Intent confidence thresholds for omnichannel decision engine
+# High confidence (> 0.85): ANSWER with grounded response
+# Medium confidence (0.50 - 0.85): CLARIFY - ask user for more information
+# Low confidence (< 0.50): ESCALATE to human agent
+INTENT_HIGH_CONFIDENCE_THRESHOLD: float = 0.85
+INTENT_MID_CONFIDENCE_THRESHOLD: float = 0.50
+INTENT_LOW_CONFIDENCE_THRESHOLD: float = 0.60  # Legacy threshold for fallback
 
 
 # ---------------------------------------------------------------------------

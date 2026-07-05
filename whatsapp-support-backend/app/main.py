@@ -2,7 +2,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, HTTPException
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.assistant import router as assistant_router
@@ -11,6 +13,7 @@ from app.api.v1.knowledge_base import router as knowledge_base_router
 from app.api.v1.nlp import router as nlp_router
 from app.api.v1.sessions import router as sessions_router
 from app.api.v1.webhook import router as webhook_router
+from app.api.v1.deps import get_session, verify_jwt
 from app.core.config import settings
 from app.crud import crud
 
@@ -21,6 +24,27 @@ class EndpointFilter(logging.Filter):
 
 
 logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
+# ---------------------------------------------------------------------------
+# Startup validation
+# ---------------------------------------------------------------------------
+
+def _validate_startup() -> None:
+    """Validate critical configuration at startup.
+    
+    Raises RuntimeError if any required setting is missing.
+    """
+    critical_settings = {
+        "SUPABASE_URL": settings.SUPABASE_URL,
+        "SUPABASE_KEY": settings.SUPABASE_KEY,
+        "SUPABASE_JWT_SECRET": settings.SUPABASE_JWT_SECRET,
+        "OPENROUTER_API_KEY": settings.OPENROUTER_API_KEY,
+    }
+    missing = [k for k, v in critical_settings.items() if not v]
+    if missing:
+        logger.error(f"CRITICAL: Missing required environment variables: {missing}")
+        raise RuntimeError(f"Missing required configuration: {missing}")
+    logger.info("✅ Startup validation passed - all critical settings configured")
 
 
 async def session_cleanup_task():
@@ -46,7 +70,45 @@ async def session_cleanup_task():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Start background tasks
+    # Add logging for startup
+    logger.info("=" * 60)
+    logger.info("Starting WhatsApp Support Backend")
+    logger.info(f"Project: {settings.PROJECT_NAME}")
+    logger.info(f"API Version: {settings.API_V1_STR}")
+    logger.info("=" * 60)
+    
+    # Startup: validate critical configuration
+    try:
+        _validate_startup()
+    except RuntimeError as exc:
+        logger.error(f"Startup validation failed: {exc}")
+        raise
+
+    # --- 1. Initialize Qdrant vector database ---
+    try:
+        from app.core.rag import init_qdrant, _get_client
+        init_qdrant()
+        # Verify collection exists
+        client = _get_client()
+        client.get_collection(settings.QDRANT_COLLECTION)
+        logger.info(f"✅ Qdrant: Collection '{settings.QDRANT_COLLECTION}' initialized and verified")
+    except Exception as e:
+        logger.error(f"❌ Qdrant initialization failed: {e}")
+        raise RuntimeError(f"Qdrant initialization failed: {e}")
+
+    # --- 2. Check embeddings availability ---
+    try:
+        from app.core import rag
+        if rag.EMBEDDINGS_AVAILABLE:
+            logger.info("✅ Embeddings: sentence-transformers is available")
+        else:
+            logger.warning("⚠️ Embeddings: sentence-transformers is NOT installed!")
+            logger.warning("   RAG will use JSON knowledge base fallback only.")
+            logger.warning("   Install with: pip install sentence-transformers")
+    except Exception as e:
+        logger.error(f"❌ Embeddings check failed: {e}")
+    
+    # Start background tasks
     task = asyncio.create_task(session_cleanup_task())
 
     # Start ngrok tunnel if enabled
@@ -119,24 +181,16 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_headers=["*"],
     )
 
+# ---------------------------------------------------------------------------
 # Routers
-# Webhook at root /webhook
+# ---------------------------------------------------------------------------
+# Webhook endpoints remain UNAUTHENTICATED (Meta servers cannot send JWTs)
 app.include_router(webhook_router, tags=["webhook"])
 
-# API V1
-app.include_router(sessions_router, prefix=settings.API_V1_STR, tags=["sessions"])
-app.include_router(
-    knowledge_base_router, prefix=settings.API_V1_STR, tags=["knowledge-base"]
-)
-app.include_router(nlp_router, prefix=settings.API_V1_STR, tags=["nlp"])
-app.include_router(decision_router, prefix=settings.API_V1_STR, tags=["decision"])
-app.include_router(assistant_router, prefix=settings.API_V1_STR, tags=["assistant"])
-
-
+# Public health/root (still no auth)
 @app.get("/")
 def root():
     return {"message": "WhatsApp Support Backend Running"}
-
 
 @app.get("/health")
 def health():
@@ -151,3 +205,35 @@ def health():
         if use_deepseek
         else settings.OPENROUTER_MODEL,
     }
+
+# API V1 - PROTECTED with JWT auth (except webhook which is handled above)
+app.include_router(
+    sessions_router,
+    prefix=settings.API_V1_STR,
+    tags=["sessions"],
+    dependencies=[Depends(verify_jwt)],
+)
+app.include_router(
+    knowledge_base_router,
+    prefix=settings.API_V1_STR,
+    tags=["knowledge-base"],
+    dependencies=[Depends(verify_jwt)],
+)
+app.include_router(
+    nlp_router,
+    prefix=settings.API_V1_STR,
+    tags=["nlp"],
+    dependencies=[Depends(verify_jwt)],
+)
+app.include_router(
+    decision_router,
+    prefix=settings.API_V1_STR,
+    tags=["decision"],
+    dependencies=[Depends(verify_jwt)],
+)
+app.include_router(
+    assistant_router,
+    prefix=settings.API_V1_STR,
+    tags=["assistant"],
+    dependencies=[Depends(verify_jwt)],
+)

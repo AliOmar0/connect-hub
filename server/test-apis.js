@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import axios from 'axios';
 
-const OPENROUTER_API_KEY = "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";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
 
 async function testAPIs() {

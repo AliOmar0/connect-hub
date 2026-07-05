@@ -10,11 +10,17 @@ It combines, in a fixed precedence:
   1. LLM safety (prompt-injection) -> BLOCK
   2. Language confidence (< 0.70) -> CLARIFY_LANGUAGE
   3. Explicit human-agent request -> ESCALATE
-  4. Low intent confidence (<= 0.60 / fallback) -> ESCALATE
-  5. High-risk / requires-escalation intent -> ESCALATE
-  6. Sensitive transaction intent -> MOCK_TRANSACTION (never live)
-  7. RAG grounding: no relevant KB document -> ESCALATE
-  8. Otherwise -> RESPOND (grounded answer)
+  4. Low intent confidence (< 0.50) -> ESCALATE
+  5. Medium intent confidence (0.50 - 0.85) -> CLARIFY_INTENT
+  6. High-risk / requires-escalation intent -> ESCALATE
+  7. Sensitive transaction intent -> MOCK_TRANSACTION (never live)
+  8. RAG grounding: no relevant KB document -> ESCALATE
+  9. Otherwise -> RESPOND (grounded answer)
+
+Confidence-based decision tiers:
+  - High (> 0.85): ANSWER with grounded response
+  - Medium (0.50 - 0.85): CLARIFY - request more information
+  - Low (< 0.50): ESCALATE to human agent
 
 The returned object is fully typed and every escalation carries a concise,
 PII-masked summary (<= 100 characters).
@@ -34,6 +40,8 @@ from app.models.nlp import (
     IntentLabel,
     HIGH_RISK_INTENTS,
     SENSITIVE_TRANSACTION_INTENTS,
+    INTENT_HIGH_CONFIDENCE_THRESHOLD,
+    INTENT_MID_CONFIDENCE_THRESHOLD,
     INTENT_LOW_CONFIDENCE_THRESHOLD,
     LANGUAGE_CONFIRM_THRESHOLD,
 )
@@ -125,7 +133,19 @@ class DecisionEngine:
         channel: Optional[str] = None,
         session_id: Optional[str] = None,
     ) -> DecisionResult:
-        """Evaluate a single message into one channel-agnostic decision."""
+        """Evaluate a single message into one channel-agnostic decision.
+        
+        Decision flow:
+        1. BLOCK - Prompt injection detected
+        2. CLARIFY_LANGUAGE - Language confidence < 0.70
+        3. ESCALATE - Explicit human agent request
+        4. ESCALATE - Intent confidence < 0.50 (low)
+        5. CLARIFY_INTENT - Intent confidence 0.50 - 0.85 (medium)
+        6. ESCALATE - High-risk intent
+        7. MOCK_TRANSACTION - Sensitive transaction intent
+        8. ESCALATE - No relevant RAG documents
+        9. RESPOND - High confidence with grounded answer
+        """
         nlp: NLPResult = nlp_engine.analyze(text)
         entities = [e.safe_dict() for e in nlp.entities]
         base_scores = cls._scores(nlp, None)
@@ -169,15 +189,23 @@ class DecisionEngine:
                 reason="Explicit Agent Request",
             )
 
-        # 4) Low intent confidence (<= 0.60 follows the SRS low-confidence branch).
-        if nlp.fallback_triggered or nlp.intent_confidence <= INTENT_LOW_CONFIDENCE_THRESHOLD:
+        # 4) Low intent confidence (< 0.50) — ESCALATE
+        if nlp.intent_confidence < INTENT_MID_CONFIDENCE_THRESHOLD:
             return _result(
                 ActionDecision.ESCALATE,
                 DecisionMessages.escalate(nlp.language),
-                reason="Low Intent Confidence",
+                reason=f"Low Intent Confidence ({nlp.intent_confidence:.2%})",
             )
 
-        # 5) High-risk / requires-escalation intents.
+        # 5) Medium intent confidence (0.50 - 0.85) — CLARIFY
+        if nlp.intent_confidence < INTENT_HIGH_CONFIDENCE_THRESHOLD:
+            return _result(
+                ActionDecision.CLARIFY_INTENT,
+                DecisionMessages.clarify_intent(nlp.language, nlp.intent),
+                reason=f"Medium Intent Confidence ({nlp.intent_confidence:.2%})",
+            )
+
+        # 6) High-risk / requires-escalation intents.
         if nlp.intent in HIGH_RISK_INTENTS:
             return _result(
                 ActionDecision.ESCALATE,
@@ -185,7 +213,7 @@ class DecisionEngine:
                 reason=f"High Risk Intent ({nlp.intent.value})",
             )
 
-        # 6) Sensitive transactions are mocked in a sandbox — never executed live.
+        # 7) Sensitive transactions are mocked in a sandbox — never executed live.
         if nlp.intent in SENSITIVE_TRANSACTION_INTENTS:
             return _result(
                 ActionDecision.MOCK_TRANSACTION,
@@ -193,7 +221,7 @@ class DecisionEngine:
                 reason=f"Sensitive Operation ({nlp.intent.value})",
             )
 
-        # 7) RAG grounding — never answer a KB question without a relevant doc.
+        # 8) RAG grounding — never answer a KB question without a relevant doc.
         chunks, fallback = retrieve_with_audit(text, session_id=session_id)
         if fallback or not chunks:
             return _result(
@@ -202,6 +230,7 @@ class DecisionEngine:
                 reason="No KB documents found",
             )
 
+        # 9) High confidence with grounded answer — RESPOND
         top_documents = cls._docs_to_dicts(chunks)
         rag_top = top_documents[0]["score"] if top_documents else None
         return _result(

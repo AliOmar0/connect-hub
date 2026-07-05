@@ -35,10 +35,35 @@ class DecisionMessages:
         )
 
     @staticmethod
-    def clarify_intent(language: Optional[LanguageLabel] = None) -> str:
+    def clarify_intent(language: Optional[LanguageLabel] = None, intent=None) -> str:
+        """Request clarification when intent confidence is medium (0.50 - 0.85)."""
+        intent_name = intent.value if intent else "unknown"
         if _is_english(language):
-            return "I'm not sure I understood your request. Could you rephrase it briefly?"
-        return "لم أتأكد من فهم طلبك. هل يمكنك إعادة صياغته باختصار؟"
+            return (
+                f"I think you're asking about {intent_name.replace('_', ' ').lower()}, "
+                "but I'm not entirely sure. Could you provide more details or rephrase your question?"
+            )
+        intent_arabic = {
+            "ACCOUNT_INQUIRY": "استفسار عن الحساب",
+            "TRANSFER_LOCAL": "تحويل محلي",
+            "TRANSFER_INTERNATIONAL": "تحويل دولي",
+            "CARD_SERVICES": "خدمات البطاقات",
+            "CARD_LOST_STOLEN": "بطاقة مفقودة أو مسروقة",
+            "STATEMENT_REQUEST": "طلب كشف حساب",
+            "FINANCING_INQUIRY": "استفسار عن التمويل",
+            "EXCHANGE_RATE": "سعر الصرف",
+            "BRANCH_ATM_INFO": "معلومات الفرع أو الصراف",
+            "PRODUCT_INFO": "معلومات المنتجات",
+            "SHARIA_INQUIRY": "استفسار شرعي",
+            "COMPLAINT": "شكوى",
+            "ESCALATION_REQUEST": "طلب تحويل لموظف",
+            "GENERAL_INFO": "معلومات عامة",
+        }
+        ar_intent = intent_arabic.get(intent_name, intent_name)
+        return (
+            f"أظن أنك تسأل عن \"{ar_intent}\"، لكنني غير متأكد تماماً. "
+            "هل يمكنك تقديم مزيد من التفاصيل أو إعادة صياغة سؤالك؟"
+        )
 
     @staticmethod
     def escalate(language: Optional[LanguageLabel] = None) -> str:
