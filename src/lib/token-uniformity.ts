@@ -47,7 +47,7 @@ export const PAGE_IDS = [
   "ShortcutsPage",
   "NotFound",
   "BackendTester",
-  "TwilioDemo",
+  "VapiDemo",
 ] as const;
 export type PageId = (typeof PAGE_IDS)[number];
 

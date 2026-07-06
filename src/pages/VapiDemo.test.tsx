@@ -1,18 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@/test-utils/render";
 import { axe, toHaveNoViolations } from "jest-axe";
-import TwilioDemo from "./TwilioDemo";
+import VapiDemo from "./VapiDemo";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import i18n from "@/i18n";
 
 expect.extend(toHaveNoViolations);
 
-// The Twilio Voice SDK is a browser-only dependency; stub it so the module
-// resolves without touching real telephony infrastructure.
-vi.mock("@twilio/voice-sdk", () => ({
-  Device: vi.fn().mockImplementation(() => ({
+// The Vapi web SDK is a browser-only dependency; stub it so the module resolves
+// without touching real telephony infrastructure.
+vi.mock("@vapi-ai/web", () => ({
+  default: vi.fn().mockImplementation(() => ({
     on: vi.fn(),
-    register: vi.fn().mockResolvedValue(undefined),
+    start: vi.fn().mockResolvedValue(undefined),
+    stop: vi.fn(),
   })),
 }));
 
@@ -41,7 +42,18 @@ beforeEach(() => {
         ok: callOk,
         status: callOk ? 200 : 500,
         json: () =>
-          Promise.resolve(callOk ? { sid: "CA123" } : { error: "call failed" }),
+          Promise.resolve(
+            callOk ? { sid: "call-123" } : { error: "call failed" },
+          ),
+      } as Response);
+    }
+
+    if (url.includes("/api/vapi/config")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({ publicKey: "pk_test", assistantId: "asst_1" }),
       } as Response);
     }
 
@@ -60,34 +72,34 @@ afterEach(async () => {
   }
 });
 
-describe("TwilioDemo", () => {
+describe("VapiDemo", () => {
   // Requirement 23.1 — text, controls, and containers apply design-token
   // color/typography/spacing utilities rather than literal values.
   it("styles headings and status with design tokens (23.1)", () => {
-    render(<TwilioDemo />);
+    render(<VapiDemo />);
 
     const heading = screen.getByRole("heading", {
       name: "Connect Hub AI",
       level: 1,
     });
     expect(heading.className).toContain("text-foreground");
-    expect(
-      screen.getByText("Premium Voice Gateway for PIB").className,
-    ).toContain("text-muted-foreground");
+    expect(screen.getByText("Vapi Voice Gateway for PIB").className).toContain(
+      "text-muted-foreground",
+    );
 
     // The connection indicator conveys state through a status role + tokens
-    // (non-color cue is the SDK status text), not color alone.
+    // (non-color cue is the call status text), not color alone.
     const statusPill = screen.getByRole("status");
-    expect(statusPill.textContent).toMatch(/SDK:/);
+    expect(statusPill.textContent).toMatch(/Voice:/);
     expect(statusPill.className).toContain("text-status-error");
   });
 
   // Requirement 23.2 — a successful operation surfaces its result through the
   // shared success feedback mechanism.
   it("routes a successful call through the shared success feedback (23.2)", async () => {
-    render(<TwilioDemo />);
+    render(<VapiDemo />);
 
-    fireEvent.change(screen.getByLabelText("Test Inbound/Outbound AI"), {
+    fireEvent.change(screen.getByLabelText("Place an outbound AI call"), {
       target: { value: "+970599123456" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Dial Now" }));
@@ -102,9 +114,9 @@ describe("TwilioDemo", () => {
   // shared feedback mechanism.
   it("routes a failed call through the shared error feedback (23.2)", async () => {
     callOk = false;
-    render(<TwilioDemo />);
+    render(<VapiDemo />);
 
-    fireEvent.change(screen.getByLabelText("Test Inbound/Outbound AI"), {
+    fireEvent.change(screen.getByLabelText("Place an outbound AI call"), {
       target: { value: "+970599123456" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Dial Now" }));
@@ -118,11 +130,11 @@ describe("TwilioDemo", () => {
   // Requirement 23.3 — every interactive control is keyboard reachable and
   // carries a non-empty accessible name.
   it("gives every interactive control a non-empty accessible name (23.3)", () => {
-    render(<TwilioDemo />);
+    render(<VapiDemo />);
 
     // The voice number field is labelled (label htmlFor -> input id).
     expect(
-      screen.getByLabelText("Test Inbound/Outbound AI"),
+      screen.getByLabelText("Place an outbound AI call"),
     ).toBeInTheDocument();
 
     // Tabs and the dial control expose text names.
@@ -140,7 +152,7 @@ describe("TwilioDemo", () => {
   });
 
   it("has no axe-detectable accessibility violations when loaded (23.1, 23.3)", async () => {
-    const { container } = render(<TwilioDemo />);
+    const { container } = render(<VapiDemo />);
     const results = await axe(container, {
       runOnly: {
         type: "tag",

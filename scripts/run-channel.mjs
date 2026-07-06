@@ -8,7 +8,7 @@
  * at a time, and it lets you run each channel on a separate laptop.
  *
  *   WhatsApp channel  -> Python backend (port 3001, path /webhook)  -> Active AI Sessions
- *   Voice channel     -> Node API      (port 3001, Twilio voice)    -> phone calls
+ *   Voice channel     -> Node API      (port 3001, Vapi voice)      -> phone calls
  *
  * Usage:
  *   node scripts/run-channel.mjs whatsapp     # or:  npm run channel:whatsapp
@@ -76,9 +76,9 @@ const CHANNELS = {
     ],
   },
   voice: {
-    title: "Voice (Twilio)",
+    title: "Voice (Vapi)",
     port: 3001,
-    path: "/voice",
+    path: "/vapi/webhook",
     domainEnv: ["VOICE_NGROK_URL", "NGROK_URL"],
     services: [
       {
@@ -87,12 +87,12 @@ const CHANNELS = {
         args: [join("server", "index.js")],
         cwd: ROOT,
       },
-      { label: "edge-tts", cmd: PY, args: ["edge_tts_server.py"], cwd: ROOT },
-      // Authoritative bank AI/policy backend. The Node voice server delegates
-      // every turn to it (POST /api/v1/assistant/reply via AI_BACKEND_URL).
-      // It runs on an internal port (8000) so it doesn't clash with the Node
-      // server on 3001 (which is the one fronted by ngrok for Twilio). Without
-      // this, every call reply is the "technical difficulty" fallback.
+      // Authoritative bank AI/policy backend. The Node voice server (Vapi's
+      // custom-LLM endpoint) delegates every turn to it (POST
+      // /api/v1/assistant/reply via AI_BACKEND_URL). It runs on an internal
+      // port (8000) so it doesn't clash with the Node server on 3001 (the one
+      // fronted by ngrok for Vapi). Without this, every call reply is the
+      // "technical difficulty" fallback.
       {
         label: "ai-policy",
         cmd: PY,

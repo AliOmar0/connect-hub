@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
-import TwilioDemo from "@/pages/TwilioDemo";
+import VapiDemo from "@/pages/VapiDemo";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelType, Profile, SessionMainType } from "@/types/database";
 import { Badge } from "@/components/ui/badge";
@@ -456,13 +456,14 @@ export default function SettingsPage() {
   const handleTestConfig = async (channel: ChannelType): Promise<boolean> => {
     try {
       if (channel === "voice") {
-        const response = await fetch("http://localhost:3001/api/token");
+        const response = await fetch("http://localhost:3001/api/vapi/config");
         const data = await response.json();
-        if (response.ok && data.token) {
+        const publicKey = data.publicKey ?? data.data?.publicKey;
+        if (response.ok && publicKey) {
           notifySuccess("Voice Gateway is Online and Ready");
           return true;
         } else {
-          throw new Error(data.error || "Failed to get token");
+          throw new Error(data.error || "Vapi is not configured");
         }
       } else if (channel === "sms") {
         // Simple health check or ping
@@ -530,7 +531,7 @@ export default function SettingsPage() {
               <LayoutList className="h-4 w-4" aria-hidden="true" />
               {t("settings.tabs.sessionTypes")}
             </TabsTrigger>
-            <TabsTrigger value="twilio" className="gap-2">
+            <TabsTrigger value="vapi" className="gap-2">
               <Mic className="h-4 w-4" aria-hidden="true" />
               {t("settings.tabs.voiceTesting")}
             </TabsTrigger>
@@ -1381,8 +1382,8 @@ export default function SettingsPage() {
             </Dialog>
           </TabsContent>
 
-          <TabsContent value="twilio" className="space-y-4">
-            <TwilioDemo />
+          <TabsContent value="vapi" className="space-y-4">
+            <VapiDemo />
           </TabsContent>
         </Tabs>
       </div>

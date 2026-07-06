@@ -3,7 +3,6 @@
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
-import twilio from 'twilio';
 import { getRedisClient, isRedisHealthy } from './redis.js';
 import { logger } from './logger.js';
 
@@ -33,7 +32,7 @@ export function buildCorsOptions() {
 
     return {
         origin(origin, callback) {
-            // Allow same-origin / server-to-server (no Origin header) and Twilio webhooks.
+            // Allow same-origin / server-to-server (no Origin header) and Vapi webhooks.
             if (!origin) return callback(null, true);
             if (isAllowed(origin)) return callback(null, true);
             logger.warn({ origin }, 'Blocked by CORS policy');
@@ -80,38 +79,33 @@ export const sessionRateLimiter = rateLimit({
     message: { error: 'Too many requests for this session. Please slow down.', code: 'RATE_LIMITED_SESSION' },
 });
 
-// --- Twilio webhook signature validation -----------------------------------
-
-export function validateTwilioSignature(req, res, next) {
-    if (process.env.TWILIO_VALIDATE_SIGNATURE !== 'true') {
+// --- Vapi webhook / custom-LLM authentication ------------------------------
+// Vapi authenticates its server requests (custom-LLM turns + event webhooks) by
+// sending a shared secret in a configurable header. By default this is
+// `x-vapi-secret`; set `server.headers` / `credentials` in the Vapi dashboard
+// (or assistant config) to the same value as VAPI_SERVER_SECRET here.
+//
+// We compare in constant time to avoid leaking the secret via timing. When
+// VAPI_SERVER_SECRET is not configured (local/dev) the check is skipped so the
+// endpoints can be exercised without a tunnel, mirroring the previous
+// TWILIO_VALIDATE_SIGNATURE=false behaviour.
+export function verifyVapiSignature(req, res, next) {
+    const expected = process.env.VAPI_SERVER_SECRET;
+    if (!expected) {
         return next(); // disabled in local/dev to ease testing
     }
-    const signature = req.headers['x-twilio-signature'];
-    const authToken = process.env.TWILIO_AUTH_TOKEN;
-
-    // Twilio signs the exact public URL it requested. Behind ngrok / a proxy,
-    // that URL can differ from a single hard-coded value (protocol, host, or
-    // which reserved domain is fronting this server). To avoid wrongly
-    // rejecting valid inbound calls, we validate against every plausible URL:
-    //   1. The configured public base (NGROK_URL) + path.
-    //   2. The actual proxied host from X-Forwarded-* / Host headers + path.
-    // The request is accepted if the signature matches ANY candidate.
-    const proto = req.headers['x-forwarded-proto']?.split(',')[0].trim() || req.protocol || 'https';
-    const host = req.headers['x-forwarded-host']?.split(',')[0].trim() || req.headers['host'];
-    const candidates = new Set();
-    if (process.env.NGROK_URL) {
-        candidates.add(`${process.env.NGROK_URL.replace(/\/+$/, '')}${req.originalUrl}`);
-    }
-    if (host) {
-        candidates.add(`${proto}://${host}${req.originalUrl}`);
-    }
-
-    const valid = [...candidates].some((url) =>
-        twilio.validateRequest(authToken, signature, url, req.body || {})
-    );
+    // Vapi sends the secret under x-vapi-secret; also accept x-vapi-signature
+    // for setups that name the custom header differently.
+    const provided =
+        req.headers['x-vapi-secret'] || req.headers['x-vapi-signature'] || '';
+    const provBuf = Buffer.from(String(provided));
+    const expBuf = Buffer.from(String(expected));
+    const valid =
+        provBuf.length === expBuf.length &&
+        crypto.timingSafeEqual(provBuf, expBuf);
     if (!valid) {
-        req.log?.warn({ candidates: [...candidates] }, 'Rejected Twilio webhook with invalid signature');
-        return res.status(403).type('text/xml').send('<Response><Reject/></Response>');
+        req.log?.warn('Rejected Vapi request with invalid secret');
+        return res.status(401).json({ error: 'Invalid Vapi secret.' });
     }
     return next();
 }

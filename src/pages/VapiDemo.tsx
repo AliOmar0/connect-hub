@@ -1,30 +1,31 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PhoneCall, Loader2, Send, ShieldCheck, Globe } from "lucide-react";
+import { PhoneCall, PhoneOff, Loader2, Send, Mic, Globe } from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/feedback";
-import { Device } from "@twilio/voice-sdk";
+import Vapi from "@vapi-ai/web";
 
-const TwilioDemo = () => {
+const API_BASE = "http://localhost:3001";
+
+const VapiDemo = () => {
   const { t } = useTranslation();
 
-  // Standard Call State
+  // Outbound (dialed) call state
   const [phoneNumber, setPhoneNumber] = useState("");
   const [calling, setCalling] = useState(false);
   const [, setCallSid] = useState<string | null>(null);
 
-  // Voice SDK State
-  const [, setDevice] = useState<Device | null>(null);
-  const [sdkStatus, setSdkStatus] = useState(() =>
-    t("diagnostics.twilio.sdk.offline"),
+  // Browser (web) voice-call state
+  const vapiRef = useRef<Vapi | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState(() =>
+    t("diagnostics.vapi.sdk.offline"),
   );
-  const [sdkOnline, setSdkOnline] = useState(false);
-  const [isIncoming, setIsIncoming] = useState(false);
-  const [activeConnection, setActiveConnection] = useState<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const [inCall, setInCall] = useState(false);
+  const [connecting, setConnecting] = useState(false);
 
   // Text Chat State
   const [chatMessage, setChatMessage] = useState("");
@@ -33,24 +34,26 @@ const TwilioDemo = () => {
     { role: string; content: string }[]
   >([]);
 
-  // SMS State
-  const [smsNumber, setSmsNumber] = useState("");
-  const [smsBody, setSmsBody] = useState("Testing SMS from PIB Hub");
-  const [smsSending, setSmsSending] = useState(false);
-
   // Chat Verification State
   const [chatPhone, setChatPhone] = useState("");
   const [chatSessionId] = useState(() =>
     Math.random().toString(36).substring(7),
   );
 
-  // Initialize Twilio Voice SDK
-  const initSDK = async () => {
-    setSdkStatus(t("diagnostics.twilio.sdk.connecting"));
-    setSdkOnline(false);
-    try {
-      const response = await fetch("http://localhost:3001/api/token");
+  // Tear down any active Vapi call when leaving the page.
+  useEffect(() => {
+    return () => {
+      vapiRef.current?.stop();
+      vapiRef.current = null;
+    };
+  }, []);
 
+  // Start a live in-browser voice call with the AI assistant through Vapi.
+  const startVoiceCall = async () => {
+    setConnecting(true);
+    setVoiceStatus(t("diagnostics.vapi.sdk.connecting"));
+    try {
+      const response = await fetch(`${API_BASE}/api/vapi/config`);
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
@@ -61,66 +64,57 @@ const TwilioDemo = () => {
       }
 
       const data = await response.json();
-
-      if (!data.token) {
-        throw new Error(t("diagnostics.twilio.sdk.noToken"));
+      const publicKey = data.publicKey ?? data.data?.publicKey;
+      const assistantId = data.assistantId ?? data.data?.assistantId;
+      if (!publicKey || !assistantId) {
+        throw new Error(t("diagnostics.vapi.sdk.noConfig"));
       }
 
-      // Twilio Voice SDK v2.0+ instantiation
-      const newDevice = new Device(data.token, {
-        logLevel: "debug",
+      const vapi = new Vapi(publicKey);
+      vapiRef.current = vapi;
+
+      vapi.on("call-start", () => {
+        setInCall(true);
+        setConnecting(false);
+        setVoiceStatus(t("diagnostics.vapi.sdk.online"));
+        notifySuccess(t("diagnostics.vapi.sdk.registered"));
       });
 
-      newDevice.on("registered", () => {
-        setSdkStatus(
-          t("diagnostics.twilio.sdk.online", { identity: data.identity }),
-        );
-        setSdkOnline(true);
-        notifySuccess(t("diagnostics.twilio.sdk.registered"));
+      vapi.on("call-end", () => {
+        setInCall(false);
+        setConnecting(false);
+        setVoiceStatus(t("diagnostics.vapi.sdk.ended"));
       });
 
-      newDevice.on("error", (error) => {
-        setSdkStatus(
-          t("diagnostics.twilio.sdk.error", { message: error.message }),
-        );
-        setSdkOnline(false);
-        notifyError(
-          t("diagnostics.twilio.sdk.errorToast", { message: error.message }),
-        );
+      vapi.on("error", (error: unknown) => {
+        const message =
+          (error as Error)?.message || t("diagnostics.vapi.sdk.unknownError");
+        setInCall(false);
+        setConnecting(false);
+        setVoiceStatus(t("diagnostics.vapi.sdk.error", { message }));
+        notifyError(t("diagnostics.vapi.sdk.errorToast", { message }));
       });
 
-      newDevice.on("incoming", (connection) => {
-        notifySuccess(t("diagnostics.twilio.incoming.toast"));
-        setIsIncoming(true);
-        setActiveConnection(connection);
-
-        connection.on("disconnect", () => {
-          setIsIncoming(false);
-          setActiveConnection(null);
-        });
-      });
-
-      await newDevice.register();
-      setDevice(newDevice);
+      await vapi.start(assistantId);
     } catch (err: unknown) {
       const error = err as Error;
       const errorMessage =
-        error?.message || t("diagnostics.twilio.sdk.unknownError");
-      setSdkStatus(
-        t("diagnostics.twilio.sdk.setupRequired", { message: errorMessage }),
+        error?.message || t("diagnostics.vapi.sdk.unknownError");
+      setConnecting(false);
+      setInCall(false);
+      setVoiceStatus(
+        t("diagnostics.vapi.sdk.setupRequired", { message: errorMessage }),
       );
-      setSdkOnline(false);
       notifyError(
-        t("diagnostics.twilio.sdk.setupError", { message: errorMessage }),
+        t("diagnostics.vapi.sdk.setupError", { message: errorMessage }),
       );
     }
   };
 
-  const handleAcceptCall = () => {
-    if (activeConnection) {
-      activeConnection.accept();
-      setIsIncoming(false);
-    }
+  const stopVoiceCall = () => {
+    vapiRef.current?.stop();
+    setInCall(false);
+    setVoiceStatus(t("diagnostics.vapi.sdk.ended"));
   };
 
   const handleCall = async (e: React.FormEvent) => {
@@ -128,15 +122,15 @@ const TwilioDemo = () => {
     if (!phoneNumber) return;
     setCalling(true);
     try {
-      const response = await fetch("http://localhost:3001/api/make-call", {
+      const response = await fetch(`${API_BASE}/api/make-call`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ to: phoneNumber }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
-      notifySuccess(t("diagnostics.twilio.voice.success"));
-      setCallSid(data.sid);
+      notifySuccess(t("diagnostics.vapi.voice.success"));
+      setCallSid(data.sid ?? data.data?.sid ?? null);
     } catch (err: unknown) {
       const error = err as Error;
       notifyError(error.message);
@@ -153,7 +147,7 @@ const TwilioDemo = () => {
     setChatMessage("");
     setChatLoading(true);
     try {
-      const response = await fetch("http://localhost:3001/api/chat", {
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -166,42 +160,13 @@ const TwilioDemo = () => {
       const data = await response.json();
       setChatHistory((prev) => [
         ...prev,
-        { role: "assistant", content: data.content },
+        { role: "assistant", content: data.content ?? data.data?.content },
       ]);
     } catch (err: unknown) {
       const error = err as Error;
-      notifyError(
-        t("diagnostics.twilio.chat.error", { message: error.message }),
-      );
+      notifyError(t("diagnostics.vapi.chat.error", { message: error.message }));
     } finally {
       setChatLoading(false);
-    }
-  };
-
-  const handleSms = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!smsNumber || !smsBody) {
-      notifyError(t("diagnostics.twilio.sms.missingFields"));
-      return;
-    }
-    setSmsSending(true);
-    try {
-      const response = await fetch("http://localhost:3001/api/sms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to: smsNumber, message: smsBody }),
-      });
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.error || t("diagnostics.twilio.sms.failed"));
-      notifySuccess(t("diagnostics.twilio.sms.success", { sid: data.sid }));
-    } catch (err: unknown) {
-      const error = err as Error;
-      notifyError(
-        t("diagnostics.twilio.sms.error", { message: error.message }),
-      );
-    } finally {
-      setSmsSending(false);
     }
   };
 
@@ -210,70 +175,63 @@ const TwilioDemo = () => {
       <div className="flex justify-between items-start">
         <div className="flex flex-col gap-2">
           <h1 className="text-4xl font-bold tracking-tight text-foreground">
-            {t("diagnostics.twilio.title")}
+            {t("diagnostics.vapi.title")}
           </h1>
           <p className="text-lg text-muted-foreground">
-            {t("diagnostics.twilio.subtitle")}
+            {t("diagnostics.vapi.subtitle")}
           </p>
         </div>
         <div
           role="status"
           className={`px-4 py-2 rounded-full text-xs font-bold border ${
-            sdkOnline
+            inCall
               ? "bg-status-success/10 text-status-success border-status-success/20"
               : "bg-status-error/10 text-status-error border-status-error/20"
           }`}
         >
-          {t("diagnostics.twilio.sdkStatus", { status: sdkStatus })}
+          {t("diagnostics.vapi.sdkStatus", { status: voiceStatus })}
         </div>
       </div>
-
-      {isIncoming && (
-        <Card className="border-primary motion-safe:animate-bounce bg-primary/10">
-          <CardContent className="p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <PhoneCall
-                className="motion-safe:animate-pulse text-primary"
-                aria-hidden="true"
-              />
-              <span className="font-bold">
-                {t("diagnostics.twilio.incoming.title")}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="default" onClick={handleAcceptCall}>
-                {t("diagnostics.twilio.incoming.accept")}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => activeConnection?.ignore()}
-              >
-                {t("diagnostics.twilio.incoming.ignore")}
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 space-y-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                {t("diagnostics.twilio.security.title")}
+                <Mic className="h-4 w-4" aria-hidden="true" />
+                {t("diagnostics.vapi.security.title")}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button
-                variant="outline"
-                className="w-full text-xs"
-                onClick={initSDK}
-              >
-                {t("diagnostics.twilio.security.initialize")}
-              </Button>
+              {inCall ? (
+                <Button
+                  variant="destructive"
+                  className="w-full text-xs"
+                  onClick={stopVoiceCall}
+                >
+                  <PhoneOff className="h-4 w-4 mr-2" aria-hidden="true" />
+                  {t("diagnostics.vapi.security.stop")}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full text-xs"
+                  onClick={startVoiceCall}
+                  disabled={connecting}
+                >
+                  {connecting ? (
+                    <Loader2
+                      className="h-4 w-4 mr-2 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <PhoneCall className="h-4 w-4 mr-2" aria-hidden="true" />
+                  )}
+                  {t("diagnostics.vapi.security.start")}
+                </Button>
+              )}
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {t("diagnostics.twilio.security.hint")}
+                {t("diagnostics.vapi.security.hint")}
               </p>
             </CardContent>
           </Card>
@@ -281,13 +239,13 @@ const TwilioDemo = () => {
           <Card className="bg-muted/50">
             <CardHeader>
               <CardTitle className="text-sm font-medium">
-                {t("diagnostics.twilio.bankingVoice.title")}
+                {t("diagnostics.vapi.bankingVoice.title")}
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-3 text-sm text-primary">
                 <Globe className="h-4 w-4" aria-hidden="true" />
-                <span>{t("diagnostics.twilio.bankingVoice.value")}</span>
+                <span>{t("diagnostics.vapi.bankingVoice.value")}</span>
               </div>
             </CardContent>
           </Card>
@@ -297,15 +255,12 @@ const TwilioDemo = () => {
           <Card className="shadow-xl">
             <Tabs defaultValue="voice">
               <CardHeader className="border-b bg-muted/20">
-                <TabsList className="grid w-full grid-cols-3 max-w-[500px]">
+                <TabsList className="grid w-full grid-cols-2 max-w-[400px]">
                   <TabsTrigger value="voice">
-                    {t("diagnostics.twilio.tabs.voice")}
-                  </TabsTrigger>
-                  <TabsTrigger value="sms">
-                    {t("diagnostics.twilio.tabs.sms")}
+                    {t("diagnostics.vapi.tabs.voice")}
                   </TabsTrigger>
                   <TabsTrigger value="chat">
-                    {t("diagnostics.twilio.tabs.chat")}
+                    {t("diagnostics.vapi.tabs.chat")}
                   </TabsTrigger>
                 </TabsList>
               </CardHeader>
@@ -314,15 +269,13 @@ const TwilioDemo = () => {
                 <TabsContent value="voice">
                   <form onSubmit={handleCall} className="space-y-6">
                     <div className="space-y-3">
-                      <Label htmlFor="twilio-voice-number">
-                        {t("diagnostics.twilio.voice.label")}
+                      <Label htmlFor="vapi-voice-number">
+                        {t("diagnostics.vapi.voice.label")}
                       </Label>
                       <div className="flex gap-3">
                         <Input
-                          id="twilio-voice-number"
-                          placeholder={t(
-                            "diagnostics.twilio.voice.placeholder",
-                          )}
+                          id="vapi-voice-number"
+                          placeholder={t("diagnostics.vapi.voice.placeholder")}
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
                           className="text-lg h-12"
@@ -339,58 +292,13 @@ const TwilioDemo = () => {
                               aria-hidden="true"
                             />
                           ) : (
-                            t("diagnostics.twilio.voice.dial")
+                            t("diagnostics.vapi.voice.dial")
                           )}
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground italic">
-                        {t("diagnostics.twilio.voice.hint")}
+                        {t("diagnostics.vapi.voice.hint")}
                       </p>
-                    </div>
-                  </form>
-                </TabsContent>
-
-                <TabsContent value="sms">
-                  <form onSubmit={handleSms} className="space-y-6">
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="twilio-sms-number">
-                          {t("diagnostics.twilio.sms.recipient")}
-                        </Label>
-                        <Input
-                          id="twilio-sms-number"
-                          placeholder={t(
-                            "diagnostics.twilio.sms.recipientPlaceholder",
-                          )}
-                          value={smsNumber}
-                          onChange={(e) => setSmsNumber(e.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="twilio-sms-body">
-                          {t("diagnostics.twilio.sms.message")}
-                        </Label>
-                        <Input
-                          id="twilio-sms-body"
-                          value={smsBody}
-                          onChange={(e) => setSmsBody(e.target.value)}
-                        />
-                      </div>
-                      <Button
-                        type="submit"
-                        className="w-full h-12"
-                        disabled={smsSending}
-                      >
-                        {smsSending ? (
-                          <Loader2
-                            className="animate-spin mr-2"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <Send className="h-4 w-4 mr-2" aria-hidden="true" />
-                        )}
-                        {t("diagnostics.twilio.sms.send")}
-                      </Button>
                     </div>
                   </form>
                 </TabsContent>
@@ -403,22 +311,22 @@ const TwilioDemo = () => {
                         aria-hidden="true"
                       />
                       <Label
-                        htmlFor="twilio-chat-phone"
+                        htmlFor="vapi-chat-phone"
                         className="text-xs font-semibold text-muted-foreground"
                       >
-                        {t("diagnostics.twilio.chat.identityLabel")}
+                        {t("diagnostics.vapi.chat.identityLabel")}
                       </Label>
                       <Input
-                        id="twilio-chat-phone"
+                        id="vapi-chat-phone"
                         className="h-8 text-xs w-48"
                         placeholder={t(
-                          "diagnostics.twilio.chat.identityPlaceholder",
+                          "diagnostics.vapi.chat.identityPlaceholder",
                         )}
                         value={chatPhone}
                         onChange={(e) => setChatPhone(e.target.value)}
                       />
                       <p className="text-xs text-muted-foreground italic">
-                        {t("diagnostics.twilio.chat.identityHint")}
+                        {t("diagnostics.vapi.chat.identityHint")}
                       </p>
                     </div>
                     <div className="h-[400px] border rounded-xl flex flex-col bg-muted/5">
@@ -446,8 +354,8 @@ const TwilioDemo = () => {
                         className="p-4 border-t flex gap-2"
                       >
                         <Input
-                          aria-label={t("diagnostics.twilio.chat.placeholder")}
-                          placeholder={t("diagnostics.twilio.chat.placeholder")}
+                          aria-label={t("diagnostics.vapi.chat.placeholder")}
+                          placeholder={t("diagnostics.vapi.chat.placeholder")}
                           value={chatMessage}
                           onChange={(e) => setChatMessage(e.target.value)}
                           className="h-11"
@@ -458,7 +366,7 @@ const TwilioDemo = () => {
                           size="icon"
                           className="rounded-full h-11 w-11"
                           disabled={chatLoading}
-                          aria-label={t("diagnostics.twilio.chat.send")}
+                          aria-label={t("diagnostics.vapi.chat.send")}
                         >
                           {chatLoading ? (
                             <Loader2
@@ -482,4 +390,4 @@ const TwilioDemo = () => {
   );
 };
 
-export default TwilioDemo;
+export default VapiDemo;

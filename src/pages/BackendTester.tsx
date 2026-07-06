@@ -35,7 +35,7 @@ interface StatusResponse {
   ttsProvider: string;
   redisHealthy: boolean;
   mediaConfigured: boolean;
-  twilioSignatureValidation: boolean;
+  vapiSignatureValidation: boolean;
   providers: Record<string, boolean>;
 }
 
@@ -309,8 +309,8 @@ const BackendTester = () => {
                     label={t("diagnostics.backend.health.providers.supabase")}
                   />
                   <BoolPill
-                    ok={status.providers.twilio}
-                    label={t("diagnostics.backend.health.providers.twilio")}
+                    ok={status.providers.vapi}
+                    label={t("diagnostics.backend.health.providers.vapi")}
                   />
                   <BoolPill
                     ok={status.providers.whatsappOtp}

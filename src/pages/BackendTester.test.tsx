@@ -35,11 +35,11 @@ const statusFixture = {
   ttsProvider: "edge",
   redisHealthy: true,
   mediaConfigured: true,
-  twilioSignatureValidation: true,
+  vapiSignatureValidation: true,
   providers: {
     openrouter: true,
     supabase: true,
-    twilio: true,
+    vapi: true,
     whatsappOtp: true,
     azureTts: false,
     elevenlabs: false,

@@ -1,8 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
-import { WebSocketServer } from "ws";
-import twilio from "twilio";
 import cors from "cors";
 import helmet from "helmet";
 import axios from "axios";
@@ -30,7 +28,7 @@ import {
   buildCorsOptions,
   ipRateLimiter,
   sessionRateLimiter,
-  validateTwilioSignature,
+  verifyVapiSignature,
   verifyWhatsAppSignature,
 } from "./lib/security.js";
 import {
@@ -46,13 +44,11 @@ import {
   isDuplicate,
   isRedisHealthy,
 } from "./lib/redis.js";
-import { synthesize, synthesizeNatural, getTtsProvider } from "./lib/tts.js";
+import { synthesize, getTtsProvider } from "./lib/tts.js";
 import {
-  uploadAndSign,
   signExistingPath,
   isMediaConfigured,
 } from "./lib/media.js";
-import { attachVoiceStream } from "./lib/voiceStream.js";
 import {
   startCall,
   recordCallTurn,
@@ -63,10 +59,14 @@ import {
 const app = express();
 app.set("trust proxy", 1); // accurate req.ip behind reverse proxy / load balancer
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ noServer: true });
 
 // Prefer dedicated env var to avoid conflicts with generic PORT in some environments
-const port = Number(process.env.TWILIO_SERVER_PORT || process.env.PORT || 3001);
+const port = Number(
+  process.env.VOICE_SERVER_PORT ||
+    process.env.TWILIO_SERVER_PORT ||
+    process.env.PORT ||
+    3001,
+);
 
 import { validateStartup } from "./lib/startup.js";
 
@@ -133,10 +133,43 @@ app.use(responseFormatterMiddleware);
 registerObservabilityRoutes(app);
 app.use(ipRateLimiter);
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN,
-);
+// --- Vapi (voice provider) -------------------------------------------------
+// Vapi owns the realtime voice pipeline: telephony (inbound + outbound), speech
+// recognition, and text-to-speech. This server is Vapi's "brain": Vapi calls our
+// OpenAI-compatible custom-LLM endpoint (POST /vapi/chat/completions) for every
+// turn, and posts call-lifecycle events to POST /vapi/webhook so calls appear in
+// the dashboard. Outbound calls are placed via Vapi's REST API below.
+const VAPI_API_KEY = process.env.VAPI_API_KEY; // private/server key
+const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
+const VAPI_PHONE_NUMBER_ID = process.env.VAPI_PHONE_NUMBER_ID;
+const VAPI_PUBLIC_KEY = process.env.VAPI_PUBLIC_KEY; // browser (web) calls
+const VAPI_API_BASE = process.env.VAPI_API_BASE || "https://api.vapi.ai";
+
+if (!VAPI_API_KEY) {
+  logger.warn(
+    "VAPI_API_KEY is not set. Outbound voice calls will fail until it is configured.",
+  );
+}
+
+// Place an outbound phone call through Vapi. Returns the created call object.
+async function createVapiCall({ to, assistantId, phoneNumberId }) {
+  const { data } = await axios.post(
+    `${VAPI_API_BASE}/call`,
+    {
+      assistantId: assistantId || VAPI_ASSISTANT_ID,
+      phoneNumberId: phoneNumberId || VAPI_PHONE_NUMBER_ID,
+      customer: { number: to },
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${VAPI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      timeout: 15000,
+    },
+  );
+  return data;
+}
 
 async function getAIResponse(userMessage, history = [], meta = {}) {
   // The Palestinian Islamic Bank AI/policy layer is authoritative and lives in
@@ -208,21 +241,10 @@ async function sendOTP(phone) {
     console.error("[Supabase Notification Error]:", e.message);
   }
 
-  // 2. Twilio SMS Disabled to save credits
-  /*
-    try {
-        await client.messages.create({
-            body: `رمز التحقق الخاص بك هو: ${otp}. يرجى عدم مشاركته مع أحد.`,
-            from: process.env.TWILIO_PHONE_NUMBER,
-            to: phone
-        });
-        return otp;
-    } catch (e) {
-        console.error("[Twilio SMS Error]:", e.message);
-        return otp;
-    }
-    */
-  // 3. New: Try WhatsApp OTP (Using Security Number)
+  // 2. SMS OTP delivery is disabled (no SMS provider). OTPs are delivered via
+  //    the in-app notification above and WhatsApp below.
+
+  // 3. Try WhatsApp OTP (Using Security Number)
   if (
     process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID &&
     process.env.SECURITY_WHATSAPP_ACCESS_TOKEN
@@ -360,34 +382,6 @@ async function processMessage(
   return aiResponse;
 }
 
-// Speak text into a TwiML node using the configured TTS provider.
-// Generates audio -> stores in a PRIVATE bucket -> plays via a short-lived signed
-// URL (G27). Falls back to Twilio's built-in Polly.Zeina <Say> if TTS/media is
-// unavailable (G4 safe fallback). Returns the stored private path (or null).
-async function sayOrPlay(node, text) {
-  try {
-    const audio = await synthesizeNatural(text, { lang: "ar" });
-    if (audio && isMediaConfigured()) {
-      const stored = await uploadAndSign(
-        audio.buffer,
-        audio.contentType,
-        "tts",
-      );
-      if (stored?.signedUrl) {
-        node.play(stored.signedUrl);
-        return stored.path;
-      }
-    }
-  } catch (e) {
-    logger.error(
-      { err: e.message },
-      "sayOrPlay TTS error; using Polly fallback",
-    );
-  }
-  node.say({ voice: "Polly.Zeina", language: "arb" }, text);
-  return null;
-}
-
 // Log Call to Supabase
 async function saveCallLog(callSid, userText, aiText, audioPath, ttsProvider) {
   try {
@@ -405,122 +399,186 @@ async function saveCallLog(callSid, userText, aiText, audioPath, ttsProvider) {
 
 // --- Routes ---
 
-app.get("/", (req, res) => res.send("Bank AI v35 (Polly Only Flow)"));
-app.get("/voice", (req, res) => res.send("Active at +19166596816"));
+app.get("/", (req, res) => res.send("Bank AI (Vapi Voice)"));
+app.get("/voice", (req, res) => res.send("Voice channel: Vapi"));
 
-app.post("/voice", validateTwilioSignature, async (req, res) => {
-  console.log("[Twilio] Inbound Call Handled");
-  const twiml = new twilio.twiml.VoiceResponse();
+// --- Vapi custom-LLM endpoint (the "brain" of every voice turn) ------------
+// Vapi runs speech-to-text and text-to-speech itself, then calls this
+// OpenAI-compatible endpoint for the assistant's reply. Configure the Vapi
+// assistant's model as: provider "custom-llm", url "<PUBLIC_URL>/vapi",
+// which makes Vapi POST to `<url>/chat/completions`.
+//
+// We ignore the raw model prompt and instead delegate to the authoritative
+// bank policy layer via processMessage(), exactly like WhatsApp and web chat,
+// so all channels share ONE central decision. The reply is streamed back as
+// Server-Sent Events because Vapi requests streaming completions.
+app.post(
+  "/vapi/chat/completions",
+  verifyVapiSignature,
+  asyncHandler(async (req, res) => {
+    const body = req.body || {};
+    const messages = Array.isArray(body.messages) ? body.messages : [];
 
-  // Surface the call in the dashboard immediately as an active voice session
-  // (customer + session + call rows). Non-blocking: never let logging break the
-  // call flow.
-  startCall({ callSid: req.body.CallSid, phone: req.body.From }).catch(() => {});
+    // Vapi passes the live call so we can key the dashboard session on it.
+    const call = body.call || {};
+    const callId = call.id || body.metadata?.callId || `vapi-${Date.now()}`;
+    const phone =
+      call.customer?.number ||
+      call.phoneNumber?.number ||
+      body.phoneNumber ||
+      null;
 
-  // Play the greeting FULLY *before* we start listening.
-  // IMPORTANT: if the greeting is nested inside <Gather input="speech">, Twilio
-  // begins speech recognition the moment playback starts, so mic echo/background
-  // noise (very common on browser Twilio Client calls) is detected as "speech"
-  // and the prompt is cut off after the first word. Playing it first guarantees
-  // the whole greeting is heard, then we open the mic to capture the question.
-  await sayOrPlay(
-    twiml,
-    "أهلاً بك في البنك الإسلامي الفلسطيني، كيف بقدر أساعدك؟",
-  );
+    // The latest user turn is sent as `text`; everything before it becomes the
+    // history for the policy backend (so the current turn is not duplicated).
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    const userText =
+      lastUserIdx >= 0
+        ? messages[lastUserIdx].content?.toString().trim() || ""
+        : "";
+    const history = messages
+      .slice(0, lastUserIdx >= 0 ? lastUserIdx : messages.length)
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .slice(-10)
+      .map((m) => ({ role: m.role, content: m.content }));
 
-  // Now listen for the caller's speech (empty gather = listen only).
-  twiml.gather({
-    input: "speech",
-    language: "ar-SA", // Fixed locale for robust Arabic recognition
-    speechTimeout: "auto",
-    action: "/handle-speech",
-  });
-
-  // If they don't say anything, prompt once more then loop back.
-  twiml.say(
-    { voice: "Polly.Zeina", language: "arb" },
-    "هل ما زلت هنا؟ يرجى طرح سؤالك.",
-  );
-  twiml.redirect("/voice");
-
-  res.type("text/xml").send(twiml.toString());
-});
-
-app.post("/handle-speech", validateTwilioSignature, async (req, res) => {
-  const userSpeech = req.body.SpeechResult;
-  const callSid = req.body.CallSid;
-  const fromPhone = req.body.From;
-
-  console.log(
-    `[Voice] Captured: "${userSpeech || "Silence"}" from ${fromPhone}`,
-  );
-  const twiml = new twilio.twiml.VoiceResponse();
-
-  if (userSpeech) {
-    console.log(`[Logic] Processing speech...`);
     const meta = {};
-    const aiText = await processMessage(userSpeech, callSid, fromPhone, [], meta);
-    console.log(`[Logic] Result: ${aiText.substring(0, 100)}...`);
+    const aiText = userText
+      ? await processMessage(userText, callId, phone, history, meta)
+      : "أهلاً بك في البنك الإسلامي الفلسطيني، كيف بقدر أساعدك؟";
 
-    // Persist this turn to the dashboard (caller speech + AI reply) and reflect
+    // Mirror the turn into the dashboard (caller speech + AI reply) and reflect
     // an agent handover as an "escalated" session. Non-blocking.
     recordCallTurn({
-      callSid,
-      phone: fromPhone,
-      userText: userSpeech,
+      callSid: callId,
+      phone,
+      userText,
       aiText,
       escalated: !!meta.escalate,
     }).catch(() => {});
+    saveCallLog(callId, userText, aiText, null, getTtsProvider());
 
-    // Speak the AI answer FULLY first (same reason as /voice: a prompt nested
-    // inside <Gather input="speech"> gets cut off after the first word by mic
-    // echo/noise), then open the mic to capture the next question.
-    const audioPath = await sayOrPlay(twiml, aiText);
-    saveCallLog(callSid, userSpeech, aiText, audioPath, getTtsProvider());
+    const created = Math.floor(Date.now() / 1000);
+    const id = `chatcmpl-${crypto.randomUUID()}`;
+    const model = body.model || "connect-hub-policy";
 
-    twiml.gather({
-      input: "speech",
-      language: "ar-SA",
-      speechTimeout: "auto",
-      action: "/handle-speech",
+    // Non-streaming clients may set stream:false; honour both.
+    if (body.stream === false) {
+      return res.json({
+        id,
+        object: "chat.completion",
+        created,
+        model,
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: aiText },
+            finish_reason: "stop",
+          },
+        ],
+      });
+    }
+
+    // Stream a single content chunk followed by the completion sentinel.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    const chunk = (delta, finish = null) => ({
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model,
+      choices: [{ index: 0, delta, finish_reason: finish }],
     });
+    res.write(`data: ${JSON.stringify(chunk({ role: "assistant" }))}\n\n`);
+    res.write(`data: ${JSON.stringify(chunk({ content: aiText }))}\n\n`);
+    res.write(`data: ${JSON.stringify(chunk({}, "stop"))}\n\n`);
+    res.write("data: [DONE]\n\n");
+    res.end();
+  }),
+);
 
-    twiml.redirect("/voice");
-  } else {
-    console.log("[Twilio] No speech recognized, redirecing to /voice");
-    twiml.redirect("/voice");
-  }
-  res.type("text/xml").send(twiml.toString());
-});
+// --- Vapi server webhook (call lifecycle events) ---------------------------
+// Vapi posts every server event here as { message: { type, ... } }. We use it
+// to surface calls in the dashboard: create the session when a call starts and
+// close it when the call ends. Turn-by-turn content is captured in the
+// custom-LLM endpoint above. Always ack with 200 so Vapi does not retry.
+app.post(
+  "/vapi/webhook",
+  verifyVapiSignature,
+  asyncHandler(async (req, res) => {
+    const message = req.body?.message || {};
+    const type = message.type;
+    const call = message.call || {};
+    const callId = call.id;
+    const phone =
+      call.customer?.number || call.phoneNumber?.number || null;
 
-// Outbound / Mobile SDK Handlers
-app.post("/api/voice-sdk", validateTwilioSignature, (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
-  const to = req.body.To;
+    switch (type) {
+      case "status-update": {
+        // "in-progress" => call answered; anything terminal => call ended.
+        if (message.status === "in-progress" && callId) {
+          startCall({ callSid: callId, phone }).catch(() => {});
+        } else if (
+          ["ended", "forwarding", "busy", "no-answer"].includes(
+            message.status,
+          ) &&
+          callId
+        ) {
+          endCall({ callSid: callId }).catch(() => {});
+        }
+        break;
+      }
+      case "end-of-call-report": {
+        if (callId) endCall({ callSid: callId }).catch(() => {});
+        break;
+      }
+      case "assistant-request": {
+        // Tell Vapi which assistant should handle this inbound call.
+        if (VAPI_ASSISTANT_ID) {
+          return res.json({ assistantId: VAPI_ASSISTANT_ID });
+        }
+        break;
+      }
+      default:
+        break;
+    }
+    return res.json({ received: true });
+  }),
+);
 
-  // Check if it's an outbound call or we just want to dial out to the AI assistant
-  if (!to || to === "AI" || to === process.env.TWILIO_PHONE_NUMBER) {
-    // Redirection must be absolute URL if cross-calling or just path
-    twiml.redirect(`/voice`);
-  } else {
-    const dial = twiml.dial({ callerId: process.env.TWILIO_PHONE_NUMBER });
-    dial.number(to);
-  }
-  res.type("text/xml").send(twiml.toString());
-});
+// Public Vapi config for the browser voice widget. The PUBLIC key is safe to
+// expose to the client (that is its purpose); the private VAPI_API_KEY never
+// leaves the server. Gated behind agent auth to match the old /api/token.
+app.get(
+  "/api/vapi/config",
+  requireAuth,
+  requireRole("agent"),
+  (req, res, next) => {
+    if (!VAPI_PUBLIC_KEY || !VAPI_ASSISTANT_ID) {
+      const missing = [];
+      if (!VAPI_PUBLIC_KEY) missing.push("VAPI_PUBLIC_KEY");
+      if (!VAPI_ASSISTANT_ID) missing.push("VAPI_ASSISTANT_ID");
+      return next(
+        new ExternalServiceError(
+          "Vapi",
+          `Missing configuration: ${missing.join(", ")}`,
+        ),
+      );
+    }
+    res.success({
+      publicKey: VAPI_PUBLIC_KEY,
+      assistantId: VAPI_ASSISTANT_ID,
+    });
+  },
+);
 
-// Twilio call status callback: marks the dashboard session completed when the
-// call ends (and closes the calls row). Best-effort; returns 204 regardless.
-app.post("/voice/status", validateTwilioSignature, async (req, res) => {
-  const callSid = req.body.CallSid;
-  const status = req.body.CallStatus;
-  const terminal = ["completed", "busy", "no-answer", "failed", "canceled"];
-  if (callSid && terminal.includes(status)) {
-    endCall({ callSid }).catch(() => {});
-  }
-  res.status(204).end();
-});
-
+// Outbound AI call via Vapi's REST API.
 app.post(
   "/api/make-call",
   requireAuth,
@@ -529,57 +587,28 @@ app.post(
   asyncHandler(async (req, res) => {
     const { to } = req.body;
 
-    logger.info({ to: to.slice(-4) }, "Initiating outbound AI call");
-    const call = await client.calls.create({
-      url: `${process.env.NGROK_URL}/voice`,
-      to: to,
-      from: process.env.TWILIO_PHONE_NUMBER,
-      statusCallback: `${process.env.NGROK_URL}/voice/status`,
-      statusCallbackMethod: "POST",
-      statusCallbackEvent: ["completed"],
-    });
-    
-    res.success({ success: true, sid: call.sid });
+    if (!VAPI_API_KEY || !VAPI_PHONE_NUMBER_ID || !VAPI_ASSISTANT_ID) {
+      const missing = [];
+      if (!VAPI_API_KEY) missing.push("VAPI_API_KEY");
+      if (!VAPI_PHONE_NUMBER_ID) missing.push("VAPI_PHONE_NUMBER_ID");
+      if (!VAPI_ASSISTANT_ID) missing.push("VAPI_ASSISTANT_ID");
+      throw new ExternalServiceError(
+        "Vapi",
+        `Missing configuration: ${missing.join(", ")}`,
+      );
+    }
+
+    logger.info({ to: to.slice(-4) }, "Initiating outbound AI call (Vapi)");
+    try {
+      const call = await createVapiCall({ to });
+      res.success({ success: true, sid: call.id });
+    } catch (error) {
+      const detail = error.response?.data || error.message;
+      req.log?.error({ err: detail }, "Vapi outbound call failed");
+      throw new ExternalServiceError("Vapi", "Failed to place outbound call");
+    }
   }),
 );
-
-app.get("/api/token", requireAuth, requireRole("agent"), (req, res, next) => {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID;
-  const apiKey = process.env.TWILIO_API_KEY;
-  const apiSecret = process.env.TWILIO_API_SECRET;
-  const outgoingApplicationSid = process.env.TWIML_APP_SID;
-
-  if (!apiKey || !apiSecret || !outgoingApplicationSid) {
-    const missing = [];
-    if (!apiKey) missing.push("TWILIO_API_KEY");
-    if (!apiSecret) missing.push("TWILIO_API_SECRET");
-    if (!outgoingApplicationSid) missing.push("TWIML_APP_SID");
-    return next(new ExternalServiceError("Twilio", `Missing configuration: ${missing.join(", ")}`));
-  }
-
-  try {
-    const { AccessToken } = twilio.jwt;
-    const { VoiceGrant } = AccessToken;
-    const identity = "pib_agent";
-
-    const accessToken = new AccessToken(accountSid, apiKey, apiSecret, {
-      identity,
-    });
-    accessToken.addGrant(
-      new VoiceGrant({
-        outgoingApplicationSid: outgoingApplicationSid,
-        incomingAllow: true,
-      }),
-    );
-    const jwt = accessToken.toJwt();
-    
-    req.log?.info({ identity }, "Token generated successfully");
-    res.success({ token: jwt, identity });
-  } catch (error) {
-    req.log?.error({ err: error.message }, "Token generation failed");
-    next(new ExternalServiceError("Twilio", "Failed to generate token"));
-  }
-});
 
 app.post("/api/chat", sessionRateLimiter, validateBody(Schemas.chatMessage), asyncHandler(async (req, res) => {
   const { message, history, sessionId, phone } = req.body;
@@ -645,14 +674,11 @@ if (TEST_ENDPOINTS_ENABLED) {
       ttsProvider: getTtsProvider(),
       redisHealthy: isRedisHealthy(),
       mediaConfigured: isMediaConfigured(),
-      twilioSignatureValidation:
-        process.env.TWILIO_VALIDATE_SIGNATURE === "true",
+      vapiSignatureValidation: Boolean(process.env.VAPI_SERVER_SECRET),
       providers: {
         openrouter: Boolean(OPENROUTER_KEY),
         supabase: Boolean(process.env.VITE_SUPABASE_URL),
-        twilio: Boolean(
-          process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN,
-        ),
+        vapi: Boolean(VAPI_API_KEY && VAPI_ASSISTANT_ID),
         whatsappOtp: Boolean(
           process.env.SECURITY_WHATSAPP_PHONE_NUMBER_ID &&
           process.env.SECURITY_WHATSAPP_ACCESS_TOKEN,
@@ -823,42 +849,10 @@ app.post("/webhook/whatsapp", verifyWhatsAppSignature, async (req, res) => {
   }
 });
 
-// --- Streaming voice path with barge-in (G4, experimental) ---
-// TwiML that hands the call audio to our WebSocket via Twilio Media Streams.
-app.post("/voice/stream", validateTwilioSignature, (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
-  const host = (process.env.NGROK_URL || "").replace(/^https?:\/\//, "");
-  if (!host) {
-    // No public host configured; fall back to the stable gather flow.
-    twiml.redirect("/voice");
-    return res.type("text/xml").send(twiml.toString());
-  }
-  twiml.say(
-    { voice: "Polly.Zeina", language: "arb" },
-    "أهلاً بك في البنك الإسلامي الفلسطيني.",
-  );
-  const connect = twiml.connect();
-  connect.stream({ url: `wss://${host}/voice/stream` });
-  res.type("text/xml").send(twiml.toString());
-});
-
-// Bridge the dead WebSocketServer to Twilio Media Streams.
-attachVoiceStream(wss, processMessage);
-httpServer.on("upgrade", (request, socket, head) => {
-  let pathname = "";
-  try {
-    pathname = new URL(request.url, "http://localhost").pathname;
-  } catch {
-    pathname = request.url || "";
-  }
-  if (pathname === "/voice/stream") {
-    wss.handleUpgrade(request, socket, head, (ws) =>
-      wss.emit("connection", ws, request),
-    );
-  } else {
-    socket.destroy();
-  }
-});
+// NOTE: The realtime streaming voice path (barge-in, media streams) is now
+// handled entirely by Vapi. Vapi runs STT/TTS and the low-latency audio loop,
+// calling POST /vapi/chat/completions for each turn, so no in-process
+// WebSocket bridge is needed here anymore.
 
 // --- Global Error Handler -------------------------------------------------
 // Must be registered AFTER all routes so it catches errors from any handler
@@ -887,7 +881,7 @@ app.use((err, req, res, next) => {
     return res.status(err.statusCode).json(response);
   }
 
-  // Handle Twilio-specific errors
+  // Handle upstream rate-limit errors (e.g. voice/AI providers)
   if (err.code === 20429 || err.status === 429) {
     return res.status(429).json(
       formatErrorResponse(

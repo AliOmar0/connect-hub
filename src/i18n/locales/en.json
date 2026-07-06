@@ -100,7 +100,7 @@
         "providers": {
           "openrouter": "OpenRouter (AI)",
           "supabase": "Supabase",
-          "twilio": "Twilio",
+          "vapi": "Vapi",
           "whatsappOtp": "WhatsApp OTP",
           "azureTts": "Azure TTS",
           "elevenlabs": "ElevenLabs",
@@ -122,11 +122,11 @@
         "aiReply": "AI reply",
         "ttsLabel": "tts: {{provider}}",
         "audioPlayed": "audio played ({{provider}})",
-        "noAudio": "no audio (provider returned none — would use Twilio Polly on a real call)",
+        "noAudio": "no audio (provider returned none — Vapi handles TTS on a real call)",
         "success": "Voice turn simulated"
       },
       "chat": {
-        "description": "Talks to /api/chat — the same AI logic the voice path uses. No Twilio.",
+        "description": "Talks to /api/chat — the same AI logic the voice path uses. No telephony.",
         "empty": "Send a message to start.",
         "placeholder": "Ask the AI...",
         "send": "Send message"
@@ -138,58 +138,43 @@
         "playerLabel": "Synthesized speech player"
       }
     },
-    "twilio": {
+    "vapi": {
       "title": "Connect Hub AI",
-      "subtitle": "Premium Voice Gateway for PIB",
-      "sdkStatus": "SDK: {{status}}",
+      "subtitle": "Vapi Voice Gateway for PIB",
+      "sdkStatus": "Voice: {{status}}",
       "sdk": {
-        "offline": "Offline",
+        "offline": "Idle",
         "connecting": "Connecting...",
-        "online": "Online (agent: {{identity}})",
+        "online": "In call",
+        "ended": "Call ended",
         "error": "Error: {{message}}",
         "setupRequired": "Setup Required: {{message}}",
-        "registered": "Voice SDK registered",
-        "errorToast": "SDK error: {{message}}",
+        "registered": "Connected to the AI assistant",
+        "errorToast": "Voice error: {{message}}",
         "setupError": "Voice setup error: {{message}}",
-        "noToken": "No token returned from server",
+        "noConfig": "Vapi is not configured on the server",
         "unknownError": "Unknown error occurred during setup"
       },
-      "incoming": {
-        "title": "Incoming call...",
-        "accept": "Accept",
-        "ignore": "Ignore",
-        "toast": "Incoming call"
-      },
       "security": {
-        "title": "Security Settings",
-        "initialize": "Initialize Voice SDK",
-        "hint": "Initializing the SDK allows your browser to receive calls directly from the Twilio cloud."
+        "title": "Browser Voice Call",
+        "start": "Start Call",
+        "stop": "End Call",
+        "hint": "Starts a live, in-browser voice conversation with the AI assistant through Vapi. Allow microphone access when prompted."
       },
       "bankingVoice": {
         "title": "Banking Voice",
-        "value": "Arabic (Polly.Zeina)"
+        "value": "Arabic (Vapi voice)"
       },
       "tabs": {
         "voice": "AI Voice Call",
-        "sms": "SMS Test",
         "chat": "AI Chat Test"
       },
       "voice": {
-        "label": "Test Inbound/Outbound AI",
+        "label": "Place an outbound AI call",
         "placeholder": "+970...",
         "dial": "Dial Now",
-        "hint": "To hear the AI, you can call +1 916 659 6816 or use \"Dial Now\".",
+        "hint": "Use the browser call above, or enter a phone number and \"Dial Now\" to have the AI call it.",
         "success": "AI call initiated"
-      },
-      "sms": {
-        "recipient": "Recipient Number",
-        "recipientPlaceholder": "+970...",
-        "message": "Message",
-        "send": "Send SMS Message",
-        "missingFields": "Please fill in both number and message",
-        "success": "SMS sent successfully (SID: {{sid}})",
-        "failed": "Failed to send SMS",
-        "error": "SMS error: {{message}}"
       },
       "chat": {
         "identityLabel": "Simulate Phone Identity",
