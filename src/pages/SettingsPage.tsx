@@ -43,6 +43,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/components/theme-provider";
 import { notifySuccess, notifyError } from "@/lib/feedback";
+import { BACKEND_URL, NODE_API_URL, apiFetch } from "@/lib/config";
 import { useAsyncAction } from "@/hooks/use-async-action";
 import {
   Dialog,
@@ -456,7 +457,7 @@ export default function SettingsPage() {
   const handleTestConfig = async (channel: ChannelType): Promise<boolean> => {
     try {
       if (channel === "voice") {
-        const response = await fetch("http://localhost:3001/api/token");
+        const response = await apiFetch(`${NODE_API_URL}/api/token`);
         const data = await response.json();
         if (response.ok && data.token) {
           notifySuccess("Voice Gateway is Online and Ready");
@@ -466,7 +467,7 @@ export default function SettingsPage() {
         }
       } else if (channel === "sms") {
         // Simple health check or ping
-        const response = await fetch("http://localhost:3001/");
+        const response = await apiFetch(`${NODE_API_URL}/`);
         if (response.ok) {
           notifySuccess("SMS Gateway Server is Responsive");
           return true;
@@ -474,11 +475,8 @@ export default function SettingsPage() {
           throw new Error("Gateway server unreachable");
         }
       } else if (channel === "whatsapp") {
-        // The WhatsApp AI backend (FastAPI) runs on port 5000, not 8000.
-        // Note: this is a localhost check, so it only succeeds when the browser
-        // and the backend run on the same machine (local dev). From the deployed
-        // Vercel app this can't reach your local backend.
-        const response = await fetch("http://localhost:5000/health");
+        // Health check against configured backend URL.
+        const response = await apiFetch(`${BACKEND_URL}/health`);
         if (response.ok) {
           notifySuccess("WhatsApp Backend is Online");
           return true;
