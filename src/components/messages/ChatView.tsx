@@ -45,6 +45,7 @@ import { useTranslation } from "react-i18next";
 import { BidiText } from "@/components/ui/bidi-text";
 import { ErrorState } from "@/components/ui/error-state";
 import { resolveStatusCue, type MessageAuthor } from "@/lib/status-cue";
+import { BACKEND_URL, apiFetch } from "@/lib/config";
 import ChatShortcuts from "./ChatShortcuts";
 import { ChatVoicePlayer } from "./ChatVoicePlayer";
 
@@ -124,8 +125,8 @@ export default function ChatView({
 
     const pollTypingStatus = async () => {
       try {
-        const response = await fetch(
-          `http://localhost:5000/api/v1/sessions/${session.id}/typing`,
+        const response = await apiFetch(
+          `${BACKEND_URL}/api/v1/sessions/${session.id}/typing`,
         );
         if (response.ok && !cancelled) {
           const data = await response.json();
