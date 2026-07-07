@@ -607,13 +607,19 @@ const TEST_ENDPOINTS_ENABLED =
   process.env.NODE_ENV !== "production" ||
   process.env.ENABLE_TEST_ENDPOINTS === "true";
 if (TEST_ENDPOINTS_ENABLED) {
-  if (process.env.NODE_ENV === "production") {
+  // In production these routes carry real cost (LLM/TTS calls) and could leak
+  // config details, so require an authenticated admin instead of leaving them
+  // open to anyone who can reach the deployed URL. Local/dev (NODE_ENV !==
+  // "production") stays unauthenticated for fast iteration.
+  const isProd = process.env.NODE_ENV === "production";
+  const testAuthGate = isProd ? [requireAuth, requireRole("admin")] : [];
+  if (isProd) {
     logger.warn(
-      "ENABLE_TEST_ENDPOINTS=true in production: /api/test/* are reachable without auth. Disable when not demoing.",
+      "ENABLE_TEST_ENDPOINTS=true in production: /api/test/* are enabled and now require an authenticated admin.",
     );
   }
   // Config snapshot (no secret values, just whether each is configured).
-  app.get("/api/test/status", async (req, res) => {
+  app.get("/api/test/status", ...testAuthGate, async (req, res) => {
     // The actual answering model lives in the Python AI backend (this Node
     // server only delegates to it). Ask it for the live model/provider so the
     // tester shows the truth (e.g. deepseek-v4-pro) instead of the local
@@ -670,7 +676,7 @@ if (TEST_ENDPOINTS_ENABLED) {
 
   // Simulate one voice turn the way Twilio would (speech -> AI reply), but over
   // JSON and with NO signature requirement. Optionally returns synthesized audio.
-  app.post("/api/test/voice", async (req, res) => {
+  app.post("/api/test/voice", ...testAuthGate, async (req, res) => {
     const { message, sessionId, phone, speak } = req.body || {};
     if (!message)
       return res.status(400).json({ error: "Missing 'message' field" });
@@ -701,7 +707,7 @@ if (TEST_ENDPOINTS_ENABLED) {
   });
 
   // Synthesize arbitrary text and stream back the audio bytes (tests TTS only).
-  app.post("/api/test/tts", async (req, res) => {
+  app.post("/api/test/tts", ...testAuthGate, async (req, res) => {
     const { text } = req.body || {};
     if (!text) return res.status(400).json({ error: "Missing 'text' field" });
     try {

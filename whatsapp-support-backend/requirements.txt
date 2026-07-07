@@ -11,6 +11,10 @@ flask
 flask-cors
 requests
 pyngrok
+# JWT verification (app/api/v1/deps.py). [crypto] pulls in `cryptography` for
+# ES256/RS256 signature verification (Supabase's current JWT signing-keys
+# system), needed by PyJWKClient in addition to legacy HS256.
+PyJWT[crypto]>=2.8.0
 
 # --- Voice STT ---
 # WhatsApp voice notes are transcribed via Deepgram's REST API (uses httpx

@@ -326,10 +326,17 @@ async def close_inactive_sessions(db: Any, minutes: int = 10, on_close: Optional
             should_close = True
             
         if should_close:
-            # 3. Close the session
+            # 3. Close the session — the UPDATE is conditioned on the status
+            # STILL matching what we read in step 1 (`.eq("status", item["status"])`).
+            # PostgREST executes this as a single atomic `UPDATE ... WHERE id = ?
+            # AND status = ?`, so if an agent replied or escalated the session
+            # between the read and this write, the status will no longer match,
+            # the row won't be updated, and `update_res.data` comes back empty —
+            # closing this time-of-check/time-of-use race without needing an RPC.
             update_res = supabase.table("sessions")\
                 .update({"status": SessionStatus.completed.value})\
                 .eq("id", session_id)\
+                .eq("status", item["status"])\
                 .execute()
             
             if update_res.data:

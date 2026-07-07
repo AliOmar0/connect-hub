@@ -59,6 +59,18 @@ import ChatView from "@/components/messages/ChatView";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
+// All /api/v1/sessions* routes are protected by verify_jwt on the backend, so
+// every call needs the current Supabase access token attached (same pattern
+// as KnowledgePage.tsx).
+async function authHeaders(): Promise<HeadersInit> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token
+    ? { Authorization: `Bearer ${session.access_token}` }
+    : {};
+}
+
 interface BackendSession {
   id: string;
   channel: string;
@@ -155,7 +167,9 @@ export default function SessionsPage() {
     queryFn: async () => {
       // Fetch from Python Backend
       try {
-        const response = await fetch("http://localhost:5000/api/v1/sessions");
+        const response = await fetch("http://localhost:5000/api/v1/sessions", {
+          headers: await authHeaders(),
+        });
         if (!response.ok) {
           throw new Error("Failed to fetch sessions from backend");
         }
@@ -343,6 +357,7 @@ export default function SessionsPage() {
       try {
         const response = await fetch(
           `http://localhost:5000/api/v1/sessions/${selectedSession.id}/messages`,
+          { headers: await authHeaders() },
         );
         if (!response.ok) {
           // Fallback to Supabase if backend fails or route 404s?
@@ -531,6 +546,7 @@ export default function SessionsPage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(await authHeaders()),
           },
           body: JSON.stringify({
             text: content,
@@ -577,6 +593,7 @@ export default function SessionsPage() {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
+            ...(await authHeaders()),
           },
           body: JSON.stringify({
             main_type_id: typeId || null,
@@ -613,6 +630,7 @@ export default function SessionsPage() {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
+            ...(await authHeaders()),
           },
           body: JSON.stringify({
             status: status,
@@ -630,7 +648,9 @@ export default function SessionsPage() {
 
       // Fetch fresh data for duration/wait_time
       setTimeout(async () => {
-        const response = await fetch("http://localhost:5000/api/v1/sessions");
+        const response = await fetch("http://localhost:5000/api/v1/sessions", {
+          headers: await authHeaders(),
+        });
         if (response.ok) {
           const data = (await response.json()) as BackendSession[];
           const updated = data.find(

@@ -411,11 +411,15 @@ async def upload_document(
         raise HTTPException(status_code=500, detail="Failed to create version record")
     
     # Queue indexing task
+    # source_url/source_title give each retrieved chunk provenance back to the
+    # originating document (used in citations / audit trails downstream).
     metadata = {
         "title": doc_title,
         "file_type": file_type,
         "checksum": checksum,
-        "uploader_id": str(uploader_id) if uploader_id else None
+        "uploader_id": str(uploader_id) if uploader_id else None,
+        "source_title": doc_title,
+        "source_url": f"/api/v1/knowledge-base/{document_id}",
     }
     
     background_tasks.add_task(
@@ -469,6 +473,122 @@ async def list_all_documents(skip: int = 0, limit: int = 50):
         ))
     
     return result
+
+
+# ---------------------------------------------------------------------------
+# Frontend contract shim (`KB_API_URL` in src/lib/config.ts -> /api/v1/kb/*)
+# ---------------------------------------------------------------------------
+# The React KnowledgePage.tsx was built against a `/kb/documents` shaped
+# contract (flat `name`/`version`/`status` fields, no version sub-resource
+# wrapping) that never matched the routes actually implemented above
+# (`/knowledge-base`, nested version objects). These thin adapters translate
+# between the two so the existing UI works without a rewrite, and reuse all
+# the same underlying CRUD/indexing logic — no duplicated business logic.
+
+class KbDocumentOut(BaseModel):
+    """Shape expected by KnowledgePage.tsx's `KbDocument` interface."""
+    id: str
+    name: str
+    status: str  # "indexed" | "processing" | "failed" (mapped from backend's pending/indexing/indexed/failed)
+    version: int
+    updated_at: str
+
+
+class KbVersionOut(BaseModel):
+    """Shape expected by KnowledgePage.tsx's `KbVersion` interface."""
+    version: int
+    created_at: str
+    note: Optional[str] = None
+
+
+def _map_status_for_frontend(status: str) -> str:
+    """Backend has 4 states (pending/indexing/indexed/failed); the frontend
+    only renders 3 (indexed/processing/failed), so pending+indexing collapse
+    into "processing"."""
+    if status == "indexed":
+        return "indexed"
+    if status == "failed":
+        return "failed"
+    return "processing"
+
+
+@router.get("/kb/documents", response_model=List[KbDocumentOut])
+async def kb_list_documents(skip: int = 0, limit: int = 50):
+    """Frontend-contract alias for GET /knowledge-base (see module docstring)."""
+    documents = await list_documents(skip, limit)
+    result = []
+    for doc in documents:
+        current_version_id = doc.get("current_version_id")
+        version_num = 0
+        if current_version_id:
+            ver_response = supabase.table("knowledge_document_versions")\
+                .select("version_number")\
+                .eq("id", current_version_id)\
+                .execute()
+            if ver_response.data:
+                version_num = ver_response.data[0]["version_number"]
+        result.append(KbDocumentOut(
+            id=doc["id"],
+            name=doc["title"],
+            status=_map_status_for_frontend(doc["status"]),
+            version=version_num,
+            updated_at=doc["updated_at"],
+        ))
+    return result
+
+
+@router.post("/kb/documents", response_model=KbDocumentOut)
+async def kb_upload_document(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+):
+    """Frontend-contract alias for POST /knowledge-base/upload."""
+    upload_result = await upload_document(background_tasks, file=file)
+    return KbDocumentOut(
+        id=str(upload_result.id),
+        name=upload_result.title,
+        status=_map_status_for_frontend(upload_result.status),
+        version=upload_result.version_number,
+        updated_at=datetime.utcnow().isoformat(),
+    )
+
+
+@router.get("/kb/documents/{document_id}/versions", response_model=List[KbVersionOut])
+async def kb_list_versions(document_id: UUID):
+    """Frontend-contract alias exposing a document's version history."""
+    doc = await get_document_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    versions = sorted(doc.get("versions", []), key=lambda v: v["version_number"], reverse=True)
+    return [
+        KbVersionOut(
+            version=v["version_number"],
+            created_at=v["created_at"],
+            note=v.get("error_message"),
+        )
+        for v in versions
+    ]
+
+
+@router.post("/kb/documents/{document_id}/reindex", response_model=dict)
+async def kb_reindex_document(document_id: UUID, background_tasks: BackgroundTasks):
+    """Frontend-contract alias for POST /knowledge-base/{id}/reindex."""
+    return await reindex_document(document_id, background_tasks)
+
+
+class KbRollbackRequest(BaseModel):
+    version: int
+
+
+@router.post("/kb/documents/{document_id}/rollback", response_model=dict)
+async def kb_rollback_document(
+    document_id: UUID,
+    body: KbRollbackRequest,
+    background_tasks: BackgroundTasks,
+):
+    """Frontend-contract alias for POST /knowledge-base/{id}/rollback/{version}."""
+    result = await rollback_document(document_id, body.version, background_tasks)
+    return result.model_dump() if hasattr(result, "model_dump") else result
 
 
 @router.get("/knowledge-base/{document_id}", response_model=DocumentResponse)

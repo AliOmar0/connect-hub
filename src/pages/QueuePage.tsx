@@ -24,6 +24,18 @@ import { BidiText } from "@/components/ui/bidi-text";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { supabase } from "@/integrations/supabase/client";
 import { BACKEND_URL } from "@/lib/config";
+
+// /api/v1/sessions* routes are protected by verify_jwt on the backend, so
+// every call needs the current Supabase access token attached (same pattern
+// as SessionsPage.tsx / ChatView.tsx / KnowledgePage.tsx).
+async function authHeaders(): Promise<HeadersInit> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token
+    ? { Authorization: `Bearer ${session.access_token}` }
+    : {};
+}
 import { maskText } from "@/lib/mask";
 import {
   useSlaTimer,
@@ -233,7 +245,9 @@ export default function QueuePage() {
   } = useQuery({
     queryKey: ["escalation-queue"],
     queryFn: async (): Promise<QueueSession[]> => {
-      const res = await fetch(`${BACKEND_URL}/api/v1/sessions`);
+      const res = await fetch(`${BACKEND_URL}/api/v1/sessions`, {
+        headers: await authHeaders(),
+      });
       if (!res.ok) throw new Error("Failed to load queue");
       const data: QueueSession[] = await res.json();
       return data.filter(
@@ -275,7 +289,10 @@ export default function QueuePage() {
     mutationFn: async (s: QueueSession) => {
       const res = await fetch(`${BACKEND_URL}/api/v1/sessions/${s.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
         body: JSON.stringify({ status: "active" }),
       });
       if (!res.ok) throw new Error("Accept failed");
@@ -304,7 +321,10 @@ export default function QueuePage() {
     mutationFn: async (s: QueueSession) => {
       const res = await fetch(`${BACKEND_URL}/api/v1/sessions/${s.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
         body: JSON.stringify({ status: "waiting" }),
       });
       if (!res.ok) throw new Error("Callback failed");

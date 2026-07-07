@@ -24,6 +24,19 @@ vi.mock("@/components/layout/DashboardLayout", () => ({
   ),
 }));
 
+// KnowledgePage attaches the Supabase access token to every KB request; the
+// real client requires env vars this test doesn't set, so stub it like every
+// other page test does.
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: {
+    auth: {
+      getSession: vi.fn(() =>
+        Promise.resolve({ data: { session: { access_token: "test-token" } } }),
+      ),
+    },
+  },
+}));
+
 const mockQueryClient = { invalidateQueries: vi.fn() };
 const reindexMutate = vi.fn();
 
