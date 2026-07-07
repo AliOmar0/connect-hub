@@ -1,12 +1,20 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, HTTPException
 
+from app.core.logger import configure_logging, CorrelationIdMiddleware
+
+# Structured JSON logging (NFR-05.02) must be configured before anything else
+# logs, so every subsequent logger.* call in this process emits JSON with a
+# correlation ID when available.
+configure_logging()
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.v1.assistant import router as assistant_router
 from app.api.v1.decision import router as decision_router
 from app.api.v1.knowledge_base import router as knowledge_base_router
@@ -62,7 +70,7 @@ async def session_cleanup_task():
             )
             await crud.delete_old_notifications(None, hours=24)
         except Exception as e:
-            print(f"Error in session cleanup task: {e}")
+            logger.exception(f"Error in session cleanup task: {e}")
         await asyncio.sleep(
             120
         )  # Run every 2 minutes — keeps the race window tight vs the 30-min session timeout
@@ -110,6 +118,8 @@ async def lifespan(app: FastAPI):
     
     # Start background tasks
     task = asyncio.create_task(session_cleanup_task())
+    from app.crud.cleanup import retention_cleanup_task
+    retention_task = asyncio.create_task(retention_cleanup_task())
 
     # Start ngrok tunnel if enabled
     if settings.USE_NGROK:
@@ -131,7 +141,7 @@ async def lifespan(app: FastAPI):
                 ):
                     ngrok.set_auth_token(settings.NGROK_ID)
 
-                connect_kwargs = {"addr": 3001}
+                connect_kwargs = {"addr": int(os.getenv("PORT", "5000"))}
                 if settings.NGROK_URL:
                     connect_kwargs["domain"] = settings.NGROK_URL
 
@@ -163,15 +173,27 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown: Cancel background tasks
     task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    retention_task.cancel()
+    for t in (task, retention_task):
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
-# CORS
+# Correlation IDs first (outermost) so every log line for a request — including
+# ones from the rate limiter and CORS layer below — carries the same ID.
+app.add_middleware(CorrelationIdMiddleware)
+
+# Rate limiting (NFR-03.03): 60 req/min per IP, 10 req/min per session,
+# mirroring the Node.js API's limits.
+app.add_middleware(RateLimitMiddleware)
+
+# CORS — no wildcard fallback. If BACKEND_CORS_ORIGINS is empty, cross-origin
+# browser requests are simply not allowed (server-to-server calls, which don't
+# send an Origin header, are unaffected).
 if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
@@ -179,6 +201,12 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+else:
+    logger.warning(
+        "BACKEND_CORS_ORIGINS is empty - cross-origin browser requests to this "
+        "API will be blocked. Set explicit origins in .env if a browser client "
+        "needs access."
     )
 
 # ---------------------------------------------------------------------------

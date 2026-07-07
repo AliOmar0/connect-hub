@@ -48,6 +48,18 @@ import { resolveStatusCue, type MessageAuthor } from "@/lib/status-cue";
 import ChatShortcuts from "./ChatShortcuts";
 import { ChatVoicePlayer } from "./ChatVoicePlayer";
 
+// /api/v1/sessions/* routes are protected by verify_jwt on the backend, so
+// every call needs the current Supabase access token attached (same pattern
+// as SessionsPage.tsx / KnowledgePage.tsx).
+async function authHeaders(): Promise<HeadersInit> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token
+    ? { Authorization: `Bearer ${session.access_token}` }
+    : {};
+}
+
 /**
  * Non-color authorship cue (Requirement 14.7 / Property 2): each message
  * authorship maps to a lucide icon (shape) rendered alongside a text label, so
@@ -126,6 +138,7 @@ export default function ChatView({
       try {
         const response = await fetch(
           `http://localhost:5000/api/v1/sessions/${session.id}/typing`,
+          { headers: await authHeaders() },
         );
         if (response.ok && !cancelled) {
           const data = await response.json();

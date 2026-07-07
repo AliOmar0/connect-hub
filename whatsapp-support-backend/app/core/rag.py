@@ -258,11 +258,60 @@ def embed_single(text: str) -> List[float]:
 _qdrant_client: Optional[QdrantClient] = None
 _qdrant_healthy: bool = False
 
+# --- Circuit breaker state -------------------------------------------------
+# After _CB_FAILURE_THRESHOLD consecutive failures the breaker OPENS: calls
+# fail fast (raise immediately) without hitting Qdrant at all for
+# _CB_RESET_SECONDS, so a downed/unreachable Qdrant doesn't add its own
+# connection-timeout latency to every single request. After the cooldown, one
+# probe request is allowed through (HALF_OPEN); success closes the breaker
+# and resets the failure count, failure re-opens it for another cooldown.
+_CB_FAILURE_THRESHOLD = 3
+_CB_RESET_SECONDS = 30
+_cb_consecutive_failures = 0
+_cb_opened_at: Optional[float] = None
+
+
+def _circuit_breaker_is_open() -> bool:
+    """True when the breaker is OPEN and still within its cooldown window."""
+    global _cb_opened_at
+    if _cb_opened_at is None:
+        return False
+    if time.time() - _cb_opened_at >= _CB_RESET_SECONDS:
+        # Cooldown elapsed -> move to HALF_OPEN by letting the next call through.
+        return False
+    return True
+
+
+def _circuit_breaker_record_success() -> None:
+    global _cb_consecutive_failures, _cb_opened_at
+    _cb_consecutive_failures = 0
+    _cb_opened_at = None
+
+
+def _circuit_breaker_record_failure() -> None:
+    global _cb_consecutive_failures, _cb_opened_at
+    _cb_consecutive_failures += 1
+    if _cb_consecutive_failures >= _CB_FAILURE_THRESHOLD:
+        _cb_opened_at = time.time()
+        logger.error(
+            f"Qdrant circuit breaker OPEN after {_cb_consecutive_failures} "
+            f"consecutive failures. Failing fast for {_CB_RESET_SECONDS}s; "
+            f"RAG calls will fall back to the JSON knowledge base."
+        )
+
 
 def _get_client() -> QdrantClient:
-    """Get or create Qdrant client with health check and reconnection."""
+    """Get or create Qdrant client with health check, reconnection, and a
+    3-strikes circuit breaker so a downed Qdrant fails fast instead of making
+    every request pay a full connection-timeout while it's unreachable."""
     global _qdrant_client, _qdrant_healthy
-    
+
+    if _circuit_breaker_is_open():
+        raise RuntimeError(
+            "Qdrant circuit breaker is open (too many recent failures); "
+            "skipping connection attempt until cooldown elapses."
+        )
+
     if _qdrant_client is None:
         if rag_config.qdrant_url:
             # Remote Qdrant instance
@@ -279,6 +328,7 @@ def _get_client() -> QdrantClient:
     try:
         _qdrant_client.get_collections()
         _qdrant_healthy = True
+        _circuit_breaker_record_success()
     except Exception as e:
         logger.warning(f"Qdrant health check failed: {e}. Attempting reconnection...")
         _qdrant_healthy = False
@@ -290,10 +340,12 @@ def _get_client() -> QdrantClient:
                 _qdrant_client = QdrantClient(path=rag_config.qdrant_storage_path)
             _qdrant_client.get_collections()  # Verify reconnection
             _qdrant_healthy = True
+            _circuit_breaker_record_success()
             logger.info("Qdrant reconnected successfully")
         except Exception as reconnect_error:
             logger.error(f"Qdrant reconnection failed: {reconnect_error}")
             _qdrant_client = None
+            _circuit_breaker_record_failure()
             raise RuntimeError(f"Qdrant connection unavailable: {reconnect_error}")
     
     return _qdrant_client
@@ -365,7 +417,18 @@ def chunk_text(
     """
     if not text:
         return []
-    
+
+    # Guard against a degenerate overlap that would make `start` stall or go
+    # backwards forever (overlap >= chunk_size), and against a negative value.
+    if overlap < 0:
+        overlap = 0
+    if overlap >= chunk_size:
+        logger.warning(
+            f"chunk_text: overlap ({overlap}) >= chunk_size ({chunk_size}); "
+            f"clamping overlap to chunk_size // 2 to avoid an infinite/empty loop."
+        )
+        overlap = chunk_size // 2
+
     # Normalize whitespace and split into words
     words = text.split()
     
@@ -378,7 +441,8 @@ def chunk_text(
     while start < len(words):
         end = start + chunk_size
         chunk_words = words[start:end]
-        chunks.append(' '.join(chunk_words))
+        if chunk_words:
+            chunks.append(' '.join(chunk_words))
         
         # Move start forward, accounting for overlap
         start = end - overlap

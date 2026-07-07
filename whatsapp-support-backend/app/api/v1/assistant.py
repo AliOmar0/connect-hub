@@ -84,9 +84,6 @@ class ReplyResponse(BaseModel):
     scores: Dict[str, Optional[float]] = {}
     nlp: Optional[Dict[str, Any]] = Field(None, description="Structured NLP analysis: intent, language, entities, confidence scores")
     rag: Optional[Dict[str, Any]] = Field(None, description="RAG retrieval metadata: top_score, documents_count")
-    # New fields for NLP and RAG metadata
-    nlp: Optional[Dict[str, Any]] = Field(None, description="Structured NLP analysis with confidence scores")
-    rag: Optional[Dict[str, Any]] = Field(None, description="RAG retrieval metadata")
 
     model_config = {
         "json_schema_extra": {

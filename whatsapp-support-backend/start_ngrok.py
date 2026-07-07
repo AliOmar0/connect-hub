@@ -19,7 +19,8 @@ def start_tunnel():
     if ngrok_id and len(ngrok_id) > 20 and not ngrok_id.startswith("rd_"):
         ngrok.set_auth_token(ngrok_id)
 
-    connect_kwargs = {"addr": 3001}
+    port = int(os.getenv("PORT", "5000"))
+    connect_kwargs = {"addr": port}
     if ngrok_url:
         connect_kwargs["domain"] = ngrok_url
     if ngrok_id:

@@ -35,8 +35,20 @@ import { AsyncBoundary } from "@/components/ui/async-boundary";
 import type { ViewStatus } from "@/types/presentation";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAsyncAction } from "@/hooks/use-async-action";
-import { KB_API_URL } from "@/lib/config";
+import { KB_API_URL, apiFetch } from "@/lib/config";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+
+// All /api/v1/kb/* routes are protected by verify_jwt on the backend, so every
+// call needs the current Supabase access token attached.
+async function authHeaders(): Promise<HeadersInit> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token
+    ? { Authorization: `Bearer ${session.access_token}` }
+    : {};
+}
 
 interface KbDocument {
   id: string;
@@ -91,7 +103,9 @@ export default function KnowledgePage() {
   } = useQuery({
     queryKey: ["kb-documents"],
     queryFn: async (): Promise<KbDocument[]> => {
-      const res = await fetch(`${KB_API_URL}/documents`);
+      const res = await apiFetch(`${KB_API_URL}/documents`, {
+        headers: await authHeaders(),
+      });
       if (!res.ok) throw new Error("KB backend unavailable");
       return res.json();
     },
@@ -105,9 +119,10 @@ export default function KnowledgePage() {
     async (signal, file) => {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`${KB_API_URL}/documents`, {
+      const res = await apiFetch(`${KB_API_URL}/documents`, {
         method: "POST",
         body: form,
+        headers: await authHeaders(),
         signal,
       });
       if (!res.ok) throw new Error("Upload failed");
@@ -132,8 +147,9 @@ export default function KnowledgePage() {
 
   const reindexMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`${KB_API_URL}/documents/${id}/reindex`, {
+      const res = await apiFetch(`${KB_API_URL}/documents/${id}/reindex`, {
         method: "POST",
+        headers: await authHeaders(),
       });
       if (!res.ok) throw new Error("Re-index failed");
       return res.json();
@@ -154,9 +170,12 @@ export default function KnowledgePage() {
 
   const rollbackMutation = useMutation({
     mutationFn: async ({ id, version }: { id: string; version: number }) => {
-      const res = await fetch(`${KB_API_URL}/documents/${id}/rollback`, {
+      const res = await apiFetch(`${KB_API_URL}/documents/${id}/rollback`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(await authHeaders()),
+        },
         body: JSON.stringify({ version }),
       });
       if (!res.ok) throw new Error("Rollback failed");
@@ -379,7 +398,12 @@ function VersionHistoryDialog({
     queryKey: ["kb-versions", doc?.id],
     enabled: !!doc,
     queryFn: async (): Promise<KbVersion[]> => {
-      const res = await fetch(`${KB_API_URL}/documents/${doc!.id}/versions`);
+      const res = await apiFetch(
+        `${KB_API_URL}/documents/${doc!.id}/versions`,
+        {
+          headers: await authHeaders(),
+        },
+      );
       if (!res.ok) throw new Error("Versions unavailable");
       return res.json();
     },

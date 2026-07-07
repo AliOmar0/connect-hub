@@ -66,8 +66,11 @@ def _verify_whatsapp_signature(raw_body: bytes, signature_header: Optional[str])
 # In-memory store for OTP sessions (Similar to Node.js backend)
 otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
 
-# Track processed WhatsApp message IDs to prevent duplicate webhook processing
-_processed_message_ids: set = set()
+# Track processed WhatsApp message IDs to prevent duplicate webhook processing.
+# Uses an OrderedDict as a true LRU: oldest-inserted entries are evicted first
+# once the cap is hit, unlike a plain set (which has no defined eviction order).
+from collections import OrderedDict
+_processed_message_ids: "OrderedDict[str, None]" = OrderedDict()
 _MAX_PROCESSED_IDS = 10000  # Prevent unbounded memory growth
 
 async def send_whatsapp_otp(phone: str, intent: str = "BANK_ACCOUNT"):
@@ -528,16 +531,14 @@ async def extract_webhook(
                 if message_id in _processed_message_ids:
                     logger.warning(f"[DEDUP] Duplicate webhook for message {message_id}. Ignoring.")
                     return {"status": "ignored", "reason": "duplicate message_id"}
-                
-                # Add to processed set
-                _processed_message_ids.add(message_id)
-                
-                # Prevent unbounded memory growth
-                if len(_processed_message_ids) > _MAX_PROCESSED_IDS:
-                    # Remove oldest entries (set doesn't maintain order, but this is good enough)
-                    excess = len(_processed_message_ids) - _MAX_PROCESSED_IDS
-                    for _ in range(excess):
-                        _processed_message_ids.pop()
+
+                # Add to processed set (OrderedDict preserves insertion order)
+                _processed_message_ids[message_id] = None
+
+                # Prevent unbounded memory growth: evict the OLDEST entries first
+                # (true LRU/FIFO eviction, unlike a plain set's undefined order).
+                while len(_processed_message_ids) > _MAX_PROCESSED_IDS:
+                    _processed_message_ids.popitem(last=False)
             
             # Media handling
             media_id = None

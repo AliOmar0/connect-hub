@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, AliasChoices
+from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
+from pydantic import Field, AliasChoices, field_validator
 from typing import List, Optional
+from typing_extensions import Annotated
 import os
 from dotenv import load_dotenv
 
@@ -55,7 +56,13 @@ class Settings(BaseSettings):
     WHATSAPP_VERIFY_SIGNATURE: bool = True
     
     # App
-    BACKEND_CORS_ORIGINS: List[str] = ["*"]
+    # SECURITY: default to blocking all cross-origin requests. A wildcard here
+    # would let ANY website read authenticated API responses. Set explicit
+    # origins (comma-separated in .env) for browsers that need access; the
+    # webhook route (Meta callbacks) never goes through CORS regardless.
+    # NoDecode: read as a raw string (not JSON) so a plain comma-separated
+    # value in .env parses correctly instead of crashing at startup.
+    BACKEND_CORS_ORIGINS: Annotated[List[str], NoDecode] = []
     USE_NGROK: bool = False
     NGROK_ID: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_ID", "ID"))
     NGROK_URL: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_URL", "URL"))
@@ -75,6 +82,23 @@ class Settings(BaseSettings):
     RAG_MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024  # 5 MB max file size
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"  # Multilingual for Arabic
 
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def _split_cors_origins(cls, v):
+        """Accept a plain comma-separated string (e.g. from .env) in addition
+        to a JSON array, since pydantic-settings otherwise requires JSON
+        syntax for List[str] env vars and silently breaks startup otherwise."""
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("["):
+                # Already JSON — let pydantic's default decoder handle it.
+                import json
+                return json.loads(v)
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
     # NLP Pipeline (Intent / Language / Entity)
     # Path to a fine-tuned AraBERT/CAMeL-BERT intent checkpoint. When unset or
     # missing, the deterministic heuristic classifier is used as fallback.
@@ -83,6 +107,17 @@ class Settings(BaseSettings):
     # branch/product extraction. Rules-only when disabled.
     NER_MODEL_PATH: Optional[str] = None
     ENABLE_ARABIC_NER: bool = False
+
+    # Rate limiting (NFR-03.03) - simple in-memory sliding-window limiter.
+    # NOTE: in-memory means limits are per-process; fine for a single instance,
+    # but won't be shared across horizontally-scaled replicas (use a shared
+    # store like Redis for that case).
+    RATE_LIMIT_IP_PER_MIN: int = 60
+    RATE_LIMIT_SESSION_PER_MIN: int = 10
+    RATE_LIMIT_ENABLED: bool = True
+
+    # Data retention (NFR-03.05) - automated cleanup of old records.
+    DATA_RETENTION_DAYS: int = 30
 
 # Initialize settings
 try:
