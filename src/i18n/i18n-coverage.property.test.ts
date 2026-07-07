@@ -63,7 +63,17 @@ const appShellLabelKeys = allKeys.filter((k) =>
 
 // Emoji / pictographic detection. Extended_Pictographic covers the emoji code
 // points (faces, symbols, pictographs) that must not appear in formal labels.
+// The copyright sign (U+00A9) is a legitimate label character, not decorative.
 const EMOJI_RE = /\p{Extended_Pictographic}/u;
+const LEGAL_SYMBOLS = new Set(["\u00A9"]); // © copyright sign
+
+function hasEmoji(text: string): boolean {
+  for (const ch of text) {
+    if (LEGAL_SYMBOLS.has(ch)) continue;
+    if (EMOJI_RE.test(ch)) return true;
+  }
+  return false;
+}
 
 describe("Property 35: Visible text and labels are internationalized and emoji-free", () => {
   it("resolves every label via the i18n layer to a non-empty, emoji-free string", () => {
@@ -90,7 +100,7 @@ describe("Property 35: Visible text and labels are internationalized and emoji-f
           expect(resolved).not.toBe(key);
 
           // (b) Emoji-free: no decorative pictographic code points.
-          expect(EMOJI_RE.test(resolved)).toBe(false);
+          expect(hasEmoji(resolved)).toBe(false);
         },
       ),
       { numRuns: 100 },
