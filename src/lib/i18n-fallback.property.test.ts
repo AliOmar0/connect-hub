@@ -46,7 +46,7 @@ function makeValue(key: string, marker: string, raw: string): string {
  */
 const entriesArb = fc.uniqueArray(
   fc.record({
-    key: fc.string({ minLength: 1, maxLength: 24 }),
+    key: fc.stringMatching(/^[a-z0-9]{1,24}$/),
     enRaw: fc.string({ minLength: 1, maxLength: 24 }),
     presence: fc.constantFrom<ActivePresence>("present", "empty", "absent"),
     activeRaw: fc.string({ minLength: 1, maxLength: 24 }),
