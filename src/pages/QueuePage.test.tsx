@@ -23,6 +23,11 @@ vi.mock("@/components/layout/DashboardLayout", () => ({
 // The realtime subscription is a side effect unrelated to these assertions.
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
+    auth: {
+      getSession: vi.fn(() =>
+        Promise.resolve({ data: { session: { access_token: "test-token" } } }),
+      ),
+    },
     channel: vi.fn(() => ({
       on: vi.fn(() => ({ subscribe: vi.fn(() => ({})) })),
     })),
