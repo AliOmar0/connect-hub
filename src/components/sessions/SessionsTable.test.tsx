@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@/test-utils/render";
+import { render, screen, fireEvent, waitFor, act } from "@/test-utils/render";
 import { createUserEvent } from "@/test-utils/helpers";
 import SessionsTable from "./SessionsTable";
 import {
@@ -265,7 +265,9 @@ describe("SessionsTable", () => {
     expect(menuButtons.length).toBeGreaterThan(0);
 
     // Click first menu button using userEvent for better interaction
-    await user.click(menuButtons[0]);
+    await act(async () => {
+      await user.click(menuButtons[0]);
+    });
 
     // Wait for dropdown to open and menu items to appear
     // Use findByText which waits for the element to appear
@@ -294,7 +296,9 @@ describe("SessionsTable", () => {
     const menuButtons = screen
       .getAllByRole("button", { hidden: true })
       .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
-    await user.click(menuButtons[0]);
+    await act(async () => {
+      await user.click(menuButtons[0]);
+    });
 
     // Wait for menu to open and find the View Details button
     const viewDetailsButton = await screen.findByText("View conversation", {
@@ -321,7 +325,9 @@ describe("SessionsTable", () => {
     const menuButtons = screen
       .getAllByRole("button", { hidden: true })
       .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
-    await user.click(menuButtons[0]);
+    await act(async () => {
+      await user.click(menuButtons[0]);
+    });
 
     // Wait for menu to open and find the Assign Agent button
     const assignAgentButton = await screen.findByText(
@@ -470,7 +476,9 @@ describe("SessionsTable", () => {
       .getAllByRole("button", { hidden: true })
       .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
     if (menuButtons.length > 0) {
-      await user.click(menuButtons[0]);
+      await act(async () => {
+        await user.click(menuButtons[0]);
+      });
 
       // Wait for View Details to appear
       const viewDetails = await screen.findByText("View conversation", {

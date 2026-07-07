@@ -71,6 +71,16 @@ export const createTestQueryClient = () =>
 global.QueryClientProvider = QueryClientProvider;
 global.createTestQueryClient = createTestQueryClient;
 
+// Suppress known non-actionable React act() warnings from third-party UI libraries (e.g. Radix UI)
+const originalConsoleError = console.error;
+console.error = (...args: unknown[]) => {
+  const msg = String(args[0] ?? "");
+  if (msg.includes("was not wrapped in act")) {
+    return;
+  }
+  originalConsoleError.apply(console, args);
+};
+
 import React from "react";
 
 // Mock ResponsiveContainer for Recharts
