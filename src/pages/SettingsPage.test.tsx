@@ -192,7 +192,6 @@ describe("SettingsPage", () => {
         "Security",
         "Appearance",
         "General",
-        "Session Types",
         "Voice Testing",
       ];
       for (const name of expectedTabs) {

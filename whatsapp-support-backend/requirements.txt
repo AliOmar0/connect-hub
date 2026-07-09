@@ -6,11 +6,12 @@ pydantic-settings>=2.1.0
 httpx>=0.26.0
 python-dotenv>=1.0.1
 python-multipart>=0.0.9
-qdrant-client>=1.7.0
+qdrant-client>=1.10.0
 flask
 flask-cors
 requests
 pyngrok
+beautifulsoup4>=4.12.3
 # JWT verification (app/api/v1/deps.py). [crypto] pulls in `cryptography` for
 # ES256/RS256 signature verification (Supabase's current JWT signing-keys
 # system), needed by PyJWKClient in addition to legacy HS256.
@@ -19,6 +20,11 @@ PyJWT[crypto]>=2.8.0
 # --- Voice STT ---
 # WhatsApp voice notes are transcribed via Deepgram's REST API (uses httpx
 # above), so NO local model is required. Set DEEPGRAM_API_KEY in .env.
+
+# --- Test-only: property-based testing (bank scraper) ---
+# hypothesis drives the property-based tests for the scraper's pure logic
+# (frontier/robots/rate-limiter/fields/extractor). Not needed at runtime.
+hypothesis>=6.98.0
 
 # --- Optional: vector RAG document search (FR-03.03) ---
 # sentence-transformers enables embedding-based knowledge-base retrieval. It is

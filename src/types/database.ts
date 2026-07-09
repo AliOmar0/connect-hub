@@ -158,6 +158,10 @@ export interface SessionMainType {
   name: string;
   parent_category: string | null;
   description: string | null;
+  /** Detailed, structured knowledge injected into the AI's system prompt
+   * when a session is classified under this type, and indexed into the RAG
+   * vector store (source='session_type') via the Knowledge Base page. */
+  ai_prompt?: string | null;
   created_at: string;
 }
 

@@ -4,7 +4,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
 import TwilioDemo from "@/pages/TwilioDemo";
 import { supabase } from "@/integrations/supabase/client";
-import { ChannelType, Profile, SessionMainType } from "@/types/database";
+import { ChannelType, Profile } from "@/types/database";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tables } from "@/integrations/supabase/types";
@@ -27,15 +27,9 @@ import {
   Bell,
   Shield,
   Save,
-  LayoutList,
   Loader2,
-  Plus,
-  Trash2,
   Mic,
   Edit2,
-  AlertCircle,
-  Search,
-  X,
   Palette,
   Sun,
   Moon,
@@ -44,15 +38,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "@/components/theme-provider";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAsyncAction } from "@/hooks/use-async-action";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 
 type ApiConfigRow = Tables<"api_configurations">;
 
@@ -77,12 +62,6 @@ export default function SettingsPage() {
     voice: null,
     email: null,
   });
-  const [sessionTypes, setSessionTypes] = useState<SessionMainType[]>([]);
-  const [sessionTypesLoading, setSessionTypesLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
-  const [editingType, setEditingType] =
-    useState<Partial<SessionMainType> | null>(null);
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -132,21 +111,6 @@ export default function SettingsPage() {
     setLoading(false);
   }, []);
 
-  const fetchSessionTypes = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("session_main_types")
-      .select("*")
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      console.error("Error fetching session types:", error);
-      notifyError(t("settings.sessionTypes.saveFailed"));
-    } else {
-      setSessionTypes((data as unknown as SessionMainType[]) || []);
-    }
-    setSessionTypesLoading(false);
-  }, [t]);
-
   const fetchProfile = useCallback(async () => {
     if (!user?.id) return;
     const { data } = await supabase
@@ -161,8 +125,7 @@ export default function SettingsPage() {
   useEffect(() => {
     fetchConfigs();
     fetchProfile();
-    fetchSessionTypes();
-  }, [user, fetchConfigs, fetchProfile, fetchSessionTypes]);
+  }, [user, fetchConfigs, fetchProfile]);
 
   const handleSave = async (
     channel: ChannelType,
@@ -329,94 +292,6 @@ export default function SettingsPage() {
     notifySuccess(t("settings.notifications.saveSuccess"));
   };
 
-  const handleAddSessionType = () => {
-    setEditingType({ name: "", parent_category: "", description: "" });
-    setIsTypeDialogOpen(true);
-  };
-
-  const handleEditSessionType = (type: SessionMainType) => {
-    setEditingType(type);
-    setIsTypeDialogOpen(true);
-  };
-
-  const handleSaveSessionType = async () => {
-    if (!isAdmin) {
-      notifyError(t("settings.sessionTypes.adminOnlyManage"));
-      return;
-    }
-
-    if (!editingType?.name?.trim()) {
-      notifyError(t("settings.sessionTypes.nameRequired"));
-      return;
-    }
-
-    const { id, ...data } = editingType;
-    let error;
-
-    if (id) {
-      // Update
-      const { error: updateError } = await supabase
-        .from("session_main_types")
-        .update(data)
-        .eq("id", id);
-      error = updateError;
-    } else {
-      // Create
-      const { error: insertError } = await supabase
-        .from("session_main_types")
-        .insert([
-          data as {
-            name: string;
-            parent_category?: string;
-            description?: string;
-          },
-        ]);
-      error = insertError;
-    }
-
-    if (error) {
-      console.error("Error saving session type:", error);
-      notifyError(t("settings.sessionTypes.saveFailed"), {
-        description: error.message,
-      });
-    } else {
-      notifySuccess(
-        id
-          ? t("settings.sessionTypes.updateSuccess")
-          : t("settings.sessionTypes.createSuccess"),
-      );
-      setIsTypeDialogOpen(false);
-      setEditingType(null);
-      fetchSessionTypes();
-    }
-  };
-
-  const handleDeleteSessionType = async (id: string) => {
-    if (!isAdmin) {
-      notifyError(t("settings.sessionTypes.adminOnlyDelete"));
-      return;
-    }
-
-    if (!confirm(t("settings.sessionTypes.deleteConfirm"))) {
-      return;
-    }
-
-    const { error } = await supabase
-      .from("session_main_types")
-      .delete()
-      .eq("id", id);
-
-    if (error) {
-      console.error("Error deleting session type:", error);
-      notifyError(t("settings.sessionTypes.deleteFailed"), {
-        description: error.message,
-      });
-    } else {
-      notifySuccess(t("settings.sessionTypes.deleteSuccess"));
-      fetchSessionTypes();
-    }
-  };
-
   const [smsData, setSmsData] = useState({
     to: "",
     message: "Test message from PIB Connect Hub",
@@ -525,10 +400,6 @@ export default function SettingsPage() {
             <TabsTrigger value="general" className="gap-2">
               <Settings className="h-4 w-4" aria-hidden="true" />
               {t("settings.tabs.general")}
-            </TabsTrigger>
-            <TabsTrigger value="session-types" className="gap-2">
-              <LayoutList className="h-4 w-4" aria-hidden="true" />
-              {t("settings.tabs.sessionTypes")}
             </TabsTrigger>
             <TabsTrigger value="twilio" className="gap-2">
               <Mic className="h-4 w-4" aria-hidden="true" />
@@ -1085,300 +956,6 @@ export default function SettingsPage() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="session-types" className="space-y-4">
-            <Card>
-              <CardHeader className="space-y-4">
-                <div className="flex flex-row items-center justify-between gap-4">
-                  <div>
-                    <CardTitle>{t("settings.sessionTypes.title")}</CardTitle>
-                    <CardDescription>
-                      {t("settings.sessionTypes.description")}
-                    </CardDescription>
-                  </div>
-                  {isAdmin && (
-                    <Button
-                      onClick={handleAddSessionType}
-                      size="sm"
-                      className="min-h-[44px]"
-                    >
-                      <Plus className="h-4 w-4 me-2" aria-hidden="true" />
-                      {t("settings.sessionTypes.newType")}
-                    </Button>
-                  )}
-                </div>
-
-                <div className="relative">
-                  <Search
-                    className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    aria-label={t("settings.sessionTypes.searchPlaceholder")}
-                    placeholder={t("settings.sessionTypes.searchPlaceholder")}
-                    className="ps-9 pe-9"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
-                  {searchTerm && (
-                    <button
-                      type="button"
-                      aria-label={t("settings.sessionTypes.clearSearch")}
-                      onClick={() => setSearchTerm("")}
-                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      <X className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {!isAdmin && (
-                  <div
-                    role="note"
-                    className="bg-status-warning/10 text-status-warning p-3 rounded-lg flex items-start gap-2 text-sm"
-                  >
-                    <AlertCircle
-                      className="h-4 w-4 mt-0.5"
-                      aria-hidden="true"
-                    />
-                    <p>{t("settings.sessionTypes.adminOnly")}</p>
-                  </div>
-                )}
-
-                {sessionTypesLoading ? (
-                  <div className="flex justify-center p-8">
-                    <Loader2
-                      className="h-8 w-8 animate-spin text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {sessionTypes.length === 0 ? (
-                      <div className="text-center py-12 border-2 border-dashed rounded-xl border-muted">
-                        <LayoutList
-                          className="h-12 w-12 text-muted mx-auto mb-4"
-                          aria-hidden="true"
-                        />
-                        <p className="text-muted-foreground">
-                          {t("settings.sessionTypes.empty")}
-                        </p>
-                      </div>
-                    ) : (
-                      (() => {
-                        const filtered = sessionTypes.filter(
-                          (item) =>
-                            item.name
-                              .toLowerCase()
-                              .includes(searchTerm.toLowerCase()) ||
-                            item.parent_category
-                              ?.toLowerCase()
-                              .includes(searchTerm.toLowerCase()) ||
-                            item.description
-                              ?.toLowerCase()
-                              .includes(searchTerm.toLowerCase()),
-                        );
-
-                        if (filtered.length === 0 && searchTerm) {
-                          return (
-                            <div className="text-center py-12">
-                              <p className="text-muted-foreground">
-                                {t("settings.sessionTypes.noMatches", {
-                                  term: searchTerm,
-                                })}
-                              </p>
-                              <Button
-                                variant="ghost"
-                                className="mt-2 min-h-[44px]"
-                                onClick={() => setSearchTerm("")}
-                              >
-                                {t("settings.sessionTypes.clearSearch")}
-                              </Button>
-                            </div>
-                          );
-                        }
-
-                        // Group by parent_category
-                        const grouped: Record<string, SessionMainType[]> = {};
-                        filtered.forEach((type) => {
-                          const cat =
-                            type.parent_category ||
-                            t("settings.sessionTypes.otherCategory");
-                          if (!grouped[cat]) grouped[cat] = [];
-                          grouped[cat].push(type);
-                        });
-                        return Object.entries(grouped).map(
-                          ([category, types]) => (
-                            <div key={category} className="space-y-3">
-                              <h4 className="text-sm font-bold text-muted-foreground uppercase tracking-widest border-b border-border/50 pb-2">
-                                {category}
-                              </h4>
-                              <div className="grid gap-2">
-                                {types.map((type) => (
-                                  <div
-                                    key={type.id}
-                                    className="group flex items-start justify-between p-4 border rounded-xl bg-card hover:bg-muted/30 transition-all shadow-sm"
-                                  >
-                                    <div className="flex flex-col gap-1 pe-4">
-                                      <span className="font-semibold text-primary">
-                                        {type.name}
-                                      </span>
-                                      {type.description && (
-                                        <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed max-w-2xl">
-                                          {type.description}
-                                        </p>
-                                      )}
-                                    </div>
-                                    <div className="flex gap-1 shrink-0 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-within:opacity-100 transition-opacity">
-                                      {isAdmin && (
-                                        <>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-11 w-11"
-                                            aria-label={t(
-                                              "settings.sessionTypes.edit",
-                                            )}
-                                            title={t(
-                                              "settings.sessionTypes.edit",
-                                            )}
-                                            onClick={() =>
-                                              handleEditSessionType(type)
-                                            }
-                                          >
-                                            <Edit2
-                                              className="h-4 w-4 text-muted-foreground"
-                                              aria-hidden="true"
-                                            />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-11 w-11 text-destructive hover:text-destructive hover:bg-destructive/10"
-                                            aria-label={t(
-                                              "settings.sessionTypes.delete",
-                                            )}
-                                            title={t(
-                                              "settings.sessionTypes.delete",
-                                            )}
-                                            onClick={() =>
-                                              handleDeleteSessionType(type.id)
-                                            }
-                                          >
-                                            <Trash2
-                                              className="h-4 w-4"
-                                              aria-hidden="true"
-                                            />
-                                          </Button>
-                                        </>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ),
-                        );
-                      })()
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            <Dialog open={isTypeDialogOpen} onOpenChange={setIsTypeDialogOpen}>
-              <DialogContent className="max-w-xl">
-                <DialogHeader>
-                  <DialogTitle>
-                    {editingType?.id
-                      ? t("settings.sessionTypes.editTitle")
-                      : t("settings.sessionTypes.createTitle")}
-                  </DialogTitle>
-                  <DialogDescription>
-                    {t("settings.sessionTypes.dialogDescription")}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="type-name">
-                      {t("settings.sessionTypes.nameLabel")}
-                    </Label>
-                    <Input
-                      id="type-name"
-                      placeholder={t("settings.sessionTypes.namePlaceholder")}
-                      value={editingType?.name || ""}
-                      onChange={(e) =>
-                        setEditingType((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="type-category">
-                      {t("settings.sessionTypes.categoryLabel")}
-                    </Label>
-                    <Input
-                      id="type-category"
-                      placeholder={t(
-                        "settings.sessionTypes.categoryPlaceholder",
-                      )}
-                      value={editingType?.parent_category || ""}
-                      onChange={(e) =>
-                        setEditingType((prev) => ({
-                          ...prev,
-                          parent_category: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="type-description">
-                      {t("settings.sessionTypes.knowledgeLabel")}
-                    </Label>
-                    <Textarea
-                      id="type-description"
-                      aria-describedby="type-description-hint"
-                      placeholder={t(
-                        "settings.sessionTypes.knowledgePlaceholder",
-                      )}
-                      className="min-h-[200px]"
-                      value={editingType?.description || ""}
-                      onChange={(e) =>
-                        setEditingType((prev) => ({
-                          ...prev,
-                          description: e.target.value,
-                        }))
-                      }
-                    />
-                    <p
-                      id="type-description-hint"
-                      className="text-xs text-muted-foreground"
-                    >
-                      {t("settings.sessionTypes.knowledgeHint")}
-                    </p>
-                  </div>
-                </div>
-                <DialogFooter>
-                  <Button
-                    variant="outline"
-                    className="min-h-[44px]"
-                    onClick={() => setIsTypeDialogOpen(false)}
-                  >
-                    {t("settings.sessionTypes.cancel")}
-                  </Button>
-                  <Button
-                    className="min-h-[44px]"
-                    onClick={handleSaveSessionType}
-                  >
-                    {t("settings.sessionTypes.save")}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </TabsContent>
 
           <TabsContent value="twilio" className="space-y-4">

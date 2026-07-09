@@ -78,6 +78,11 @@ class DocumentListResponse(BaseModel):
     current_version_number: int
     created_at: datetime
     updated_at: datetime
+    # source/source_url let the Admin_UI show a Page_Description and a
+    # clickable link back to the originating bank web page for
+    # scraper-sourced documents (Requirement 9.6).
+    source: str = "upload"
+    source_url: Optional[str] = None
 
 
 class UploadResponse(BaseModel):
@@ -115,20 +120,39 @@ class RetrievalResponse(BaseModel):
     context_block: str
 
 
+class SessionTypeSyncResponse(BaseModel):
+    """Response model for syncing a session type's knowledge into the RAG
+    vector store (source='session_type')."""
+    document_id: UUID
+    session_type_id: UUID
+    status: str
+    chunks_indexed: int
+    message: str
+
+
 # --- Database Helper Functions ---
 
 async def create_document_record(
     title: str,
     description: Optional[str],
-    uploader_id: Optional[UUID]
+    uploader_id: Optional[UUID],
+    source: str = "upload"
 ) -> dict:
-    """Create a new document record in the database."""
+    """Create a new document record in the database.
+
+    `source` defaults to "upload" to preserve the existing behavior for
+    manual uploads. Callers such as the scraper ingestion bridge
+    (`app/core/scraper/ingestor.py`) pass `source="scraper"` so that
+    scraped pages are tagged accordingly without duplicating this
+    creation logic (Requirement 6.1).
+    """
     data = {
         "id": str(uuid4()),
         "title": title,
         "description": description,
         "uploader_id": str(uploader_id) if uploader_id else None,
         "status": "pending",
+        "source": source,
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat()
     }
@@ -216,6 +240,26 @@ async def update_document_status(
     raise Exception("Failed to update document status")
 
 
+async def update_document_description(document_id: UUID, description: Optional[str]) -> dict:
+    """Update a document's `description` field, used by the scraper
+    ingestion bridge (`app/core/scraper/ingestor.py`) to keep an existing
+    scraper-sourced document's Page_Description current on re-scrape
+    (Requirement 6.5)."""
+    update_data = {
+        "description": description,
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+
+    response = supabase.table("knowledge_documents")\
+        .update(update_data)\
+        .eq("id", str(document_id))\
+        .execute()
+
+    if response.data:
+        return response.data[0]
+    raise Exception("Failed to update document description")
+
+
 async def get_document_by_id(document_id: UUID) -> Optional[dict]:
     """Get a document by ID with versions."""
     response = supabase.table("knowledge_documents")\
@@ -289,13 +333,22 @@ async def index_document_task(
             # Initialize Qdrant
             init_qdrant()
             
-            # Index the document
-            num_chunks = index_document(
+            # Index the document. index_document returns
+            # (chunks_indexed, was_skipped_due_to_checksum).
+            num_chunks, was_skipped = index_document(
                 document_id=str(document_id),
                 text=text,
                 metadata=metadata
             )
             
+            if was_skipped:
+                logger.info(
+                    f"Document {document_id} skipped indexing: identical content already indexed."
+                )
+                await update_version_status(version_id, "indexed", indexed_chunks=0)
+                await update_document_status(document_id, "indexed", current_version_id=version_id)
+                return
+
             if num_chunks > 0:
                 # Update status to indexed
                 await update_version_status(
@@ -446,7 +499,22 @@ async def list_all_documents(skip: int = 0, limit: int = 50):
     List all documents in the knowledge base.
     """
     documents = await list_documents(skip, limit)
-    
+
+    # Batch-resolve source URLs for scraper-sourced documents from
+    # `scraped_pages` (keyed by `knowledge_document_id`) rather than issuing
+    # one query per document (Requirement 9.6).
+    scraper_doc_ids = [doc["id"] for doc in documents if doc.get("source") == "scraper"]
+    source_url_by_document_id: dict = {}
+    if scraper_doc_ids:
+        pages_response = (
+            supabase.table("scraped_pages")
+            .select("knowledge_document_id, url")
+            .in_("knowledge_document_id", scraper_doc_ids)
+            .execute()
+        )
+        for row in pages_response.data or []:
+            source_url_by_document_id[row["knowledge_document_id"]] = row["url"]
+
     result = []
     for doc in documents:
         # Get current version number
@@ -469,7 +537,9 @@ async def list_all_documents(skip: int = 0, limit: int = 50):
             status=doc["status"],
             current_version_number=version_num,
             created_at=datetime.fromisoformat(doc["created_at"].replace('Z', '+00:00')),
-            updated_at=datetime.fromisoformat(doc["updated_at"].replace('Z', '+00:00'))
+            updated_at=datetime.fromisoformat(doc["updated_at"].replace('Z', '+00:00')),
+            source=doc.get("source", "upload"),
+            source_url=source_url_by_document_id.get(doc["id"]),
         ))
     
     return result
@@ -932,3 +1002,231 @@ async def sync_knowledge_base(background_tasks: BackgroundTasks):
             "status": "error",
             "message": f"Sync failed: {str(e)}"
         }
+
+
+@router.post("/knowledge-base/sync-scraper")
+async def sync_scraper_knowledge_base(background_tasks: BackgroundTasks):
+    """
+    Trigger re-indexing of all scraper-sourced (`source='scraper'`) knowledge
+    base documents only, e.g. after changing the configured Embedding_Model
+    (Requirement 7.2).
+
+    This reuses the exact same per-document `reindex_document` logic used by
+    the single-document reindex endpoint (Requirement 7.1) in a loop scoped
+    to `source='scraper'` documents. No separate reindexing implementation
+    is introduced here - this endpoint is just a filtered fan-out over the
+    existing per-document reindex logic.
+    """
+    try:
+        docs_response = supabase.table("knowledge_documents")\
+            .select("id, title, current_version_id")\
+            .eq("source", "scraper")\
+            .execute()
+
+        documents = docs_response.data if docs_response.data else []
+
+        if not documents:
+            return {
+                "status": "completed",
+                "documents_processed": 0,
+                "documents_reindexed": 0,
+                "documents_skipped": 0,
+                "message": "No scraper-sourced documents found in knowledge base"
+            }
+
+        queued_count = 0
+        skipped_count = 0
+
+        for doc in documents:
+            doc_id = UUID(doc["id"])
+            try:
+                # Reuse the existing single-document reindex logic as-is.
+                await reindex_document(doc_id, background_tasks)
+                queued_count += 1
+            except HTTPException as e:
+                logger.warning(
+                    f"Skipping scraper document {doc_id} during bulk reindex: {e.detail}"
+                )
+                skipped_count += 1
+
+        return {
+            "status": "started",
+            "documents_processed": len(documents),
+            "documents_reindexed": queued_count,
+            "documents_skipped": skipped_count,
+            "message": f"Re-indexing queued for {queued_count} scraper-sourced documents, {skipped_count} skipped"
+        }
+
+    except Exception as e:
+        logger.error(f"Scraper knowledge base sync failed: {e}")
+        return {
+            "status": "error",
+            "message": f"Sync failed: {str(e)}"
+        }
+
+
+@router.post(
+    "/knowledge-base/sync-session-type/{session_type_id}",
+    response_model=SessionTypeSyncResponse,
+)
+async def sync_session_type_knowledge(session_type_id: UUID):
+    """
+    Index (or re-index) a single session type's `description` + `ai_prompt`
+    into the RAG vector store as a `source='session_type'` knowledge
+    document, so `app.core.rag.retrieve()` (used by both the decision engine
+    and the assistant's RAG path) can surface it for customer queries -
+    not just the ad-hoc prompt injection `app.core.llm.get_ai_response`
+    already does per-message.
+
+    Reuses the exact same create_document_record / create_version_record /
+    index_document_task pipeline as manual uploads and the scraper - no
+    separate indexing implementation. Called by the frontend (Knowledge Base
+    page) right after a session type is created or updated; at most one
+    knowledge_documents row exists per session type (enforced by a unique
+    index on source_session_type_id), so repeated calls update the same
+    document (new version) rather than creating duplicates.
+    """
+    type_response = (
+        supabase.table("session_main_types")
+        .select("*")
+        .eq("id", str(session_type_id))
+        .execute()
+    )
+    if not type_response.data:
+        raise HTTPException(status_code=404, detail="Session type not found")
+
+    session_type = type_response.data[0]
+    name = session_type.get("name") or "Untitled session type"
+    description = (session_type.get("description") or "").strip()
+    ai_prompt = (session_type.get("ai_prompt") or "").strip()
+
+    # Combine both knowledge fields into one indexable text; ai_prompt is the
+    # more detailed/structured field (see 20260222145500_add_ai_prompt_to_types.sql)
+    # so it's included in full alongside the human-facing description.
+    text_parts = [part for part in (description, ai_prompt) if part]
+    text = "\n\n".join(text_parts)
+
+    if not text:
+        raise HTTPException(
+            status_code=400,
+            detail="Session type has no description or ai_prompt to index",
+        )
+
+    existing_doc_response = (
+        supabase.table("knowledge_documents")
+        .select("id, current_version_id")
+        .eq("source_session_type_id", str(session_type_id))
+        .execute()
+    )
+    existing_doc = existing_doc_response.data[0] if existing_doc_response.data else None
+
+    if existing_doc:
+        document_id = UUID(existing_doc["id"])
+        supabase.table("knowledge_documents").update(
+            {"title": name, "updated_at": datetime.utcnow().isoformat()}
+        ).eq("id", str(document_id)).execute()
+    else:
+        doc_record = await create_document_record(
+            title=name,
+            description=f"Session type: {name}",
+            uploader_id=None,
+            source="session_type",
+        )
+        document_id = UUID(doc_record["id"])
+        supabase.table("knowledge_documents").update(
+            {"source_session_type_id": str(session_type_id)}
+        ).eq("id", str(document_id)).execute()
+
+    checksum = calculate_checksum(text.encode("utf-8"))
+
+    version_response = (
+        supabase.table("knowledge_document_versions")
+        .select("version_number")
+        .eq("document_id", str(document_id))
+        .order("version_number", desc=True)
+        .limit(1)
+        .execute()
+    )
+    next_version_number = (
+        version_response.data[0]["version_number"] + 1 if version_response.data else 1
+    )
+
+    version_record = await create_version_record(
+        document_id=document_id,
+        version_number=next_version_number,
+        checksum=checksum,
+        file_size=len(text.encode("utf-8")),
+        file_type="session_type_knowledge",
+        uploader_id=None,
+    )
+    version_id = UUID(version_record["id"])
+
+    # Index synchronously (not as a background task) so the frontend can
+    # show the real outcome immediately after saving a session type, mirroring
+    # how small manual-upload documents are indexed inline via index_document.
+    await index_document_task(
+        document_id,
+        version_id,
+        text,
+        metadata={
+            "source": "session_type",
+            "source_title": name,
+            "session_type_id": str(session_type_id),
+        },
+    )
+
+    version_status_response = (
+        supabase.table("knowledge_document_versions")
+        .select("status, indexed_chunks")
+        .eq("id", str(version_id))
+        .execute()
+    )
+    final_status = (
+        version_status_response.data[0]["status"]
+        if version_status_response.data
+        else "pending"
+    )
+    chunks_indexed = (
+        version_status_response.data[0].get("indexed_chunks", 0)
+        if version_status_response.data
+        else 0
+    )
+
+    return SessionTypeSyncResponse(
+        document_id=document_id,
+        session_type_id=session_type_id,
+        status=final_status,
+        chunks_indexed=chunks_indexed,
+        message=f"Session type '{name}' indexed into knowledge base ({final_status})",
+    )
+
+
+@router.delete("/knowledge-base/sync-session-type/{session_type_id}")
+async def delete_session_type_knowledge(session_type_id: UUID):
+    """
+    Remove the knowledge_documents row (and its Qdrant chunks) generated
+    from a session type, e.g. when the session type itself is deleted.
+    Safe to call even if no document was ever synced for this session type.
+    """
+    doc_response = (
+        supabase.table("knowledge_documents")
+        .select("id")
+        .eq("source_session_type_id", str(session_type_id))
+        .execute()
+    )
+    if not doc_response.data:
+        return {"status": "noop", "message": "No knowledge document existed for this session type"}
+
+    document_id = doc_response.data[0]["id"]
+    num_deleted = delete_document_chunks(document_id)
+
+    supabase.table("knowledge_document_versions").delete().eq(
+        "document_id", document_id
+    ).execute()
+    supabase.table("knowledge_documents").delete().eq("id", document_id).execute()
+
+    return {
+        "status": "deleted",
+        "document_id": document_id,
+        "chunks_removed": num_deleted,
+    }

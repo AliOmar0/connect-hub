@@ -119,6 +119,19 @@ class Settings(BaseSettings):
     # Data retention (NFR-03.05) - automated cleanup of old records.
     DATA_RETENTION_DAYS: int = 30
 
+    # Bank website scraper (Scraper_Service) - crawls the bank's public
+    # website and feeds extracted pages into the existing knowledge base
+    # pipeline (see app/core/scraper/).
+    BANK_WEBSITE_BASE_URL: str = "https://islamicbank.ps"
+    SCRAPER_ENABLED: bool = True
+    SCRAPER_USER_AGENT: str = "PIB-KnowledgeBaseBot/1.0"
+    SCRAPER_MAX_DEPTH: int = 5
+    SCRAPER_MAX_PAGES: int = 200
+    SCRAPER_MIN_REQUEST_DELAY_SECONDS: float = 1.0
+    SCRAPER_MAX_RETRIES: int = 3
+    SCRAPER_RETRY_BASE_BACKOFF_SECONDS: float = 2.0
+    SCRAPER_SCHEDULE_INTERVAL_HOURS: int = 24
+
 # Initialize settings
 try:
     settings = Settings()

@@ -32,6 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
+import ScraperPanel from "@/components/knowledge/ScraperPanel";
+import SessionTypesPanel from "@/components/knowledge/SessionTypesPanel";
 import type { ViewStatus } from "@/types/presentation";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAsyncAction } from "@/hooks/use-async-action";
@@ -56,6 +58,11 @@ interface KbDocument {
   status: "indexed" | "processing" | "failed";
   version: number;
   updated_at: string;
+  // Present for scraper-sourced documents: a short Page_Description and a
+  // link back to the originating bank web page (Requirement 9.6).
+  description?: string | null;
+  source?: "upload" | "scraper" | "session_type";
+  source_url?: string | null;
 }
 
 interface KbVersion {
@@ -293,15 +300,35 @@ export default function KnowledgePage() {
                   {documents.map((doc) => {
                     const status = statusConfig[doc.status];
                     const StatusIcon = status.Icon;
+                    const isScraped = doc.source === "scraper";
                     return (
                       <TableRow key={doc.id}>
                         <TableCell className="font-medium">
-                          <span className="flex items-center gap-2">
+                          <span className="flex items-start gap-2">
                             <FileText
-                              className="h-4 w-4 text-muted-foreground"
+                              className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
                               aria-hidden="true"
                             />
-                            {doc.name}
+                            <span className="flex flex-col gap-0.5">
+                              {doc.name}
+                              {/* Page_Description + source link, shown only for
+                                  scraper-sourced documents (Requirement 9.6). */}
+                              {isScraped && doc.description && (
+                                <span className="text-xs text-muted-foreground">
+                                  {doc.description}
+                                </span>
+                              )}
+                              {isScraped && doc.source_url && (
+                                <a
+                                  href={doc.source_url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-xs text-primary underline-offset-2 hover:underline"
+                                >
+                                  {doc.source_url}
+                                </a>
+                              )}
+                            </span>
                           </span>
                         </TableCell>
                         <TableCell>
@@ -355,6 +382,10 @@ export default function KnowledgePage() {
             </AsyncBoundary>
           </CardContent>
         </Card>
+
+        <ScraperPanel />
+
+        <SessionTypesPanel />
       </div>
 
       <VersionHistoryDialog
