@@ -155,6 +155,13 @@
         "noConfig": "Vapi is not configured on the server",
         "unknownError": "Unknown error occurred during setup"
       },
+      "server": {
+        "checking": "Checking backend server…",
+        "online": "Backend server online",
+        "offline": "Backend server offline",
+        "offlineHint": "Start the backend in your terminal first: npm run channel:voice",
+        "blocked": "Start the backend server in your terminal before placing a call."
+      },
       "security": {
         "title": "Browser Voice Call",
         "start": "Start Call",

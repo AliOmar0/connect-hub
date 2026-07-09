@@ -37,6 +37,14 @@ beforeEach(() => {
   global.fetch = vi.fn((input: RequestInfo | URL) => {
     const url = String(input);
 
+    if (url.includes("/health")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ status: "ok" }),
+      } as Response);
+    }
+
     if (url.includes("/api/make-call")) {
       return Promise.resolve({
         ok: callOk,
@@ -88,16 +96,26 @@ describe("VapiDemo", () => {
     );
 
     // The connection indicator conveys state through a status role + tokens
-    // (non-color cue is the call status text), not color alone.
-    const statusPill = screen.getByRole("status");
-    expect(statusPill.textContent).toMatch(/Voice:/);
-    expect(statusPill.className).toContain("text-status-error");
+    // (non-color cue is the call status text), not color alone. There are now
+    // two status regions (SDK call state + backend server state); pick the
+    // call-state pill by its "Voice:" text.
+    const statusPill = screen
+      .getAllByRole("status")
+      .find((el) => /Voice:/.test(el.textContent || ""));
+    expect(statusPill).toBeDefined();
+    expect(statusPill!.textContent).toMatch(/Voice:/);
+    expect(statusPill!.className).toContain("text-status-error");
   });
 
   // Requirement 23.2 — a successful operation surfaces its result through the
   // shared success feedback mechanism.
   it("routes a successful call through the shared success feedback (23.2)", async () => {
     render(<VapiDemo />);
+
+    // Calls are gated on backend availability; wait for /health to report up.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Dial Now" })).toBeEnabled();
+    });
 
     fireEvent.change(screen.getByLabelText("Place an outbound AI call"), {
       target: { value: "+970599123456" },
@@ -115,6 +133,11 @@ describe("VapiDemo", () => {
   it("routes a failed call through the shared error feedback (23.2)", async () => {
     callOk = false;
     render(<VapiDemo />);
+
+    // Calls are gated on backend availability; wait for /health to report up.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Dial Now" })).toBeEnabled();
+    });
 
     fireEvent.change(screen.getByLabelText("Place an outbound AI call"), {
       target: { value: "+970599123456" },

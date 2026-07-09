@@ -5,7 +5,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PhoneCall, PhoneOff, Loader2, Send, Mic, Globe } from "lucide-react";
+import {
+  PhoneCall,
+  PhoneOff,
+  Loader2,
+  Send,
+  Mic,
+  Globe,
+  ServerCog,
+  ServerOff,
+} from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import Vapi from "@vapi-ai/web";
 
@@ -40,6 +49,13 @@ const VapiDemo = () => {
     Math.random().toString(36).substring(7),
   );
 
+  // Backend availability. Calls are only allowed once the Node voice server
+  // (started in a terminal via `npm run channel:voice`) answers /health.
+  const [serverStatus, setServerStatus] = useState<
+    "checking" | "online" | "offline"
+  >("checking");
+  const serverOnline = serverStatus === "online";
+
   // Tear down any active Vapi call when leaving the page.
   useEffect(() => {
     return () => {
@@ -48,8 +64,31 @@ const VapiDemo = () => {
     };
   }, []);
 
+  // Poll the backend health endpoint so the UI knows whether the server is up.
+  useEffect(() => {
+    let active = true;
+    const check = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+        if (active) setServerStatus(res.ok ? "online" : "offline");
+      } catch {
+        if (active) setServerStatus("offline");
+      }
+    };
+    check();
+    const id = setInterval(check, 5000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
   // Start a live in-browser voice call with the AI assistant through Vapi.
   const startVoiceCall = async () => {
+    if (!serverOnline) {
+      notifyError(t("diagnostics.vapi.server.blocked"));
+      return;
+    }
     setConnecting(true);
     setVoiceStatus(t("diagnostics.vapi.sdk.connecting"));
     try {
@@ -120,6 +159,10 @@ const VapiDemo = () => {
   const handleCall = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phoneNumber) return;
+    if (!serverOnline) {
+      notifyError(t("diagnostics.vapi.server.blocked"));
+      return;
+    }
     setCalling(true);
     try {
       const response = await fetch(`${API_BASE}/api/make-call`, {
@@ -193,6 +236,31 @@ const VapiDemo = () => {
         </div>
       </div>
 
+      <div
+        role="status"
+        className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
+          serverOnline
+            ? "border-status-success/20 bg-status-success/10 text-status-success"
+            : "border-status-error/20 bg-status-error/10 text-status-error"
+        }`}
+      >
+        {serverStatus === "checking" ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : serverOnline ? (
+          <ServerCog className="h-4 w-4" aria-hidden="true" />
+        ) : (
+          <ServerOff className="h-4 w-4" aria-hidden="true" />
+        )}
+        <span className="font-medium">
+          {t(`diagnostics.vapi.server.${serverStatus}`)}
+        </span>
+        {!serverOnline && serverStatus !== "checking" && (
+          <span className="text-muted-foreground">
+            — {t("diagnostics.vapi.server.offlineHint")}
+          </span>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         <div className="lg:col-span-4 space-y-6">
           <Card>
@@ -217,7 +285,7 @@ const VapiDemo = () => {
                   variant="outline"
                   className="w-full text-xs"
                   onClick={startVoiceCall}
-                  disabled={connecting}
+                  disabled={connecting || !serverOnline}
                 >
                   {connecting ? (
                     <Loader2
@@ -279,12 +347,13 @@ const VapiDemo = () => {
                           value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
                           className="text-lg h-12"
+                          disabled={!serverOnline}
                         />
                         <Button
                           type="submit"
                           size="lg"
                           className="h-12"
-                          disabled={calling}
+                          disabled={calling || !serverOnline}
                         >
                           {calling ? (
                             <Loader2
