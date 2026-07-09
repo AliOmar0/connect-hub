@@ -14,6 +14,17 @@ export const NODE_API_URL =
 export const KB_API_URL =
   import.meta.env.VITE_KB_API_URL || `${BACKEND_URL}/api/v1/kb`;
 
+// Scraper admin API base (bank website crawler). Same backend, own prefix.
+export const SCRAPER_API_URL =
+  import.meta.env.VITE_SCRAPER_API_URL || `${BACKEND_URL}/api/v1/scraper`;
+
+// Knowledge-base document/session-type sync API base (FastAPI backend's
+// /api/v1/knowledge-base/* routes - distinct from KB_API_URL's /api/v1/kb/*
+// frontend-contract aliases above). Same backend, own prefix.
+export const KNOWLEDGE_BASE_API_URL =
+  import.meta.env.VITE_KNOWLEDGE_BASE_API_URL ||
+  `${BACKEND_URL}/api/v1/knowledge-base`;
+
 // SLA windows (seconds) for the escalation queue (G28). Business vs out-of-hours.
 export const SLA_BUSINESS_HOURS_SECONDS = Number(
   import.meta.env.VITE_SLA_BUSINESS_SECONDS || 120,

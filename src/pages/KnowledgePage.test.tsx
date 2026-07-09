@@ -24,6 +24,17 @@ vi.mock("@/components/layout/DashboardLayout", () => ({
   ),
 }));
 
+// ScraperPanel and SessionTypesPanel are separate features with their own
+// data dependencies (useAuth, scraper/session-type queries); each is
+// covered by its own test suite, so both are stubbed here to keep this
+// file focused on KnowledgePage's own behavior.
+vi.mock("@/components/knowledge/ScraperPanel", () => ({
+  default: () => null,
+}));
+vi.mock("@/components/knowledge/SessionTypesPanel", () => ({
+  default: () => null,
+}));
+
 // KnowledgePage attaches the Supabase access token to every KB request; the
 // real client requires env vars this test doesn't set, so stub it like every
 // other page test does.

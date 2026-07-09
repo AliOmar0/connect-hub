@@ -694,15 +694,19 @@ def retrieve(
         )
     
     try:
-        # Search
-        results = client.search(
+        # Search. qdrant-client >=1.10 removed the legacy `.search()` method
+        # in favor of `.query_points()` (search()'s `query_vector` param is
+        # now just `query`, and results come back wrapped in a
+        # `QueryResponse.points` list instead of a bare list).
+        response = client.query_points(
             collection_name=collection_name,
-            query_vector=query_embedding,
+            query=query_embedding,
             limit=top_k * 2,  # Get more to filter by threshold
             query_filter=filter_obj,
             with_payload=True
         )
-        
+        results = response.points
+
         # Filter by threshold and build result list
         chunks = []
         for result in results:
@@ -874,6 +878,19 @@ def build_context_block(
         content = enforce_word_limit(chunk.content, max_words_per_chunk)
         
         context += f"\n--- نتيجة {i} (درجة التطابق: {chunk.score:.2%}) ---\n"
+
+        # Requirement 8.4/8.5: when a retrieved chunk originates from a
+        # scraped page, include its source URL (and Page_Description, when
+        # present) alongside its content so the LLM can cite it. A missing
+        # description never causes the chunk or its source URL to be
+        # omitted - only the description line itself is skipped.
+        source_url = chunk.metadata.get("source_url")
+        source_description = chunk.metadata.get("source_description")
+        if source_url:
+            context += f"المصدر: {source_url}\n"
+        if source_description:
+            context += f"الوصف: {source_description}\n"
+
         context += f"{content}\n"
     
     context += "\n---\n"

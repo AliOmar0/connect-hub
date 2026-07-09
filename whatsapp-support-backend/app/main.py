@@ -19,6 +19,7 @@ from app.api.v1.assistant import router as assistant_router
 from app.api.v1.decision import router as decision_router
 from app.api.v1.knowledge_base import router as knowledge_base_router
 from app.api.v1.nlp import router as nlp_router
+from app.api.v1.scraper import router as scraper_router
 from app.api.v1.sessions import router as sessions_router
 from app.api.v1.webhook import router as webhook_router
 from app.api.v1.deps import get_session, verify_jwt
@@ -115,11 +116,34 @@ async def lifespan(app: FastAPI):
             logger.warning("   Install with: pip install sentence-transformers")
     except Exception as e:
         logger.error(f"❌ Embeddings check failed: {e}")
-    
+
+    # --- Reconcile any Crawl_Job left "running" by an unclean shutdown ---
+    # Fixes: a crawl in progress when the server is stopped never gets its
+    # `crawl_jobs` row marked completed/failed, so on restart every
+    # POST /scraper/jobs incorrectly 409s with "A crawl job is already
+    # running" even though nothing is actually running anymore.
+    try:
+        from app.core.scraper import reconcile_stale_running_jobs
+        reconciled = reconcile_stale_running_jobs()
+        if reconciled:
+            logger.warning(
+                f"⚠️ Reconciled {reconciled} stale 'running' crawl job(s) "
+                "left over from an unclean shutdown; marked as failed."
+            )
+    except Exception as e:
+        logger.error(f"❌ Crawl job reconciliation failed: {e}")
+
     # Start background tasks
     task = asyncio.create_task(session_cleanup_task())
     from app.crud.cleanup import retention_cleanup_task
     retention_task = asyncio.create_task(retention_cleanup_task())
+
+    scraper_task = None
+    if settings.SCRAPER_ENABLED:
+        from app.core.scraper.scheduler import scheduled_crawl_task
+        scraper_task = asyncio.create_task(
+            scheduled_crawl_task(settings.SCRAPER_SCHEDULE_INTERVAL_HOURS * 3600)
+        )
 
     # Start ngrok tunnel if enabled
     if settings.USE_NGROK:
@@ -174,7 +198,12 @@ async def lifespan(app: FastAPI):
     # Shutdown: Cancel background tasks
     task.cancel()
     retention_task.cancel()
-    for t in (task, retention_task):
+    if scraper_task is not None:
+        scraper_task.cancel()
+    tasks_to_await = [task, retention_task] + (
+        [scraper_task] if scraper_task is not None else []
+    )
+    for t in tasks_to_await:
         try:
             await t
         except asyncio.CancelledError:
@@ -263,5 +292,11 @@ app.include_router(
     assistant_router,
     prefix=settings.API_V1_STR,
     tags=["assistant"],
+    dependencies=[Depends(verify_jwt)],
+)
+app.include_router(
+    scraper_router,
+    prefix=settings.API_V1_STR,
+    tags=["scraper"],
     dependencies=[Depends(verify_jwt)],
 )
