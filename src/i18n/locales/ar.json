@@ -458,21 +458,32 @@
     "loadErrorDescription": "تعذّر تحميل التحويلات التي تنتظر المعالجة. يرجى المحاولة مرة أخرى."
   },
   "shortcutsPage": {
-    "title": "اختصارات لوحة المفاتيح",
-    "subtitle": "مرجع اختصارات لوحة المفاتيح لتشغيل لوحة التحكم.",
+    "title": "اختصارات المحادثة",
+    "subtitle": "اختصارات لوحة المفاتيح لكتابة المحادثات وإدارتها.",
     "emptyTitle": "لا توجد اختصارات متاحة",
     "emptyDescription": "لا توجد اختصارات لوحة مفاتيح لعرضها.",
     "groups": {
       "general": "عام",
-      "navigation": "التنقل"
+      "navigation": "التنقل",
+      "chat": "المحادثة"
     },
     "items": {
       "focusNext": "نقل التركيز إلى العنصر التالي",
       "focusPrevious": "نقل التركيز إلى العنصر السابق",
-      "activate": "تفعيل العنصر المحدد",
-      "dismiss": "إغلاق النافذة أو القائمة المفتوحة",
-      "toggleSidebar": "إظهار أو إخفاء الشريط الجانبي للتنقل"
-    }
+      "activate": "تنشيط العنصر المحدد",
+      "dismiss": "إغلاق الحوارات أو النوافذ المنبثقة",
+      "toggleSidebar": "تبديل عرض الشريط الجانبي",
+      "chatSendMessage": "إرسال الرسالة المكتوبة",
+      "chatOpenQuickReplies": "فتح قائمة الردود السريعة",
+      "chatPickerNavigate": "تحريك التحديد في قائمة الاختصارات",
+      "chatPickerInsert": "إدراج الاختصار المحدد",
+      "chatPickerClose": "إغلاق قائمة الاختصارات",
+      "chatReplyToMessage": "الرد على رسالة محددة",
+      "chatResolveConversation": "إنهاء أو إغلاق المحادثة الحالية",
+      "chatSwitchConversation": "الانتقال إلى المحادثة التالية أو السابقة",
+      "chatQuickReplyNavigate": "تحريك التحديد في قائمة الردود السريعة"
+    },
+    "notYetAvailable": "غير متاح بعد"
   },
   "notFoundPage": {
     "code": "404",
@@ -755,7 +766,7 @@
         "analytics": "التحليلات",
         "settings": "الإعدادات",
         "notifications": "الإشعارات",
-        "shortcuts": "اختصارات لوحة المفاتيح",
+        "shortcuts": "اختصارات المحادثة",
         "backendTest": "أداة اختبار الخادم",
         "notFound": "الصفحة غير موجودة"
       }
@@ -777,7 +788,7 @@
       "employees": "الموظفون",
       "analytics": "التحليلات",
       "notifications": "الإشعارات",
-      "shortcuts": "اختصارات لوحة المفاتيح",
+      "shortcuts": "اختصارات المحادثة",
       "knowledge": "قاعدة المعرفة",
       "backendTest": "أداة اختبار الخادم",
       "settings": "الإعدادات",

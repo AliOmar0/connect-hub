@@ -458,21 +458,32 @@
     "loadErrorDescription": "We couldn't load escalations awaiting handoff. Please try again."
   },
   "shortcutsPage": {
-    "title": "Keyboard Shortcuts",
-    "subtitle": "Reference of keyboard shortcuts for operating the dashboard.",
+    "title": "Chat Shortcuts",
+    "subtitle": "Keyboard shortcuts for composing and managing conversations.",
     "emptyTitle": "No shortcuts available",
     "emptyDescription": "There are no keyboard shortcuts to display.",
     "groups": {
       "general": "General",
-      "navigation": "Navigation"
+      "navigation": "Navigation",
+      "chat": "Chat"
     },
     "items": {
       "focusNext": "Move focus to the next control",
       "focusPrevious": "Move focus to the previous control",
       "activate": "Activate the focused control",
-      "dismiss": "Close the open dialog or menu",
-      "toggleSidebar": "Toggle the navigation sidebar"
-    }
+      "dismiss": "Close dialogs or dismiss overlays",
+      "toggleSidebar": "Toggle the sidebar",
+      "chatSendMessage": "Send the composed message",
+      "chatOpenQuickReplies": "Open the quick reply list",
+      "chatPickerNavigate": "Move the highlighted shortcut in the shortcut picker",
+      "chatPickerInsert": "Insert the highlighted shortcut",
+      "chatPickerClose": "Close the shortcut picker",
+      "chatReplyToMessage": "Reply to a specific message",
+      "chatResolveConversation": "Resolve or close the active chat",
+      "chatSwitchConversation": "Go to the next or previous conversation",
+      "chatQuickReplyNavigate": "Move the highlighted item in the quick reply list"
+    },
+    "notYetAvailable": "Not yet available"
   },
   "notFoundPage": {
     "code": "404",
@@ -755,7 +766,7 @@
         "analytics": "Analytics",
         "settings": "Settings",
         "notifications": "Notifications",
-        "shortcuts": "Keyboard Shortcuts",
+        "shortcuts": "Chat Shortcuts",
         "backendTest": "Backend Tester",
         "notFound": "Page Not Found"
       }
@@ -777,7 +788,7 @@
       "employees": "Employees",
       "analytics": "Analytics",
       "notifications": "Notifications",
-      "shortcuts": "Keyboard Shortcuts",
+      "shortcuts": "Chat Shortcuts",
       "knowledge": "Knowledge Base",
       "backendTest": "Backend Tester",
       "settings": "Settings",

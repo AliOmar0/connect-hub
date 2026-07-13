@@ -328,6 +328,7 @@ export default function SessionsPage() {
       supabase.removeChannel(sessionChannel);
       supabase.removeChannel(messageChannel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refetch]);
 
   // Fetch available employees for assignment

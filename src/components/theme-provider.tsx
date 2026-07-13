@@ -8,6 +8,7 @@ export type Theme = "light" | "dark";
 
 const THEMES: readonly Theme[] = ["light", "dark"] as const;
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function isTheme(value: unknown): value is Theme {
   return (
     typeof value === "string" && (THEMES as readonly string[]).includes(value)
@@ -95,6 +96,7 @@ export function ThemeProvider({
 }
 
 /** Access the current theme and setters. Must be used within a ThemeProvider. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useTheme(): ThemeProviderState {
   const context = React.useContext(ThemeProviderContext);
   if (context === undefined) {

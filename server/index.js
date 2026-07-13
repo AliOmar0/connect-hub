@@ -869,7 +869,6 @@ httpServer.on("upgrade", (request, socket, head) => {
 // --- Global Error Handler -------------------------------------------------
 // Must be registered AFTER all routes so it catches errors from any handler
 
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   // Log the error with context
   req.log?.error(

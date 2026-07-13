@@ -85,22 +85,11 @@ export function AuthProvider({
 
           if (insertError) {
             console.error("Error creating profile:", insertError);
-          } else {
-            // Also ensure role exists
-            const { error: roleError } = await supabase
-              .from("user_roles")
-              .insert({ user_id: userId, role: "agent" })
-              .select()
-              .single();
-
-            if (roleError && !roleError.message.includes("duplicate")) {
-              console.error("Error creating user role:", roleError);
-            }
           }
         }
       }
 
-      // Fetch user role
+      // Fetch user role (always check, independent of profile state)
       const { data, error } = await supabase
         .from("user_roles")
         .select("role")
@@ -108,7 +97,22 @@ export function AuthProvider({
         .maybeSingle();
 
       if (!error && data) {
+        // Existing role found
         setUserRole(data.role as AppRole);
+      } else if (!error && !data) {
+        // No user_roles row exists, provision a default role
+        const { error: roleError } = await supabase
+          .from("user_roles")
+          .insert({ user_id: userId, role: "agent" })
+          .select()
+          .single();
+
+        if (roleError && !roleError.message.includes("duplicate")) {
+          console.error("Error creating user role:", roleError);
+        } else if (!roleError || roleError.message.includes("duplicate")) {
+          // Role was created or already exists (duplicate race condition), set default
+          setUserRole("agent");
+        }
       }
     } catch (err) {
       console.error("Error fetching user role:", err);

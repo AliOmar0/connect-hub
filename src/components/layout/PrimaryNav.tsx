@@ -66,6 +66,7 @@ interface PrimaryNavProps {
  * The default primary-navigation item set, reusing the DashboardSidebar
  * configuration (routes + role visibility) but expressed with i18n label keys.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
   {
     to: "/dashboard",

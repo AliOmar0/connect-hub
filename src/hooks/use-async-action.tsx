@@ -240,7 +240,7 @@ export function useAsyncAction<TArgs extends unknown[] = [], TResult = unknown>(
         return undefined;
       }
     },
-    [clearTimer],
+    [clearTimer, teardown],
   );
 
   const retry = React.useCallback((): Promise<TResult | undefined> => {

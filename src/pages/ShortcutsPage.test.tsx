@@ -1,188 +1,347 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, within } from "@/test-utils/render";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor } from "@/test-utils/render";
 import { axe, toHaveNoViolations } from "jest-axe";
 import ShortcutsPage from "./ShortcutsPage";
-import i18n from "@/i18n";
 
 expect.extend(toHaveNoViolations);
 
-// --- Module mocks -----------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Module mocks
+// ---------------------------------------------------------------------------
 
-// The App_Shell has its own tests; here we only need a single main landmark so
-// the page content is a well-formed document for the axe scan and queries stay
-// focused on the shortcuts content.
 vi.mock("@/components/layout/DashboardLayout", () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <main>{children}</main>
   ),
 }));
 
-// --- Helpers ----------------------------------------------------------------
+// Mock useAuth so user is always authenticated
+vi.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({ user: { id: "test-user-id" } }),
+  AuthProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
 
-// Unicode bidi isolate controls that BidiText wraps key combos in (LRI/PDI).
-// They preserve LTR order under RTL but are invisible; strip them so text
-// assertions compare the human-visible combo.
-const stripBidi = (text: string | null | undefined) =>
-  (text ?? "").replace(/[\u2066\u2069]/g, "").trim();
+// Mock Supabase — return an empty list by default; individual tests override
+const mockSelect = vi.fn().mockResolvedValue({ data: [], error: null });
+const mockInsert = vi.fn().mockResolvedValue({ data: null, error: null });
+const mockUpdate = vi.fn().mockResolvedValue({ data: null, error: null });
+const mockDelete = vi.fn().mockResolvedValue({ data: null, error: null });
 
-// The two labeled groups defined by ShortcutsPage, with their English labels
-// and the descriptions/combos they contain. Combos assume a non-mac test
-// platform (jsdom navigator), so the sidebar toggle resolves to "Ctrl + B".
-const GENERAL_GROUP = {
-  label: "General",
-  entries: [
-    { description: "Move focus to the next control", keys: "Tab" },
-    { description: "Move focus to the previous control", keys: "Shift + Tab" },
-    { description: "Activate the focused control", keys: "Enter" },
-    { description: "Close the open dialog or menu", keys: "Esc" },
-  ],
-};
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () => mockSelect(),
+        }),
+      }),
+      insert: () => mockInsert(),
+      update: () => ({
+        eq: () => mockUpdate(),
+      }),
+      delete: () => ({
+        eq: () => mockDelete(),
+      }),
+    }),
+  },
+}));
 
-const NAVIGATION_GROUP = {
-  label: "Navigation",
-  entries: [{ description: "Toggle the navigation sidebar", keys: "Ctrl + B" }],
-};
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-/** Locate a group's Card by its labeled <h2> heading. */
-function getGroupCard(label: string): HTMLElement {
-  const heading = screen.getByRole("heading", { level: 2, name: label });
-  const card = heading.closest("div.shadow-card");
-  expect(card).not.toBeNull();
-  return card as HTMLElement;
-}
+const SAMPLE_SHORTCUTS = [
+  {
+    id: "sc-1",
+    user_id: "test-user-id",
+    title: "Greeting",
+    content: "Hello! How can I help you today?",
+    created_at: "2024-01-01",
+    updated_at: "2024-01-01",
+  },
+  {
+    id: "sc-2",
+    user_id: "test-user-id",
+    title: "Farewell",
+    content: "Thank you for contacting us. Have a great day!",
+    created_at: "2024-01-02",
+    updated_at: "2024-01-02",
+  },
+];
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 describe("ShortcutsPage", () => {
-  afterEach(async () => {
-    // Reset direction/language so an RTL test can't leak into the next test.
-    if (i18n.language !== "en") {
-      await i18n.changeLanguage("en");
-    }
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSelect.mockResolvedValue({ data: [], error: null });
   });
 
-  // Requirement 21.1 — shortcuts are organized into labeled context groups.
-  it("renders each shortcut group with its translated label heading", () => {
+  // ── Page structure ────────────────────────────────────────────────────────
+
+  it("renders the page title as an h1 with the Zap icon label", () => {
     render(<ShortcutsPage />);
-
     expect(
-      screen.getByRole("heading", { level: 1, name: /Keyboard Shortcuts/i }),
-    ).toBeInTheDocument();
-
-    // Both populated groups appear as labeled level-2 headings.
-    expect(
-      screen.getByRole("heading", { level: 2, name: GENERAL_GROUP.label }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { level: 2, name: NAVIGATION_GROUP.label }),
+      screen.getByRole("heading", { level: 1, name: /Quick Reply Shortcuts/i }),
     ).toBeInTheDocument();
   });
 
-  // Requirement 21.1 — each shortcut belongs to exactly one group.
-  it("assigns every shortcut to exactly one labeled group", () => {
+  it("does NOT render a Keyboard Shortcuts Reference heading", () => {
+    render(<ShortcutsPage />);
+    expect(
+      screen.queryByRole("heading", { name: /keyboard shortcuts reference/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the Add Shortcut button", () => {
+    render(<ShortcutsPage />);
+    expect(
+      screen.getByRole("button", { name: /add shortcut/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the backslash trigger hint in the subtitle", () => {
+    render(<ShortcutsPage />);
+    // The subtitle mentions the \ trigger
+    expect(screen.getByText(/message box/i)).toBeInTheDocument();
+  });
+
+  // ── Empty state ───────────────────────────────────────────────────────────
+
+  it("shows an empty state with CTA when there are no shortcuts", async () => {
+    mockSelect.mockResolvedValue({ data: [], error: null });
     render(<ShortcutsPage />);
 
-    const generalCard = getGroupCard(GENERAL_GROUP.label);
-    const navigationCard = getGroupCard(NAVIGATION_GROUP.label);
+    await waitFor(() => {
+      expect(screen.getByText(/no shortcuts yet/i)).toBeInTheDocument();
+    });
 
-    // General group owns its four entries and none of navigation's.
-    for (const { description } of GENERAL_GROUP.entries) {
-      expect(within(generalCard).getByText(description)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /add your first shortcut/i }),
+    ).toBeInTheDocument();
+  });
+
+  // ── Shortcut cards ────────────────────────────────────────────────────────
+
+  it("renders a card for each shortcut returned by the API", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
+    render(<ShortcutsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
+      expect(screen.getByText("Farewell")).toBeInTheDocument();
+    });
+
+    expect(
+      screen.getByText("Hello! How can I help you today?"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Thank you for contacting us. Have a great day!"),
+    ).toBeInTheDocument();
+  });
+
+  // ── Search ────────────────────────────────────────────────────────────────
+
+  it("filters shortcuts by title when the user types in the search box", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
+    render(<ShortcutsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/search shortcuts/i);
+    fireEvent.change(searchInput, { target: { value: "Greeting" } });
+
+    expect(screen.getByText("Greeting")).toBeInTheDocument();
+    expect(screen.queryByText("Farewell")).not.toBeInTheDocument();
+  });
+
+  it("shows 'no shortcuts match' message when search finds nothing", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
+    render(<ShortcutsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
+    });
+
+    const searchInput = screen.getByPlaceholderText(/search shortcuts/i);
+    fireEvent.change(searchInput, { target: { value: "xyznotfound" } });
+
+    expect(
+      screen.getByText(/no shortcuts match your search/i),
+    ).toBeInTheDocument();
+  });
+
+  // ── Add dialog ────────────────────────────────────────────────────────────
+
+  it("opens the Add Shortcut dialog when the Add button is clicked", async () => {
+    render(<ShortcutsPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /add shortcut/i }));
+
+    await waitFor(() => {
       expect(
-        within(navigationCard).queryByText(description),
-      ).not.toBeInTheDocument();
-    }
+        screen.getByRole("dialog", { name: /new chat shortcut/i }),
+      ).toBeInTheDocument();
+    });
 
-    // Navigation group owns its single entry and none of general's.
-    for (const { description } of NAVIGATION_GROUP.entries) {
-      expect(within(navigationCard).getByText(description)).toBeInTheDocument();
-      expect(
-        within(generalCard).queryByText(description),
-      ).not.toBeInTheDocument();
-    }
-
-    // The total number of rendered shortcut rows equals the sum across groups
-    // (no shortcut is duplicated into more than one group).
-    const rows = document.querySelectorAll("dl > div");
-    expect(rows).toHaveLength(
-      GENERAL_GROUP.entries.length + NAVIGATION_GROUP.entries.length,
-    );
+    expect(screen.getByLabelText(/shortcut title/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/response content/i)).toBeInTheDocument();
   });
 
-  // Requirement 21.2 — each shortcut pairs a human-readable description with
-  // its key combination rendered as readable text.
-  it("pairs each description with its readable key combination", () => {
+  it("disables the Save button when title or content is empty", async () => {
     render(<ShortcutsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /add shortcut/i }));
 
-    const allEntries = [...GENERAL_GROUP.entries, ...NAVIGATION_GROUP.entries];
-    for (const { description, keys } of allEntries) {
-      const term = screen.getByText(description);
-      const row = term.closest("div");
-      expect(row).not.toBeNull();
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
 
-      // The key combo is rendered as readable text alongside the description.
-      const combo = row!.querySelector("dd span");
-      expect(combo).not.toBeNull();
-      expect(stripBidi(combo!.textContent)).toBe(keys);
-    }
+    const saveBtn = screen.getByRole("button", {
+      name: /add shortcut/i,
+      hidden: false,
+    });
+    // Find the save button specifically inside the dialog
+    const dialogSave = screen
+      .getAllByRole("button", { name: /add shortcut/i })
+      .find((btn) => btn.closest("[role='dialog']"));
+    expect(dialogSave).toBeDisabled();
   });
 
-  // Requirement 21.3 — empty context groups are omitted rather than rendered
-  // empty. Only groups that actually contain shortcuts are present, and every
-  // rendered group has at least one shortcut row.
-  it("omits empty groups and renders only populated ones", () => {
+  it("enables the Save button when both title and content are filled", async () => {
     render(<ShortcutsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /^add shortcut$/i }));
 
-    const groupHeadings = screen.getAllByRole("heading", { level: 2 });
-    // Exactly the two populated groups — no stray empty group card.
-    expect(groupHeadings).toHaveLength(2);
-    expect(groupHeadings.map((h) => h.textContent)).toEqual([
-      GENERAL_GROUP.label,
-      NAVIGATION_GROUP.label,
-    ]);
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
 
-    // No rendered group is empty: every definition list has at least one row.
-    const lists = document.querySelectorAll("dl");
-    expect(lists.length).toBeGreaterThan(0);
-    lists.forEach((list) => {
-      expect(list.querySelectorAll("div").length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText(/shortcut title/i), {
+      target: { value: "My Shortcut" },
+    });
+    fireEvent.change(screen.getByLabelText(/response content/i), {
+      target: { value: "My response text" },
+    });
+
+    const saveBtn = screen
+      .getAllByRole("button")
+      .find(
+        (btn) =>
+          btn.closest("[role='dialog']") &&
+          /add shortcut/i.test(btn.textContent ?? ""),
+      );
+    expect(saveBtn).not.toBeDisabled();
+  });
+
+  it("closes the dialog when Cancel is clicked", async () => {
+    render(<ShortcutsPage />);
+    fireEvent.click(screen.getByRole("button", { name: /^add shortcut$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
   });
 
-  // Requirement 21.4 — under RTL, descriptions render RTL (inheriting document
-  // direction) while key combinations preserve left-to-right rendering.
-  it("renders RTL descriptions while keeping key combos left-to-right under RTL", async () => {
-    await i18n.changeLanguage("ar");
+  // ── Edit dialog ───────────────────────────────────────────────────────────
+
+  it("opens the Edit Shortcut dialog pre-filled with the shortcut data", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
     render(<ShortcutsPage />);
 
-    // Document mirrors to RTL so descriptions flow right-to-left.
-    expect(document.documentElement.dir).toBe("rtl");
-
-    // Arabic group labels are shown.
-    const generalCard = getGroupCard("عام");
-    getGroupCard("التنقل");
-
-    // A description renders in the active (Arabic/RTL) language...
-    expect(
-      within(generalCard).getByText("نقل التركيز إلى العنصر التالي"),
-    ).toBeInTheDocument();
-
-    // ...while every key combination stays explicitly LTR and preserves its
-    // character order via BidiText's dir="ltr" isolate wrapper.
-    const combos = document.querySelectorAll("dd span");
-    expect(combos.length).toBeGreaterThan(0);
-    combos.forEach((combo) => {
-      expect(combo.getAttribute("dir")).toBe("ltr");
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
     });
 
-    // The sidebar combo is still readable as "Ctrl + B" (LTR order intact).
-    const comboTexts = Array.from(combos).map((c) => stripBidi(c.textContent));
-    expect(comboTexts).toContain("Ctrl + B");
+    // Click the edit button for the first shortcut
+    const editBtn = screen.getAllByTitle(/edit shortcut/i)[0];
+    fireEvent.click(editBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("dialog", { name: /edit shortcut/i }),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByDisplayValue("Greeting")).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue("Hello! How can I help you today?"),
+    ).toBeInTheDocument();
   });
 
-  // Accessibility — the loaded page has no detectable axe violations. Heading
-  // order is well-formed (page h1 followed by group h2s), so no rules are
-  // scoped out here.
-  it("has no axe-detectable accessibility violations", async () => {
+  // ── Delete confirmation ───────────────────────────────────────────────────
+
+  it("opens a confirmation AlertDialog when the delete button is clicked", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
+    render(<ShortcutsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
+    });
+
+    const deleteBtn = screen.getAllByTitle(/delete shortcut/i)[0];
+    fireEvent.click(deleteBtn);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("alertdialog", { name: /delete shortcut/i }),
+      ).toBeInTheDocument();
+    });
+
+    expect(screen.getByText(/cannot be undone/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^delete$/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /cancel/i })).toBeInTheDocument();
+  });
+
+  it("closes the AlertDialog when Cancel is clicked", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
+    render(<ShortcutsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getAllByTitle(/delete shortcut/i)[0]);
+
+    await waitFor(() => {
+      expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    });
+  });
+
+  // ── Accessibility ─────────────────────────────────────────────────────────
+
+  it("has no axe-detectable accessibility violations on the empty page", async () => {
+    mockSelect.mockResolvedValue({ data: [], error: null });
     const { container } = render(<ShortcutsPage />);
+    await waitFor(() =>
+      expect(screen.queryByText(/loading/i)).not.toBeInTheDocument(),
+    );
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it("has no axe-detectable accessibility violations with shortcuts loaded", async () => {
+    mockSelect.mockResolvedValue({ data: SAMPLE_SHORTCUTS, error: null });
+    const { container } = render(<ShortcutsPage />);
+    await waitFor(() => {
+      expect(screen.getByText("Greeting")).toBeInTheDocument();
+    });
     const results = await axe(container);
     expect(results).toHaveNoViolations();
   });
