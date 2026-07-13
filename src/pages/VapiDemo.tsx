@@ -14,11 +14,27 @@ import {
   Globe,
   ServerCog,
   ServerOff,
+  FileText,
 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { notifySuccess, notifyError } from "@/lib/feedback";
+import { supabase } from "@/integrations/supabase/client";
 import Vapi from "@vapi-ai/web";
 
 const API_BASE = "http://localhost:3001";
+
+// The Vapi config and outbound-call endpoints are protected by the Node server
+// (requireAuth + agent role), so requests must carry the Supabase access token
+// as a Bearer header. Without it the server replies 401 "Missing or malformed
+// Authorization header." Chat is unauthenticated, so it doesn't need this.
+const getAuthHeaders = async (): Promise<Record<string, string>> => {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.access_token
+    ? { Authorization: `Bearer ${session.access_token}` }
+    : {};
+};
 
 const VapiDemo = () => {
   const { t } = useTranslation();
@@ -35,6 +51,14 @@ const VapiDemo = () => {
   );
   const [inCall, setInCall] = useState(false);
   const [connecting, setConnecting] = useState(false);
+
+  // Live transcript of the browser voice call. `transcript` holds finalized
+  // turns (both what the customer said and what the assistant replied) and
+  // `partialLine` shows the in-progress utterance. Toggled for testing.
+  type TranscriptEntry = { role: "user" | "assistant"; text: string };
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [partialLine, setPartialLine] = useState<TranscriptEntry | null>(null);
 
   // Text Chat State
   const [chatMessage, setChatMessage] = useState("");
@@ -91,8 +115,12 @@ const VapiDemo = () => {
     }
     setConnecting(true);
     setVoiceStatus(t("diagnostics.vapi.sdk.connecting"));
+    setTranscript([]);
+    setPartialLine(null);
     try {
-      const response = await fetch(`${API_BASE}/api/vapi/config`);
+      const response = await fetch(`${API_BASE}/api/vapi/config`, {
+        headers: await getAuthHeaders(),
+      });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(
@@ -112,6 +140,27 @@ const VapiDemo = () => {
       const vapi = new Vapi(publicKey);
       vapiRef.current = vapi;
 
+      // Capture live transcripts. Vapi emits { type: "transcript", role,
+      // transcriptType: "partial"|"final", transcript }. Finalized turns are
+      // appended; partials update a single in-progress line.
+      vapi.on("message", (msg: unknown) => {
+        const m = msg as {
+          type?: string;
+          role?: string;
+          transcriptType?: string;
+          transcript?: string;
+        };
+        if (m?.type !== "transcript" || !m.transcript) return;
+        const role: TranscriptEntry["role"] =
+          m.role === "assistant" ? "assistant" : "user";
+        if (m.transcriptType === "final") {
+          setTranscript((prev) => [...prev, { role, text: m.transcript! }]);
+          setPartialLine(null);
+        } else {
+          setPartialLine({ role, text: m.transcript! });
+        }
+      });
+
       vapi.on("call-start", () => {
         setInCall(true);
         setConnecting(false);
@@ -122,6 +171,7 @@ const VapiDemo = () => {
       vapi.on("call-end", () => {
         setInCall(false);
         setConnecting(false);
+        setPartialLine(null);
         setVoiceStatus(t("diagnostics.vapi.sdk.ended"));
       });
 
@@ -167,7 +217,10 @@ const VapiDemo = () => {
     try {
       const response = await fetch(`${API_BASE}/api/make-call`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(await getAuthHeaders()),
+        },
         body: JSON.stringify({ to: phoneNumber }),
       });
       const data = await response.json();
@@ -301,6 +354,77 @@ const VapiDemo = () => {
               <p className="text-xs text-muted-foreground leading-relaxed">
                 {t("diagnostics.vapi.security.hint")}
               </p>
+
+              <div className="flex items-center justify-between border-t pt-3">
+                <Label
+                  htmlFor="vapi-transcript-toggle"
+                  className="flex items-center gap-2 text-xs font-medium"
+                >
+                  <FileText className="h-4 w-4" aria-hidden="true" />
+                  {t("diagnostics.vapi.transcript.toggle")}
+                </Label>
+                <Switch
+                  id="vapi-transcript-toggle"
+                  checked={showTranscript}
+                  onCheckedChange={setShowTranscript}
+                  aria-label={t("diagnostics.vapi.transcript.toggle")}
+                />
+              </div>
+
+              {showTranscript && (
+                <div
+                  className="max-h-64 overflow-y-auto rounded-lg border bg-muted/20 p-3 space-y-2"
+                  aria-live="polite"
+                  aria-label={t("diagnostics.vapi.transcript.title")}
+                >
+                  {transcript.length === 0 && !partialLine ? (
+                    <p className="text-xs text-muted-foreground italic">
+                      {t("diagnostics.vapi.transcript.empty")}
+                    </p>
+                  ) : (
+                    <>
+                      {transcript.map((entry, i) => (
+                        <div key={i} className="text-xs">
+                          <span
+                            className={`font-semibold ${
+                              entry.role === "assistant"
+                                ? "text-primary"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {entry.role === "assistant"
+                              ? t("diagnostics.vapi.transcript.roleAssistant")
+                              : t("diagnostics.vapi.transcript.roleCustomer")}
+                            :{" "}
+                          </span>
+                          <span className="text-muted-foreground">
+                            {entry.text}
+                          </span>
+                        </div>
+                      ))}
+                      {partialLine && (
+                        <div className="text-xs opacity-60">
+                          <span
+                            className={`font-semibold ${
+                              partialLine.role === "assistant"
+                                ? "text-primary"
+                                : "text-foreground"
+                            }`}
+                          >
+                            {partialLine.role === "assistant"
+                              ? t("diagnostics.vapi.transcript.roleAssistant")
+                              : t("diagnostics.vapi.transcript.roleCustomer")}
+                            :{" "}
+                          </span>
+                          <span className="text-muted-foreground italic">
+                            {partialLine.text}…
+                          </span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

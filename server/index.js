@@ -5,6 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import axios from "axios";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import { createClient } from "@supabase/supabase-js";
 
 import { logger, correlationMiddleware } from "./lib/logger.js";
@@ -171,6 +172,26 @@ async function createVapiCall({ to, assistantId, phoneNumberId }) {
   return data;
 }
 
+// Mint a short-lived service token for the trusted Node -> FastAPI call. The
+// policy backend protects /api/v1/* with verify_jwt (HS256 over the shared
+// SUPABASE_JWT_SECRET, requiring an authorized role_name). This is a
+// server-to-server call with no end-user token, so we sign our own with the
+// same shared secret. It is NOT a Supabase user token — just the internal
+// shared-secret handshake both services already agree on.
+function mintServiceToken() {
+  const secret = process.env.SUPABASE_JWT_SECRET;
+  if (!secret) return null;
+  return jwt.sign(
+    {
+      sub: "voice-service",
+      email: "voice@connect-hub.local",
+      role_name: "agent",
+    },
+    secret,
+    { algorithm: "HS256", expiresIn: "5m" },
+  );
+}
+
 async function getAIResponse(userMessage, history = [], meta = {}) {
   // The Palestinian Islamic Bank AI/policy layer is authoritative and lives in
   // the FastAPI backend. The voice channel does NOT hold bank facts or policy
@@ -178,10 +199,13 @@ async function getAIResponse(userMessage, history = [], meta = {}) {
   // voice all receive the SAME central decision and a validated, masked reply.
   const backendUrl = process.env.AI_BACKEND_URL || "http://127.0.0.1:3001";
   try {
+    const serviceToken = mintServiceToken();
+    const headers = { "Content-Type": "application/json" };
+    if (serviceToken) headers.Authorization = `Bearer ${serviceToken}`;
     const response = await axios.post(
       `${backendUrl}/api/v1/assistant/reply`,
       { text: userMessage, channel: "voice", history },
-      { headers: { "Content-Type": "application/json" }, timeout: 25000 },
+      { headers, timeout: 25000 },
     );
     // Surface the central decision so callers (e.g. the voice flow) can reflect
     // an agent handover in the dashboard. `meta` is an optional out-parameter.

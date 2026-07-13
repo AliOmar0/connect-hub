@@ -21,10 +21,24 @@ class FieldValidator {
     this.fieldName = fieldName;
     this.rules = [];
     this.optional = false;
+    // Back-reference to the owning Schema, set by Schema.field(). This lets a
+    // field chain start a new field (or run whole-object validation) without
+    // breaking the fluent builder syntax.
+    this._schema = null;
   }
 
   static field(name) {
     return new FieldValidator(name);
+  }
+
+  // Instance-level chaining helpers. The fluent schema definitions chain a new
+  // `.field()` after a field's rules; delegate that back to the owning Schema
+  // so all fields accumulate on the same schema.
+  field(name) {
+    if (!this._schema) {
+      throw new Error('field() can only be chained on a Schema-owned validator');
+    }
+    return this._schema.field(name);
   }
 
   isOptional() {
@@ -133,7 +147,19 @@ class FieldValidator {
     return this;
   }
 
-  validate(value) {
+  // Whole-object validation. Because the fluent chain ends on a FieldValidator
+  // (not the Schema), the exported `Schemas.X` is a field; delegate validate()
+  // to the owning schema so callers get every field validated.
+  validate(data) {
+    if (this._schema) {
+      return this._schema.validate(data);
+    }
+    // Standalone validator (no schema): validate the single value directly.
+    return this.validateValue(data);
+  }
+
+  // Per-field validation of a single value (used internally by Schema.validate).
+  validateValue(value) {
     const errors = [];
     let processedValue = value;
 
@@ -237,6 +263,7 @@ export class Schema {
 
   field(name) {
     const validator = new FieldValidator(name);
+    validator._schema = this;
     this.fields.push(validator);
     return validator;
   }
@@ -247,7 +274,7 @@ export class Schema {
 
     for (const fieldValidator of this.fields) {
       const value = data?.[fieldValidator.fieldName];
-      const validation = fieldValidator.validate(value);
+      const validation = fieldValidator.validateValue(value);
       
       if (!validation.success) {
         errors.push(...validation.errors);

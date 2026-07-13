@@ -311,15 +311,17 @@ def init_qdrant() -> None:
         # Check if collection exists
         client.get_collection(collection_name)
         logger.info(f"Collection '{collection_name}' already exists")
-    except UnexpectedResponse:
-        # Collection doesn't exist, create it
+    except (UnexpectedResponse, ValueError):
+        # Collection doesn't exist, create it. The remote/HTTP client raises
+        # UnexpectedResponse (404); the local/embedded client raises ValueError
+        # ("Collection ... not found"). Handle both so first-run init works.
         logger.info(f"Creating collection '{collection_name}'")
         
         client.create_collection(
             collection_name=collection_name,
             vectors_config=VectorParams(
                 size=EMBEDDING_DIMENSION,
-                distance=Distance.Cosine,
+                distance=Distance.COSINE,
             ),
             optimizers_config=OptimizersConfigDiff(
                 indexing_threshold=100,  # Start indexing after 100 points

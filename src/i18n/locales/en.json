@@ -172,6 +172,13 @@
         "title": "Banking Voice",
         "value": "Arabic (Vapi voice)"
       },
+      "transcript": {
+        "toggle": "Show live transcript",
+        "title": "Live call transcript",
+        "empty": "Transcript will appear here once the call starts.",
+        "roleCustomer": "Customer",
+        "roleAssistant": "Assistant"
+      },
       "tabs": {
         "voice": "AI Voice Call",
         "chat": "AI Chat Test"
