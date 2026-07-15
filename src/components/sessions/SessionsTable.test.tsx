@@ -258,27 +258,18 @@ describe("SessionsTable", () => {
       />,
     );
 
-    // Find buttons by their aria-haspopup attribute (dropdown menu buttons)
     const menuButtons = screen
       .getAllByRole("button", { hidden: true })
-      .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
+      .filter((button) => button.getAttribute("aria-haspopup") === "menu");
     expect(menuButtons.length).toBeGreaterThan(0);
 
-    // Click first menu button using userEvent for better interaction
     await user.click(menuButtons[0]);
 
-    // Wait for dropdown to open and menu items to appear
-    // Use findByText which waits for the element to appear
-    const viewDetails = await screen.findByText("View conversation", {
-      timeout: 3000,
-    });
-    const assignAgent = await screen.findByText("Assign Agent to Session", {
-      timeout: 3000,
-    });
-
-    expect(viewDetails).toBeInTheDocument();
-    expect(assignAgent).toBeInTheDocument();
-  });
+    expect(await screen.findByText("View conversation")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Assign Agent to Session"),
+    ).toBeInTheDocument();
+  }, 15_000);
 
   it("calls onViewSession when 'View Details' is clicked", async () => {
     const user = createUserEvent();

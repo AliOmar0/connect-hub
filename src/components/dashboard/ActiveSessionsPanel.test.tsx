@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@/test-utils/render";
+import { fireEvent, render, screen } from "@/test-utils/render";
 import {
   mockSessions,
   mockCustomers,
@@ -167,14 +167,10 @@ describe("ActiveSessionsPanel", () => {
     expect(sessionElements.length).toBeLessThanOrEqual(5);
   });
 
-  it("navigates to sessions page when 'View All' is clicked", async () => {
-    const { createUserEvent } = await import("@/test-utils/helpers");
-    const user = createUserEvent();
-
+  it("navigates to sessions page when 'View All' is clicked", () => {
     render(<ActiveSessionsPanel sessions={mockSessions} />);
 
-    const viewAllButton = screen.getByText("View All");
-    await user.click(viewAllButton);
+    fireEvent.click(screen.getByRole("button", { name: "View All" }));
 
     expect(mockNavigate).toHaveBeenCalledWith("/sessions");
   });
