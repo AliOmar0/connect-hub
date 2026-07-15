@@ -2,50 +2,64 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@/test-utils/render";
 import ResponseTimeChart from "./ResponseTimeChart";
 
+const data = [
+  { date: "Mon", time: 1.5 },
+  { date: "Tue", time: 2.5 },
+  { date: "Wed", time: 3.5 },
+];
+
 describe("ResponseTimeChart", () => {
   it("renders chart title", () => {
     render(<ResponseTimeChart />);
-    expect(screen.getByText("Response Time by Hour")).toBeInTheDocument();
+    expect(screen.getByText("Average Response Time")).toBeInTheDocument();
   });
 
-  it("displays legend items", () => {
+  it("displays understandable response-time thresholds", () => {
     render(<ResponseTimeChart />);
 
-    expect(screen.getByText(/<2m Excellent/i)).toBeInTheDocument();
-    expect(screen.getByText(/2-3m Good/i)).toBeInTheDocument();
-    expect(screen.getByText(/>3m Improve/i)).toBeInTheDocument();
+    const thresholds = screen.getByLabelText("Response time thresholds");
+    expect(thresholds).toHaveTextContent("≤2 min Excellent");
+    expect(thresholds).toHaveTextContent("2–3 min Good");
+    expect(thresholds).toHaveTextContent(">3 min Improve");
   });
 
-  it("displays default data when no data provided", () => {
+  it("displays an explicit empty state when no data is provided", () => {
     render(<ResponseTimeChart />);
 
-    // Chart should render with default hours
-    const { container } = render(<ResponseTimeChart />);
-    const chartContainer = container.querySelector(".h-48");
-    expect(chartContainer).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Response-time data is unavailable for the last 7 days.",
+      ),
+    ).toBeInTheDocument();
   });
 
-  it("displays custom data correctly", () => {
-    const data = [
-      { hour: "6AM", time: 1.5 },
-      { hour: "8AM", time: 2.5 },
-      { hour: "10AM", time: 3.5 },
-    ];
-
+  it("displays custom data in an accessible table", () => {
     render(<ResponseTimeChart data={data} />);
 
-    expect(screen.getByText("Response Time by Hour")).toBeInTheDocument();
+    expect(screen.getByText("Average Response Time")).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", {
+        name: "Average response time by day for the last 7 days",
+      }),
+    ).toBeInTheDocument();
   });
 
-  it("renders chart container", () => {
-    const { container } = render(<ResponseTimeChart />);
-    const chartContainer = container.querySelector(".h-48");
-    expect(chartContainer).toBeInTheDocument();
+  it("exposes a named chart image when data is available", () => {
+    render(<ResponseTimeChart data={data} />);
+
+    expect(
+      screen.getByRole("img", { name: /bar chart of average response time/i }),
+    ).toBeInTheDocument();
   });
 
-  it("handles empty data array", () => {
+  it("handles an explicit empty data array", () => {
     render(<ResponseTimeChart data={[]} />);
 
-    expect(screen.getByText("Response Time by Hour")).toBeInTheDocument();
+    expect(screen.getByText("Average Response Time")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Response-time data is unavailable for the last 7 days.",
+      ),
+    ).toBeInTheDocument();
   });
 });

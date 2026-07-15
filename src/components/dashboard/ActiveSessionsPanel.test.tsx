@@ -51,14 +51,14 @@ describe("ActiveSessionsPanel", () => {
     render(<ActiveSessionsPanel sessions={sessions} />);
 
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
-    expect(screen.getByText("1 live")).toBeInTheDocument();
+    expect(screen.getByText(/1\s+open/)).toBeInTheDocument();
   });
 
   it("displays empty state when no sessions", () => {
     render(<ActiveSessionsPanel sessions={[]} />);
 
     expect(screen.getByText("No active sessions")).toBeInTheDocument();
-    expect(screen.getByText("0 live")).toBeInTheDocument();
+    expect(screen.getByText(/0\s+open/)).toBeInTheDocument();
   });
 
   it("displays sessions with customer and agent information", () => {
@@ -161,7 +161,7 @@ describe("ActiveSessionsPanel", () => {
     render(<ActiveSessionsPanel sessions={manySessions} />);
 
     // Should show badge with total count
-    expect(screen.getByText("10 live")).toBeInTheDocument();
+    expect(screen.getByText(/10\s+open/)).toBeInTheDocument();
     // But only display 5 sessions
     const sessionElements = screen.getAllByText("John Doe");
     expect(sessionElements.length).toBeLessThanOrEqual(5);

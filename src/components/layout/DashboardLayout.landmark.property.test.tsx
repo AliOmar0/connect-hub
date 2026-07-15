@@ -117,9 +117,10 @@ describe("DashboardLayout – landmark structure (property-based, Req 5.5)", () 
             expect(navs[0].getAttribute("aria-label")?.trim()).toBeTruthy();
           } else {
             expect(navs).toHaveLength(0);
-            // The navigation is reachable via a menu toggle instead.
+            // The navigation is reachable via a toggle that opens a Sheet
+            // dialog containing the navigation landmark.
             const toggle = screen.getByRole("button", { name: /menu/i });
-            expect(toggle).toHaveAttribute("aria-haspopup", "menu");
+            expect(toggle).toHaveAttribute("aria-haspopup", "dialog");
           }
 
           // 3. Every complementary region in the page content is exposed with
