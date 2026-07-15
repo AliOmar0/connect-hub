@@ -518,7 +518,7 @@ export default function ChatView({
                           : "text-muted-foreground",
                       )}
                     >
-                      <span className="text-[10px]">
+                      <span className="text-caption">
                         {format(new Date(message.sent_at), "HH:mm")}
                       </span>
                       {isOutbound &&

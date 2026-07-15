@@ -173,7 +173,7 @@ const NavItems = React.forwardRef<HTMLDivElement, NavItemsProps>(
               {badgeCount !== undefined && badgeCount > 0 && (
                 <span
                   className={cn(
-                    "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold",
+                    "flex min-h-5 min-w-5 items-center justify-center rounded-full px-1 text-caption font-bold",
                     active
                       ? "bg-sidebar-background text-sidebar-primary"
                       : "bg-gold text-navy-dark",
@@ -242,14 +242,14 @@ export default function PrimaryNav({
           open ? t("appShell.nav.closeMenu") : t("appShell.nav.openMenu")
         }
         aria-expanded={open}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         onClick={() => setOpen(true)}
         className={className}
       >
         <Menu className="h-5 w-5" aria-hidden="true" />
       </Button>
       <SheetContent
-        side="left"
+        side={document.documentElement.dir === "rtl" ? "right" : "left"}
         className="w-64 bg-sidebar p-0"
         aria-describedby={undefined}
         // Prevent Radix's default focus target so we can place focus on the

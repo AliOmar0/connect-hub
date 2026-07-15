@@ -268,7 +268,7 @@ export default function EmployeesPage() {
           <Card className="bg-primary/5 border-primary/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                <p className="text-caption uppercase tracking-wider text-muted-foreground font-bold">
                   {t("employees.stats.totalTeam")}
                 </p>
                 <h4 className="text-2xl font-bold text-primary">
@@ -283,7 +283,7 @@ export default function EmployeesPage() {
           <Card className="bg-status-success/5 border-status-success/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                <p className="text-caption uppercase tracking-wider text-muted-foreground font-bold">
                   {t("employees.stats.activeNow")}
                 </p>
                 <h4 className="text-2xl font-bold text-status-success">
@@ -298,7 +298,7 @@ export default function EmployeesPage() {
           <Card className="bg-status-warning/5 border-status-warning/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                <p className="text-caption uppercase tracking-wider text-muted-foreground font-bold">
                   {t("employees.stats.avgPerformance")}
                 </p>
                 <h4 className="text-2xl font-bold text-status-warning-foreground">
@@ -323,7 +323,7 @@ export default function EmployeesPage() {
           <Card className="bg-status-info/5 border-status-info/10 shadow-sm">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
+                <p className="text-caption uppercase tracking-wider text-muted-foreground font-bold">
                   {t("employees.stats.activeDepts")}
                 </p>
                 <h4 className="text-2xl font-bold text-status-info-foreground">

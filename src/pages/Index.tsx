@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import StatsCard, { StatsCardSkeleton } from "@/components/dashboard/StatsCard";
@@ -11,6 +12,7 @@ import ResponseTimeChart from "@/components/dashboard/ResponseTimeChart";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { notifyError, notifySuccess } from "@/lib/feedback";
 import type { ViewStatus } from "@/types/presentation";
 import {
   MessageSquare,
@@ -25,6 +27,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { format, parseISO, subDays, startOfMonth } from "date-fns";
 
 export default function Index() {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
@@ -41,39 +44,42 @@ export default function Index() {
       const lastMonthStart = startOfMonth(subDays(now, 30));
 
       // Total Messages (this month)
-      const { count: messagesCount } = await supabase
+      const { count: messagesCount, error: messagesError } = await supabase
         .from("messages")
         .select("*", { count: "exact", head: true })
         .gte("created_at", monthStart.toISOString());
 
       // Total Messages (last month for trend)
-      const { count: lastMonthMessages } = await supabase
-        .from("messages")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", lastMonthStart.toISOString())
-        .lt("created_at", monthStart.toISOString());
+      const { count: lastMonthMessages, error: lastMonthMessagesError } =
+        await supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .gte("created_at", lastMonthStart.toISOString())
+          .lt("created_at", monthStart.toISOString());
 
       // Total Calls (this month)
-      const { count: callsCount } = await supabase
+      const { count: callsCount, error: callsError } = await supabase
         .from("calls")
         .select("*", { count: "exact", head: true })
         .gte("created_at", monthStart.toISOString());
 
       // Total Calls (last month for trend)
-      const { count: lastMonthCalls } = await supabase
-        .from("calls")
-        .select("*", { count: "exact", head: true })
-        .gte("created_at", lastMonthStart.toISOString())
-        .lt("created_at", monthStart.toISOString());
+      const { count: lastMonthCalls, error: lastMonthCallsError } =
+        await supabase
+          .from("calls")
+          .select("*", { count: "exact", head: true })
+          .gte("created_at", lastMonthStart.toISOString())
+          .lt("created_at", monthStart.toISOString());
 
       // Active Sessions (Live)
-      const { count: activeSessions } = await supabase
-        .from("sessions")
-        .select("*", { count: "exact", head: true })
-        .in("status", ["active", "waiting", "escalated"]);
+      const { count: activeSessions, error: activeSessionsError } =
+        await supabase
+          .from("sessions")
+          .select("*", { count: "exact", head: true })
+          .in("status", ["active", "waiting", "escalated"]);
 
       // Active Agents
-      const { count: activeAgents } = await supabase
+      const { count: activeAgents, error: activeAgentsError } = await supabase
         .from("employees")
         .select("*", { count: "exact", head: true })
         .eq("is_active", true);
@@ -99,16 +105,31 @@ export default function Index() {
 
       // Resolution Rate (this week)
       const weekStart = subDays(now, 7);
-      const { data: completedSessions } = await supabase
-        .from("sessions")
-        .select("id")
-        .eq("status", "completed")
-        .gte("ended_at", weekStart.toISOString());
+      const { data: completedSessions, error: completedSessionsError } =
+        await supabase
+          .from("sessions")
+          .select("id")
+          .eq("status", "completed")
+          .gte("ended_at", weekStart.toISOString());
 
-      const { data: allWeekSessions } = await supabase
-        .from("sessions")
-        .select("id")
-        .gte("started_at", weekStart.toISOString());
+      const { data: allWeekSessions, error: allWeekSessionsError } =
+        await supabase
+          .from("sessions")
+          .select("id")
+          .gte("started_at", weekStart.toISOString());
+
+      const statsQueryError = [
+        messagesError,
+        lastMonthMessagesError,
+        callsError,
+        lastMonthCallsError,
+        activeSessionsError,
+        activeAgentsError,
+        completedSessionsError,
+        allWeekSessionsError,
+      ].find(Boolean);
+
+      if (statsQueryError) throw statsQueryError;
 
       const resolutionRate =
         allWeekSessions && allWeekSessions.length > 0
@@ -402,6 +423,15 @@ export default function Index() {
   ): ViewStatus =>
     loading ? "loading" : error ? "error" : hasData ? "loaded" : "empty";
 
+  const initialQueriesFailed =
+    statsError ||
+    weeklyError ||
+    channelError ||
+    activeSessionsError ||
+    employeesError ||
+    responseTimeError ||
+    integrationsError;
+
   const allInitialQueriesSettled =
     !statsLoading &&
     !weeklyLoading &&
@@ -412,24 +442,32 @@ export default function Index() {
     !integrationsLoading;
 
   useEffect(() => {
-    if (allInitialQueriesSettled && !lastRefreshedAt) {
+    if (allInitialQueriesSettled && !initialQueriesFailed && !lastRefreshedAt) {
       setLastRefreshedAt(new Date());
     }
-  }, [allInitialQueriesSettled, lastRefreshedAt]);
+  }, [allInitialQueriesSettled, initialQueriesFailed, lastRefreshedAt]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await queryClient.refetchQueries({
-        predicate: (query) => {
-          const key = query.queryKey[0];
-          return (
-            (typeof key === "string" && key.startsWith("dashboard-")) ||
-            key === "employee-stats"
-          );
+      await queryClient.refetchQueries(
+        {
+          predicate: (query) => {
+            const key = query.queryKey[0];
+            return (
+              (typeof key === "string" && key.startsWith("dashboard-")) ||
+              key === "employee-stats"
+            );
+          },
         },
-      });
+        { throwOnError: true },
+      );
       setLastRefreshedAt(new Date());
+      notifySuccess(t("dashboard.refresh.success"));
+    } catch {
+      notifyError(t("dashboard.refresh.error"), {
+        description: t("dashboard.refresh.errorDescription"),
+      });
     } finally {
       setIsRefreshing(false);
     }

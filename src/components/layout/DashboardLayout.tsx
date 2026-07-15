@@ -88,7 +88,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   // adaptation is a synchronous re-render driven by CSS/responsive state, so it
   // completes well within the 500ms budget with no page reload.
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
+    <div className="flex h-dvh w-full overflow-hidden bg-background">
       {/* First focusable element; jumps keyboard focus to the main region. */}
       <SkipLink key="skip-link" targetId="main-content" />
 
@@ -122,7 +122,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
         <main
           id="main-content"
           role="main"
-          className="flex-1 overflow-y-auto p-6"
+          className="flex-1 overflow-y-auto p-3 sm:p-4 lg:p-6"
         >
           {children}
         </main>

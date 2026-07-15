@@ -705,6 +705,13 @@
     "loadErrorTitle": "Couldn't load analytics",
     "loadErrorDescription": "We couldn't load this visualization. Please try again."
   },
+  "dashboard": {
+    "refresh": {
+      "success": "Dashboard data is up to date",
+      "error": "Couldn't refresh the dashboard",
+      "errorDescription": "Some dashboard data may be out of date. Try again in a moment."
+    }
+  },
   "appShell": {
     "header": {
       "searchPlaceholder": "Search conversations, employees...",
