@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import StatsCard, { StatsCardSkeleton } from "@/components/dashboard/StatsCard";
 import ConversationsChart from "@/components/dashboard/ConversationsChart";
@@ -10,6 +10,7 @@ import IntegrationStatus from "@/components/dashboard/IntegrationStatus";
 import ResponseTimeChart from "@/components/dashboard/ResponseTimeChart";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import type { ViewStatus } from "@/types/presentation";
 import {
   MessageSquare,
@@ -18,11 +19,15 @@ import {
   Headphones,
   Clock,
   CheckCircle2,
+  RefreshCw,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { format, subDays, startOfMonth } from "date-fns";
+import { format, parseISO, subDays, startOfMonth } from "date-fns";
 
 export default function Index() {
+  const queryClient = useQueryClient();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(null);
   const {
     data: stats,
     isLoading: statsLoading,
@@ -76,18 +81,21 @@ export default function Index() {
       // Avg Response Time (today)
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
-      const { data: todayAnalyticsData } = await supabase
-        .from("analytics_daily")
-        .select("avg_response_time_seconds")
-        .eq("date", format(todayStart, "yyyy-MM-dd"));
+      const { data: todayAnalyticsData, error: todayAnalyticsError } =
+        await supabase
+          .from("analytics_daily")
+          .select("avg_response_time_seconds")
+          .eq("date", format(todayStart, "yyyy-MM-dd"));
 
-      const avgResponseTimeSeconds =
-        todayAnalyticsData && todayAnalyticsData.length > 0
-          ? todayAnalyticsData.reduce(
-              (sum, a) => sum + (a.avg_response_time_seconds || 0),
-              0,
-            ) / todayAnalyticsData.length
-          : 0;
+      if (todayAnalyticsError) throw todayAnalyticsError;
+      const responseTimeValues =
+        todayAnalyticsData
+          ?.map((item) => item.avg_response_time_seconds)
+          .filter((value): value is number => value != null) ?? [];
+      const avgResponseTimeSeconds = responseTimeValues.length
+        ? responseTimeValues.reduce((sum, value) => sum + value, 0) /
+          responseTimeValues.length
+        : null;
 
       // Resolution Rate (this week)
       const weekStart = subDays(now, 7);
@@ -131,9 +139,10 @@ export default function Index() {
         },
         activeSessions: activeSessions || 0,
         activeAgents: activeAgents || 0,
-        avgResponseTime: avgResponseTimeSeconds
-          ? `${(avgResponseTimeSeconds / 60).toFixed(1)}m`
-          : "0m",
+        avgResponseTime:
+          avgResponseTimeSeconds == null
+            ? "—"
+            : `${(avgResponseTimeSeconds / 60).toFixed(1)}m`,
         resolutionRate,
       };
     },
@@ -155,10 +164,12 @@ export default function Index() {
 
       const data = await Promise.all(
         days.map(async (date) => {
-          const { data: analytics } = await supabase
+          const { data: analytics, error } = await supabase
             .from("analytics_daily")
             .select("total_messages, total_calls")
             .eq("date", date);
+
+          if (error) throw error;
 
           const totalMessages =
             analytics?.reduce((sum, a) => sum + (a.total_messages || 0), 0) ||
@@ -170,11 +181,18 @@ export default function Index() {
             name: format(new Date(date), "EEE"),
             messages: totalMessages,
             calls: totalCalls,
+            hasRecords: Boolean(analytics?.length),
           };
         }),
       );
 
-      return data;
+      return data
+        .filter((item) => item.hasRecords)
+        .map((item) => ({
+          name: item.name,
+          messages: item.messages,
+          calls: item.calls,
+        }));
     },
   });
 
@@ -186,12 +204,13 @@ export default function Index() {
   } = useQuery({
     queryKey: ["dashboard-channels"],
     queryFn: async () => {
-      const { data: sessions } = await supabase
+      const { data: sessions, error } = await supabase
         .from("sessions")
         .select("channel")
         .gte("started_at", startOfMonth(new Date()).toISOString());
 
-      if (!sessions) return [];
+      if (error) throw error;
+      if (!sessions?.length) return [];
 
       const channelCounts: Record<string, number> = {};
       sessions.forEach((s) => {
@@ -225,6 +244,7 @@ export default function Index() {
   const {
     data: activeSessions,
     isLoading: activeSessionsLoading,
+    isError: activeSessionsError,
     refetch: refetchActiveSessions,
   } = useQuery({
     queryKey: ["dashboard-active-sessions"],
@@ -244,10 +264,8 @@ export default function Index() {
         .order("started_at", { ascending: false })
         .limit(5);
 
-      if (error) {
-        console.error("Failed to load active sessions:", error.message);
-      }
-      return data || [];
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -292,17 +310,23 @@ export default function Index() {
     };
   }, [refetchStats, refetchActiveSessions]);
 
-  const { data: employees } = useQuery({
+  const {
+    data: employees,
+    isLoading: employeesLoading,
+    isError: employeesError,
+    refetch: refetchEmployees,
+  } = useQuery({
     queryKey: ["dashboard-employees"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("employees")
         .select("*, profile:profiles(*)")
         .eq("is_active", true)
         .order("created_at", { ascending: false })
         .limit(5);
 
-      return data || [];
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -315,30 +339,49 @@ export default function Index() {
     queryKey: ["dashboard-response-time"],
     queryFn: async () => {
       const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const firstDay = format(subDays(today, 6), "yyyy-MM-dd");
+      const lastDay = format(today, "yyyy-MM-dd");
+      const { data, error } = await supabase
+        .from("analytics_daily")
+        .select("date, avg_response_time_seconds")
+        .gte("date", firstDay)
+        .lte("date", lastDay)
+        .order("date", { ascending: true });
 
-      const hours = [];
-      for (let i = 6; i <= 20; i += 2) {
-        hours.push(i);
-      }
+      if (error) throw error;
 
-      // For now, return mock data structure - can be enhanced with actual hourly data
-      return hours.map((hour) => ({
-        hour: hour < 12 ? `${hour}AM` : hour === 12 ? "12PM" : `${hour - 12}PM`,
-        time: 2 + Math.random() * 2, // Mock data - replace with actual hourly averages
+      const dailyValues = new Map<string, { total: number; count: number }>();
+      data?.forEach((record) => {
+        if (record.avg_response_time_seconds == null) return;
+        const current = dailyValues.get(record.date) ?? { total: 0, count: 0 };
+        dailyValues.set(record.date, {
+          total: current.total + record.avg_response_time_seconds,
+          count: current.count + 1,
+        });
+      });
+
+      return Array.from(dailyValues.entries()).map(([date, value]) => ({
+        date: format(parseISO(date), "EEE"),
+        time: value.total / value.count / 60,
       }));
     },
   });
 
-  const { data: integrations } = useQuery({
+  const {
+    data: integrations,
+    isLoading: integrationsLoading,
+    isError: integrationsError,
+    refetch: refetchIntegrations,
+  } = useQuery({
     queryKey: ["dashboard-integrations"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("api_configurations")
         .select("*")
         .order("channel");
 
-      return data || [];
+      if (error) throw error;
+      return data ?? [];
     },
   });
 
@@ -352,7 +395,67 @@ export default function Index() {
   const toStatus = (loading: boolean, error: boolean): ViewStatus =>
     loading ? "loading" : error ? "error" : "loaded";
 
+  const toDataStatus = (
+    loading: boolean,
+    error: boolean,
+    hasData: boolean,
+  ): ViewStatus =>
+    loading ? "loading" : error ? "error" : hasData ? "loaded" : "empty";
+
+  const allInitialQueriesSettled =
+    !statsLoading &&
+    !weeklyLoading &&
+    !channelLoading &&
+    !activeSessionsLoading &&
+    !employeesLoading &&
+    !responseTimeLoading &&
+    !integrationsLoading;
+
+  useEffect(() => {
+    if (allInitialQueriesSettled && !lastRefreshedAt) {
+      setLastRefreshedAt(new Date());
+    }
+  }, [allInitialQueriesSettled, lastRefreshedAt]);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await queryClient.refetchQueries({
+        predicate: (query) => {
+          const key = query.queryKey[0];
+          return (
+            (typeof key === "string" && key.startsWith("dashboard-")) ||
+            key === "employee-stats"
+          );
+        },
+      });
+      setLastRefreshedAt(new Date());
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const statsStatus = toStatus(statsLoading, statsError);
+  const activeSessionsStatus = toDataStatus(
+    activeSessionsLoading,
+    activeSessionsError,
+    Boolean(activeSessions?.length),
+  );
+  const employeesStatus = toDataStatus(
+    employeesLoading,
+    employeesError,
+    Boolean(employees?.length),
+  );
+  const integrationsStatus = toDataStatus(
+    integrationsLoading,
+    integrationsError,
+    Boolean(integrations?.length),
+  );
+  const responseTimeStatus = toDataStatus(
+    responseTimeLoading,
+    responseTimeError,
+    Boolean(responseTimeData?.length),
+  );
 
   // Metric definitions. Each card renders through its own AsyncBoundary so a
   // load failure surfaces a per-card ErrorState with a retry action
@@ -406,7 +509,7 @@ export default function Index() {
     {
       key: "avgResponse",
       title: "Avg. Response",
-      value: stats?.avgResponseTime || "0m",
+      value: stats?.avgResponseTime ?? "—",
       icon: Clock,
       subtitle: "Today",
       variant: "warning" as const,
@@ -425,11 +528,55 @@ export default function Index() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Page Header */}
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-display font-bold tracking-tight">
-            Dashboard
-          </h1>
-        </div>
+        <header className="flex flex-col gap-4 rounded-xl border bg-card p-4 shadow-card sm:p-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-2xl font-bold tracking-tight">
+                Dashboard
+              </h1>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-chart-success/30 bg-chart-success/10 px-2.5 py-1 text-xs font-medium text-chart-success">
+                <span
+                  className="h-2 w-2 rounded-full bg-chart-success motion-safe:animate-pulse"
+                  aria-hidden="true"
+                />
+                Live session updates
+              </span>
+            </div>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              Monitor current support activity and performance trends across the
+              most recent 7 days.
+            </p>
+            <p
+              className="mt-1 text-xs text-muted-foreground"
+              aria-live="polite"
+            >
+              {lastRefreshedAt
+                ? `Last refreshed at ${lastRefreshedAt.toLocaleTimeString([], {
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}`
+                : "Waiting for the latest dashboard data"}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            className="w-full shrink-0 sm:w-auto"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            aria-label={
+              isRefreshing
+                ? "Refreshing dashboard data"
+                : "Refresh dashboard data"
+            }
+            aria-busy={isRefreshing}
+          >
+            <RefreshCw
+              className={`me-2 h-4 w-4 ${isRefreshing ? "motion-safe:animate-spin" : ""}`}
+              aria-hidden="true"
+            />
+            {isRefreshing ? "Refreshing…" : "Refresh data"}
+          </Button>
+        </header>
 
         {/*
           Stats Grid. Single column below 768px per Requirement 12.6 (md = 768).
@@ -478,23 +625,59 @@ export default function Index() {
         </div>
 
         {/* Active Sessions & Response Time */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="lg:col-span-2">
-            <ActiveSessionsPanel sessions={activeSessions || []} />
+            <AsyncBoundary
+              status={activeSessionsStatus}
+              skeleton={<Skeleton className="h-[320px] w-full rounded-xl" />}
+              onRetry={() => refetchActiveSessions()}
+              emptyTitle="No active sessions"
+              emptyDescription="Live calls and chats will appear here as they begin."
+              errorTitle="Active sessions unavailable"
+              errorDescription="We couldn't load live sessions. Try again."
+            >
+              <ActiveSessionsPanel sessions={activeSessions || []} />
+            </AsyncBoundary>
           </div>
           <AsyncBoundary
-            status={toStatus(responseTimeLoading, responseTimeError)}
-            skeleton={<Skeleton className="h-[280px] w-full rounded-xl" />}
+            status={responseTimeStatus}
+            skeleton={<Skeleton className="h-[320px] w-full rounded-xl" />}
             onRetry={() => refetchResponseTime()}
+            emptyTitle="Response-time data unavailable"
+            emptyDescription="No response-time records exist for the most recent 7 days."
+            errorTitle="Response-time trend unavailable"
+            errorDescription="We couldn't load response-time analytics. Try again."
           >
             <ResponseTimeChart data={responseTimeData || []} />
           </AsyncBoundary>
         </div>
 
         {/* Team & Integrations */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <EmployeesTable employees={employees || []} />
-          <IntegrationStatus integrations={integrations || []} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <AsyncBoundary
+              status={employeesStatus}
+              skeleton={<Skeleton className="h-[360px] w-full rounded-xl" />}
+              onRetry={() => refetchEmployees()}
+              emptyTitle="No active employees"
+              emptyDescription="Active team members will appear here once configured."
+              errorTitle="Team overview unavailable"
+              errorDescription="We couldn't load the active team. Try again."
+            >
+              <EmployeesTable employees={employees || []} />
+            </AsyncBoundary>
+          </div>
+          <AsyncBoundary
+            status={integrationsStatus}
+            skeleton={<Skeleton className="h-[360px] w-full rounded-xl" />}
+            onRetry={() => refetchIntegrations()}
+            emptyTitle="No integrations configured"
+            emptyDescription="Configure a channel in settings to track its connection status."
+            errorTitle="Integration status unavailable"
+            errorDescription="We couldn't load integration health. Try again."
+          >
+            <IntegrationStatus integrations={integrations || []} />
+          </AsyncBoundary>
         </div>
       </div>
     </DashboardLayout>
