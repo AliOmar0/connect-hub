@@ -19,9 +19,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { supabase } from "@/integrations/supabase/client";
+import { NODE_API_URL, apiFetch } from "@/lib/config";
 import Vapi from "@vapi-ai/web";
 
-const API_BASE = "http://localhost:3001";
+// Node voice/API server base. Reads VITE_NODE_API_URL at build time so the
+// deployed (Vercel) build can point at a real backend instead of localhost.
+const API_BASE = NODE_API_URL;
 
 // The Vapi config and outbound-call endpoints are protected by the Node server
 // (requireAuth + agent role), so requests must carry the Supabase access token
@@ -93,7 +96,7 @@ const VapiDemo = () => {
     let active = true;
     const check = async () => {
       try {
-        const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+        const res = await apiFetch(`${API_BASE}/health`, { cache: "no-store" });
         if (active) setServerStatus(res.ok ? "online" : "offline");
       } catch {
         if (active) setServerStatus("offline");
@@ -118,7 +121,7 @@ const VapiDemo = () => {
     setTranscript([]);
     setPartialLine(null);
     try {
-      const response = await fetch(`${API_BASE}/api/vapi/config`, {
+      const response = await apiFetch(`${API_BASE}/api/vapi/config`, {
         headers: await getAuthHeaders(),
       });
       if (!response.ok) {
@@ -215,7 +218,7 @@ const VapiDemo = () => {
     }
     setCalling(true);
     try {
-      const response = await fetch(`${API_BASE}/api/make-call`, {
+      const response = await apiFetch(`${API_BASE}/api/make-call`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -243,7 +246,7 @@ const VapiDemo = () => {
     setChatMessage("");
     setChatLoading(true);
     try {
-      const response = await fetch(`${API_BASE}/api/chat`, {
+      const response = await apiFetch(`${API_BASE}/api/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

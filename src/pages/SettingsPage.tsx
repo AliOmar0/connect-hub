@@ -4,6 +4,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
 import VapiDemo from "@/pages/VapiDemo";
 import { supabase } from "@/integrations/supabase/client";
+import { NODE_API_URL, BACKEND_URL, apiFetch } from "@/lib/config";
 import { ChannelType, Profile, SessionMainType } from "@/types/database";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -430,7 +431,7 @@ export default function SettingsPage() {
     }
     setSmsSending(true);
     try {
-      const response = await fetch("http://localhost:3001/api/sms", {
+      const response = await apiFetch(`${NODE_API_URL}/api/sms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(smsData),
@@ -456,7 +457,7 @@ export default function SettingsPage() {
   const handleTestConfig = async (channel: ChannelType): Promise<boolean> => {
     try {
       if (channel === "voice") {
-        const response = await fetch("http://localhost:3001/api/vapi/config");
+        const response = await apiFetch(`${NODE_API_URL}/api/vapi/config`);
         const data = await response.json();
         const publicKey = data.publicKey ?? data.data?.publicKey;
         if (response.ok && publicKey) {
@@ -467,7 +468,7 @@ export default function SettingsPage() {
         }
       } else if (channel === "sms") {
         // Simple health check or ping
-        const response = await fetch("http://localhost:3001/");
+        const response = await apiFetch(`${NODE_API_URL}/`);
         if (response.ok) {
           notifySuccess("SMS Gateway Server is Responsive");
           return true;
@@ -475,11 +476,10 @@ export default function SettingsPage() {
           throw new Error("Gateway server unreachable");
         }
       } else if (channel === "whatsapp") {
-        // The WhatsApp AI backend (FastAPI) runs on port 5000, not 8000.
-        // Note: this is a localhost check, so it only succeeds when the browser
-        // and the backend run on the same machine (local dev). From the deployed
-        // Vercel app this can't reach your local backend.
-        const response = await fetch("http://localhost:5000/health");
+        // The WhatsApp AI backend (FastAPI). Target is configurable via
+        // VITE_BACKEND_URL so the deployed (Vercel) build can reach a real
+        // backend; if it still points at localhost this only works in local dev.
+        const response = await apiFetch(`${BACKEND_URL}/health`);
         if (response.ok) {
           notifySuccess("WhatsApp Backend is Online");
           return true;
