@@ -1,9 +1,9 @@
 // Centralized runtime config for frontend API targets.
 // Override via Vite env vars (VITE_*) at build time.
 
-// Person 1's FastAPI backend (sessions, messages, escalation actions).
+// FastAPI backend (sessions, policy, knowledge base, scraper).
 export const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
+  import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 // Node voice/API server (signed media URLs, voice, etc.).
 export const NODE_API_URL =

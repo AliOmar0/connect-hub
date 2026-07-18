@@ -29,6 +29,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { SessionMainType } from "@/types/database";
@@ -93,7 +103,11 @@ export default function SessionTypesPanel() {
   const [isTypeDialogOpen, setIsTypeDialogOpen] = useState(false);
   const [editingType, setEditingType] =
     useState<Partial<SessionMainType> | null>(null);
+  const [typeToDelete, setTypeToDelete] = useState<SessionMainType | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchSessionTypes = useCallback(async () => {
     const { data, error } = await supabase
@@ -200,37 +214,37 @@ export default function SessionTypesPanel() {
     fetchSessionTypes();
   };
 
-  const handleDeleteSessionType = async (id: string) => {
-    if (!isAdmin) {
+  const handleDeleteSessionType = async () => {
+    if (!isAdmin || !typeToDelete) {
       notifyError(t("kb.sessionTypes.adminOnlyDelete"));
       return;
     }
 
-    if (!confirm(t("kb.sessionTypes.deleteConfirm"))) {
-      return;
-    }
-
+    setDeleting(true);
     const { error } = await supabase
       .from("session_main_types")
       .delete()
-      .eq("id", id);
+      .eq("id", typeToDelete.id);
 
     if (error) {
       console.error("Error deleting session type:", error);
       notifyError(t("kb.sessionTypes.deleteFailed"), {
         description: error.message,
       });
+      setDeleting(false);
       return;
     }
 
     try {
-      await deleteSessionTypeKnowledge(id);
+      await deleteSessionTypeKnowledge(typeToDelete.id);
     } catch (syncError) {
       console.error("Knowledge base cleanup failed:", syncError);
       // Non-fatal: the session type row is already gone.
     }
 
     notifySuccess(t("kb.sessionTypes.deleteSuccess"));
+    setDeleting(false);
+    setTypeToDelete(null);
     fetchSessionTypes();
   };
 
@@ -284,14 +298,17 @@ export default function SessionTypesPanel() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             {searchTerm && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon"
                 aria-label={t("kb.sessionTypes.clearSearch")}
+                title={t("kb.sessionTypes.clearSearch")}
                 onClick={() => setSearchTerm("")}
-                className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute end-0 top-1/2 h-11 w-11 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
                 <X className="h-4 w-4" aria-hidden="true" />
-              </button>
+              </Button>
             )}
           </div>
         </CardHeader>
@@ -381,7 +398,7 @@ export default function SessionTypesPanel() {
                                 className="h-11 w-11 text-destructive hover:text-destructive hover:bg-destructive/10"
                                 aria-label={t("kb.sessionTypes.delete")}
                                 title={t("kb.sessionTypes.delete")}
-                                onClick={() => handleDeleteSessionType(type.id)}
+                                onClick={() => setTypeToDelete(type)}
                               >
                                 <Trash2
                                   className="h-4 w-4"
@@ -517,6 +534,48 @@ export default function SessionTypesPanel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={typeToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && !deleting) setTypeToDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("kb.sessionTypes.delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("kb.sessionTypes.deleteConfirm", {
+                name: typeToDelete?.name,
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>
+              {t("kb.sessionTypes.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleting}
+              aria-busy={deleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDeleteSessionType();
+              }}
+            >
+              {deleting && (
+                <Loader2
+                  className="me-2 h-4 w-4 animate-spin"
+                  aria-hidden="true"
+                />
+              )}
+              {deleting
+                ? t("kb.sessionTypes.deleting")
+                : t("kb.sessionTypes.delete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

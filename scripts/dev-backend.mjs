@@ -14,7 +14,7 @@
  *   node  -> Node voice/API server      (server/index.js, port 3001)
  *   tts   -> Edge TTS server (free)      (edge_tts_server.py, port 5070)
  *   otp   -> OTP microservice            (otp-service/main.py, port 5001)
- *   wa    -> WhatsApp support backend    (whatsapp-support-backend, port 3001, heavy)
+ *   wa    -> WhatsApp/FastAPI backend (whatsapp-support-backend, port 8000, heavy)
  *
  * Python services use the shared venv created by scripts/setup-backend.(ps1|sh).
  * Run that setup script once before using otp/tts/wa.
@@ -71,7 +71,7 @@ const SERVICES = {
       "--host",
       "0.0.0.0",
       "--port",
-      "3001",
+      "8000",
     ],
     cwd: join(ROOT, "whatsapp-support-backend"),
     python: true,

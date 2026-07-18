@@ -13,7 +13,13 @@ import {
   Loader2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,6 +34,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -38,6 +45,7 @@ import type { ViewStatus } from "@/types/presentation";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAsyncAction } from "@/hooks/use-async-action";
 import { KB_API_URL, apiFetch } from "@/lib/config";
+import { ApiResponseError, requireOk } from "@/lib/api-error";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -106,6 +114,7 @@ export default function KnowledgePage() {
     data: documents = [],
     isLoading,
     isError,
+    error: documentsError,
     refetch,
   } = useQuery({
     queryKey: ["kb-documents"],
@@ -113,11 +122,22 @@ export default function KnowledgePage() {
       const res = await apiFetch(`${KB_API_URL}/documents`, {
         headers: await authHeaders(),
       });
-      if (!res.ok) throw new Error("KB backend unavailable");
+      await requireOk(res, "Knowledge-base request failed");
       return res.json();
     },
     retry: false,
   });
+
+  const loadErrorDescription = (() => {
+    if (!(documentsError instanceof ApiResponseError)) {
+      return t("kb.backendMissing", { url: KB_API_URL });
+    }
+    if (documentsError.status === 401) return t("kb.errors.unauthorized");
+    if (documentsError.status === 403) return t("kb.errors.forbidden");
+    if (documentsError.status === 404) return t("kb.errors.notFound");
+    if (documentsError.status >= 500) return t("kb.errors.server");
+    return documentsError.detail || t("kb.errors.unknown");
+  })();
 
   // Upload is wrapped in useAsyncAction so it presents a loading state, blocks
   // duplicate submission while in flight (Requirement 16.2 / 10.2), and exposes
@@ -132,7 +152,7 @@ export default function KnowledgePage() {
         headers: await authHeaders(),
         signal,
       });
-      if (!res.ok) throw new Error("Upload failed");
+      await requireOk(res, "Upload failed");
       return res.json();
     },
     {
@@ -140,9 +160,11 @@ export default function KnowledgePage() {
         notifySuccess(t("kb.uploadSuccess"));
         queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
       },
-      onError: () => {
+      onError: (error) => {
         // Error_State with a recovery action; the collection stays presented.
         notifyError(t("kb.operationFailed"), {
+          description:
+            error instanceof ApiResponseError ? error.detail : undefined,
           action: {
             label: t("feedback.retry"),
             onClick: () => uploadAction.retry(),
@@ -158,7 +180,7 @@ export default function KnowledgePage() {
         method: "POST",
         headers: await authHeaders(),
       });
-      if (!res.ok) throw new Error("Re-index failed");
+      await requireOk(res, "Re-index failed");
       return res.json();
     },
     onSuccess: () => {
@@ -185,7 +207,7 @@ export default function KnowledgePage() {
         },
         body: JSON.stringify({ version }),
       });
-      if (!res.ok) throw new Error("Rollback failed");
+      await requireOk(res, "Rollback failed");
       return res.json();
     },
     onSuccess: () => {
@@ -226,45 +248,49 @@ export default function KnowledgePage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              {t("kb.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("kb.subtitle")}</p>
-          </div>
-          <div>
-            <input
-              ref={fileInputRef}
-              id="kb-file-input"
-              type="file"
-              accept=".pdf,.txt,.md,.docx,.json,.csv"
-              className="hidden"
-              aria-label={t("kb.upload")}
-              onChange={onFileChange}
-            />
-            <Button
-              onClick={onPickFile}
-              disabled={isUploading}
-              aria-busy={isUploading}
-              className="min-h-[44px]"
-            >
-              {isUploading ? (
-                <Loader2
-                  className="h-4 w-4 me-2 animate-spin"
-                  aria-hidden="true"
-                />
-              ) : (
-                <Upload className="h-4 w-4 me-2" aria-hidden="true" />
-              )}
-              {isUploading ? t("kb.uploading") : t("kb.upload")}
-            </Button>
-          </div>
-        </div>
+        <header>
+          <h1 className="text-2xl font-semibold text-foreground">
+            {t("kb.title")}
+          </h1>
+          <p className="text-muted-foreground">{t("kb.subtitle")}</p>
+        </header>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t("kb.documents")}</CardTitle>
+          <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+            <div className="space-y-1.5">
+              <CardTitle className="text-lg">{t("kb.documents")}</CardTitle>
+              <CardDescription>{t("kb.documentsDescription")}</CardDescription>
+            </div>
+            <div className="flex shrink-0 flex-col items-start gap-1 sm:items-end">
+              <input
+                ref={fileInputRef}
+                id="kb-file-input"
+                type="file"
+                accept=".pdf,.txt,.md,.json"
+                className="hidden"
+                aria-label={t("kb.upload")}
+                onChange={onFileChange}
+              />
+              <Button
+                onClick={onPickFile}
+                disabled={isUploading}
+                aria-busy={isUploading}
+                className="min-h-[44px]"
+              >
+                {isUploading ? (
+                  <Loader2
+                    className="h-4 w-4 me-2 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Upload className="h-4 w-4 me-2" aria-hidden="true" />
+                )}
+                {isUploading ? t("kb.uploading") : t("kb.upload")}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                {t("kb.uploadHelp")}
+              </p>
+            </div>
           </CardHeader>
           <CardContent>
             <AsyncBoundary
@@ -281,7 +307,7 @@ export default function KnowledgePage() {
                 </Button>
               }
               errorTitle={t("kb.loadErrorTitle")}
-              errorDescription={t("kb.backendMissing")}
+              errorDescription={loadErrorDescription}
               retryLabel={t("feedback.retry")}
             >
               <Table>
@@ -355,10 +381,23 @@ export default function KnowledgePage() {
                               className="min-h-[44px] min-w-[44px]"
                               title={t("kb.reindex")}
                               aria-label={t("kb.reindex")}
+                              aria-busy={
+                                reindexMutation.isPending &&
+                                reindexMutation.variables === doc.id
+                              }
+                              disabled={
+                                reindexMutation.isPending &&
+                                reindexMutation.variables === doc.id
+                              }
                               onClick={() => reindexMutation.mutate(doc.id)}
                             >
                               <RefreshCw
-                                className="h-4 w-4"
+                                className={cn(
+                                  "h-4 w-4",
+                                  reindexMutation.isPending &&
+                                    reindexMutation.variables === doc.id &&
+                                    "animate-spin",
+                                )}
                                 aria-hidden="true"
                               />
                             </Button>
@@ -391,6 +430,8 @@ export default function KnowledgePage() {
       <VersionHistoryDialog
         doc={historyDoc}
         onClose={() => setHistoryDoc(null)}
+        rollbackPending={rollbackMutation.isPending}
+        rollbackVersion={rollbackMutation.variables?.version}
         onRollback={(version) =>
           historyDoc && rollbackMutation.mutate({ id: historyDoc.id, version })
         }
@@ -418,14 +459,23 @@ function VersionHistoryDialog({
   doc,
   onClose,
   onRollback,
+  rollbackPending,
+  rollbackVersion,
 }: {
   doc: KbDocument | null;
   onClose: () => void;
   onRollback: (version: number) => void;
+  rollbackPending: boolean;
+  rollbackVersion?: number;
 }) {
   const { t } = useTranslation();
 
-  const { data: versions = [], isLoading } = useQuery({
+  const {
+    data: versions = [],
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["kb-versions", doc?.id],
     enabled: !!doc,
     queryFn: async (): Promise<KbVersion[]> => {
@@ -435,49 +485,82 @@ function VersionHistoryDialog({
           headers: await authHeaders(),
         },
       );
-      if (!res.ok) throw new Error("Versions unavailable");
+      await requireOk(res, "Versions unavailable");
       return res.json();
     },
     retry: false,
   });
 
+  const versionStatus: ViewStatus = isLoading
+    ? "loading"
+    : isError
+      ? "error"
+      : versions.length === 0
+        ? "empty"
+        : "loaded";
+
   return (
-    <Dialog open={!!doc} onOpenChange={(open) => !open && onClose()}>
+    <Dialog
+      open={!!doc}
+      onOpenChange={(open) => !open && !rollbackPending && onClose()}
+    >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
             {t("kb.versionHistory")} — {doc?.name}
           </DialogTitle>
+          <DialogDescription>
+            {t("kb.versionHistoryDescription")}
+          </DialogDescription>
         </DialogHeader>
-        {isLoading ? (
-          <p className="text-muted-foreground">{t("common.loading")}</p>
-        ) : (
-          <div className="space-y-2">
-            {versions.map((v) => (
-              <div
-                key={v.version}
-                className="flex items-center justify-between rounded-md border border-border p-3"
-              >
-                <div>
-                  <p className="font-medium">v{v.version}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {new Date(v.created_at).toLocaleString()}
-                    {v.note ? ` · ${v.note}` : ""}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="min-h-[44px]"
-                  onClick={() => onRollback(v.version)}
+        <AsyncBoundary
+          status={versionStatus}
+          skeleton={<DocumentTableSkeleton />}
+          onRetry={() => refetch()}
+          emptyTitle={t("kb.noVersions")}
+          errorTitle={t("kb.versionHistoryError")}
+          errorDescription={t("kb.errors.unknown")}
+          retryLabel={t("feedback.retry")}
+        >
+          <div className="max-h-[60vh] space-y-2 overflow-y-auto pe-1">
+            {versions.map((v) => {
+              const isRollingBack =
+                rollbackPending && rollbackVersion === v.version;
+              return (
+                <div
+                  key={v.version}
+                  className="flex items-center justify-between gap-3 rounded-md border border-border p-3"
                 >
-                  <RotateCcw className="h-4 w-4 me-1" aria-hidden="true" />
-                  {t("kb.rollback")}
-                </Button>
-              </div>
-            ))}
+                  <div className="min-w-0">
+                    <p className="font-medium">v{v.version}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(v.created_at).toLocaleString()}
+                      {v.note ? ` · ${v.note}` : ""}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="min-h-[44px] shrink-0"
+                    disabled={rollbackPending}
+                    aria-busy={isRollingBack}
+                    onClick={() => onRollback(v.version)}
+                  >
+                    {isRollingBack ? (
+                      <Loader2
+                        className="h-4 w-4 me-1 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <RotateCcw className="h-4 w-4 me-1" aria-hidden="true" />
+                    )}
+                    {t("kb.rollback")}
+                  </Button>
+                </div>
+              );
+            })}
           </div>
-        )}
+        </AsyncBoundary>
       </DialogContent>
     </Dialog>
   );
