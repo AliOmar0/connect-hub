@@ -23,6 +23,12 @@ vi.mock("@/components/layout/DashboardLayout", () => ({
 // The realtime subscription is a side effect unrelated to these assertions.
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
+    auth: {
+      getSession: vi.fn().mockResolvedValue({
+        data: { session: { access_token: "test-access-token" } },
+        error: null,
+      }),
+    },
     channel: vi.fn(() => ({
       on: vi.fn(() => ({ subscribe: vi.fn(() => ({})) })),
     })),
@@ -58,6 +64,7 @@ const sampleSession: QueueSession = {
 // mutation's success/error callbacks (confirmation, removal, retention) fire.
 let currentSessions: QueueSession[] = [];
 let acceptSucceeds = true;
+const originalFetch = global.fetch;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -81,7 +88,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
+  global.fetch = originalFetch;
 });
 
 function renderQueue(sessions: QueueSession[] = [], accept = true) {
