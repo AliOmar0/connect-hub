@@ -191,6 +191,100 @@ async def process_sticker_message(db_session_id: UUID, media_id: str, sender_pho
     except Exception as e:
         logger.error(f"Error in background sticker processing: {e}")
 
+async def process_image_message(
+    db_session_id: UUID, 
+    media_id: str, 
+    sender_phone: str, 
+    message_id: str, 
+    config: dict,
+    caption: Optional[str] = None
+):
+    """
+    Background task to download image, upload to storage, analyze with vision AI, and respond.
+    Follows the same pattern as process_voice_message.
+    """
+    try:
+        # 1. Initialize WhatsApp Client
+        client = WhatsAppClient(
+            phone_number_id=config.get("phone_number_id"),
+            access_token=config.get("access_token")
+        )
+
+        # 1.1 Mark as read & Send typing indicator
+        await client.mark_message_as_read(message_id)
+        await client.send_typing_indicator(sender_phone)
+
+        # 2. Get Media URL
+        media_url = await client.get_media_url(media_id)
+        if not media_url:
+            logger.error("Failed to get image media URL")
+            return
+
+        # 3. Download Image
+        image_bytes = await client.download_media(media_url)
+        if not image_bytes:
+            logger.error("Failed to download image")
+            return
+
+        # 3.5 Upload to Storage for dashboard display
+        stored_url = await storage_service.upload_image(image_bytes)
+        if not stored_url:
+            logger.warning("Failed to upload image to storage - but will still analyze")
+
+        # 4. Save Inbound Message to DB
+        content = "[Image]"
+        if caption:
+            content = f"[Image]: {caption}"
+        
+        # Detect image type for media_type field
+        from app.core.storage import StorageService
+        media_type = StorageService._detect_image_type(image_bytes)
+        
+        await crud.create_message(
+            None,
+            session_id=db_session_id,
+            content=content,
+            direction=MessageDirection.inbound,
+            external_id=message_id,
+            media_url=stored_url,
+            media_type=media_type
+        )
+        
+        # 5. Check if AI should respond
+        session = await crud.get_session_by_id(None, db_session_id)
+        if session and session.employee_id is None and session.status != SessionStatus.escalated:
+            # 6. Fetch conversation history and session types
+            history = await crud.get_messages_for_session(None, db_session_id, limit=10)
+            session_types = await crud.get_session_main_types(None)
+            
+            # 7. Analyze image with Vision AI
+            from app.core.vision import vision_service
+            
+            ai_response = await vision_service.analyse_image(
+                image_bytes=image_bytes,
+                user_text=caption,
+                history=history,
+                session_types=session_types,
+                current_type_id=str(session.main_type_id) if session.main_type_id else None
+            )
+            
+            # 8. Send AI response via WhatsApp
+            if ai_response:
+                await client.send_text_message(sender_phone, ai_response)
+                
+                # 9. Save outbound message to DB
+                await crud.create_message(
+                    None,
+                    session_id=db_session_id,
+                    content=ai_response,
+                    direction=MessageDirection.outbound
+                )
+        else:
+            logger.info(f"Skipping AI response for image message in session {db_session_id}. Status: {session.status if session else 'Unknown'}")
+
+    except Exception as e:
+        logger.error(f"Error in background image processing: {e}")
+
 async def auto_classify_session(db_session_id: UUID, user_message: Optional[str] = None):
     """
     Background task to classify session type based on history
@@ -550,6 +644,10 @@ async def extract_webhook(
                 media_id = msg_data.get("sticker", {}).get("id")
                 if not media_id:
                     return {"status": "ignored", "reason": "sticker message without media id"}
+            elif msg_type == "image":
+                media_id = msg_data.get("image", {}).get("id")
+                if not media_id:
+                    return {"status": "ignored", "reason": "image message without media id"}
             elif msg_type != "text":
                 return {"status": "ignored", "reason": f"unsupported message type: {msg_type}"}
                 
@@ -693,6 +791,21 @@ async def extract_webhook(
                     sender_phone,
                     message_id,
                     config_data
+                )
+            elif msg_type == "image":
+                # Handle image messages (Part 1: Image Analysis)
+                # Extract caption if provided
+                caption = msg_data.get("image", {}).get("caption", None)
+                
+                # Process image in background
+                background_tasks.add_task(
+                    process_image_message,
+                    session.id,
+                    media_id,
+                    sender_phone,
+                    message_id,
+                    config_data,
+                    caption
                 )
     except Exception as e:
         logger.error(f"Error in extract_webhook: {e}")

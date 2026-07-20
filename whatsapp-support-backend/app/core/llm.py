@@ -218,6 +218,7 @@ class LLMService:
         payload: Dict[str, Any],
         timeout: float = 60.0,
         max_retries: int = 2,
+        force_openrouter: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """
         POST to OpenRouter with retry/backoff handling.
@@ -234,7 +235,7 @@ class LLMService:
         # Pick provider: DeepSeek (native, OpenAI-compatible) is primary when its
         # key is set; OpenRouter is the fallback. DeepSeek needs a single `model`
         # field, while OpenRouter accepts a `models` failover array.
-        if USE_DEEPSEEK:
+        if USE_DEEPSEEK and not force_openrouter:
             provider = "deepseek"
             url = DEEPSEEK_URL
             payload = dict(payload)
@@ -300,7 +301,8 @@ class LLMService:
         history: List[Dict[str, str]] = None, 
         session_types: List[Dict[str, Any]] = None,
         current_type_id: Optional[str] = None,
-        extra_system: Optional[str] = None
+        extra_system: Optional[str] = None,
+        channel: str = "whatsapp"  # "whatsapp" for customers, "dashboard" for employees
     ) -> str:
         if history is None:
             history = []
@@ -319,6 +321,19 @@ class LLMService:
         knowledge_context = LLMService._find_context(user_message)
         if knowledge_context:
             dynamic_prompt += knowledge_context
+        
+        # 0.5 Inject navigation guides based on channel and keywords (Part 2 & Part 3)
+        # Part 3.6: Channel/audience disambiguation
+        if channel == "whatsapp":
+            # Mobile app guidance for WhatsApp customers (Part 3)
+            if LLMService._is_mobile_app_navigation_query(user_message):
+                from app.core.app_guide import get_mobile_app_guide_text
+                dynamic_prompt += get_mobile_app_guide_text()
+        elif channel == "dashboard":
+            # Connect Hub guidance for internal employees (Part 2)
+            if LLMService._is_dashboard_navigation_query(user_message):
+                from app.core.app_guide import get_navigation_guide_text
+                dynamic_prompt += get_navigation_guide_text()
         
         # 1. Look for specific instructions for REALLY current type if known
         current_type_instructions = ""
@@ -376,7 +391,8 @@ class LLMService:
         
         payload = {
             "models": MODEL_LIST,
-            "messages": messages
+            "messages": messages,
+            "max_tokens": 1024
         }
 
         data = await LLMService._chat_completion(payload, timeout=60.0)
@@ -389,6 +405,73 @@ class LLMService:
 
         logger.error(f"AI API unexpected response: {data}")
         return "نعتذر، حدث خطأ في النظام."
+
+    @staticmethod
+    def _is_mobile_app_navigation_query(user_message: str) -> bool:
+        """
+        Detect if user is asking about mobile app navigation (Part 3).
+        Uses navigation-intent + feature-word co-occurrence check to avoid over-triggering.
+        """
+        if not user_message:
+            return False
+        
+        user_message_lower = user_message.lower()
+        
+        # Navigation intent words (Part 3.6.2: require co-occurrence)
+        navigation_intent_ar = ["كيف", "وين", "أين", "فين", "شلون"]
+        navigation_intent_en = ["how do i", "how to", "where is", "where can i", "how can i"]
+        
+        # Feature words (banking-specific)
+        feature_words_ar = [
+            "تطبيق", "موبايل", "جوال", "إسلامي موبايل", "برنامج", "البنك", "حسابي", 
+            "بطاقتي", "حوالة", "فاتورة", "رصيد", "صراف", "فرع", "كلمة المرور", 
+            "تسجيل", "دخول", "تحويل", "بطاقة", "حساب", "شيك", "مستفيد",
+            "أحول", "حول", "فلوس", "أرسل", "دفع", "فاصور", "كهرباء"
+        ]
+        feature_words_en = [
+            "app", "mobile", "islami", "login", "transfer", "card", "bill", 
+            "balance", "atm", "branch", "password", "register", "account", 
+            "checkbook", "beneficiary", "recharge", "qr", "send", "money",
+            "pay", "electricity", "water"
+        ]
+        
+        # Check for navigation intent
+        has_nav_intent = (
+            any(word in user_message_lower for word in navigation_intent_ar) or
+            any(word in user_message_lower for word in navigation_intent_en)
+        )
+        
+        # Check for feature word
+        has_feature_word = (
+            any(word in user_message_lower for word in feature_words_ar) or
+            any(word in user_message_lower for word in feature_words_en)
+        )
+        
+        # Return True only if both are present (co-occurrence check)
+        return has_nav_intent and has_feature_word
+
+    @staticmethod
+    def _is_dashboard_navigation_query(user_message: str) -> bool:
+        """
+        Detect if user is asking about Connect Hub dashboard navigation (Part 2).
+        """
+        if not user_message:
+            return False
+        
+        user_message_lower = user_message.lower()
+        
+        # Dashboard-specific keywords
+        dashboard_keywords_ar = ["كيف", "وين", "أين", "شلون", "التطبيق", "الصفحة", "الإعدادات", "الجلسات", "لوحة التحكم"]
+        dashboard_keywords_en = [
+            "dashboard", "settings", "sessions", "queue", "employees", "shortcuts", 
+            "knowledge", "analytics", "notifications", "navigate", "find", "where", 
+            "how to", "go to", "open"
+        ]
+        
+        return (
+            any(word in user_message_lower for word in dashboard_keywords_ar) or
+            any(word in user_message_lower for word in dashboard_keywords_en)
+        )
 
     @staticmethod
     async def classify_session(text: str, types: List[Dict[str, Any]], history: List[Dict[str, str]] = None) -> Optional[str]:

@@ -181,12 +181,16 @@ async def get_message_by_external_id(db: Any, external_id: str) -> Optional[Mess
         return Message(**response.data[0])
     return None
 
-async def get_messages_for_session(db: Any, session_id: UUID) -> List[Message]:
-    response = supabase.table("messages")\
+async def get_messages_for_session(db: Any, session_id: UUID, limit: Optional[int] = None) -> List[Message]:
+    query = supabase.table("messages")\
         .select("*")\
         .eq("session_id", str(session_id))\
-        .order("sent_at")\
-        .execute()
+        .order("sent_at")
+    
+    if limit is not None:
+        query = query.limit(limit)
+        
+    response = query.execute()
     
     return [Message(**m) for m in response.data]
 

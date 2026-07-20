@@ -79,4 +79,59 @@ class StorageService:
             logger.error(f"Error uploading sticker to storage: {e}")
             return None
 
+    async def upload_image(self, image_bytes: bytes, filename: str = None) -> str:
+        """
+        Upload image bytes to Supabase Storage and return the public URL.
+        Detects content type from magic bytes (PNG, JPEG, WEBP).
+        """
+        try:
+            if not filename:
+                filename = f"image_{uuid.uuid4().hex}.jpg"
+            
+            # Detect content type from magic bytes
+            content_type = self._detect_image_type(image_bytes)
+            
+            path = f"images/{filename}"
+            
+            res = supabase.storage.from_(self.BUCKET_NAME).upload(
+                path=path,
+                file=image_bytes,
+                file_options={"content-type": content_type}
+            )
+            
+            public_url = supabase.storage.from_(self.BUCKET_NAME).get_public_url(path)
+            
+            logger.info(f"Uploaded image to {public_url}")
+            return public_url
+            
+        except Exception as e:
+            logger.error(f"Error uploading image to storage: {e}")
+            return None
+
+    @staticmethod
+    def _detect_image_type(image_bytes: bytes) -> str:
+        """
+        Detect image MIME type from magic bytes.
+        Defaults to image/jpeg if unrecognized (most common on WhatsApp).
+        """
+        if len(image_bytes) < 12:
+            return "image/jpeg"
+        
+        head = image_bytes[:12]
+        
+        # PNG: \x89PNG\r\n\x1a\n
+        if head[:8] == b'\x89PNG\r\n\x1a\n':
+            return "image/png"
+        
+        # JPEG: \xff\xd8
+        if head[:2] == b'\xff\xd8':
+            return "image/jpeg"
+        
+        # WEBP: RIFF....WEBP
+        if head[:4] == b'RIFF' and head[8:12] == b'WEBP':
+            return "image/webp"
+        
+        # Default to JPEG (most common on WhatsApp)
+        return "image/jpeg"
+
 storage_service = StorageService()

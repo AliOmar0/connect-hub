@@ -132,6 +132,14 @@ class Settings(BaseSettings):
     SCRAPER_RETRY_BASE_BACKOFF_SECONDS: float = 2.0
     SCRAPER_SCHEDULE_INTERVAL_HOURS: int = 24
 
+    # Vision AI (Image Analysis) - analyzes images sent via WhatsApp
+    # Uses the same OpenRouter/DeepSeek infrastructure as text LLM
+    VISION_ENABLED: bool = True
+    VISION_MODEL: str = "google/gemini-2.5-flash"  # Vision-capable model
+    VISION_MAX_IMAGE_SIZE_MB: int = 10  # Maximum image size in MB
+    VISION_SUPPORTED_TYPES: List[str] = ["image/jpeg", "image/png", "image/webp"]
+    VISION_TIMEOUT: int = 90  # Timeout for vision API calls (seconds)
+
 # Initialize settings
 try:
     settings = Settings()

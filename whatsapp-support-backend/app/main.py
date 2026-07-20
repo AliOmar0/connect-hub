@@ -142,7 +142,7 @@ async def lifespan(app: FastAPI):
     if settings.SCRAPER_ENABLED:
         from app.core.scraper.scheduler import scheduled_crawl_task
         scraper_task = asyncio.create_task(
-            scheduled_crawl_task(settings.SCRAPER_SCHEDULE_INTERVAL_HOURS * 3600)
+            scheduled_crawl_task()
         )
 
     # Start ngrok tunnel if enabled
