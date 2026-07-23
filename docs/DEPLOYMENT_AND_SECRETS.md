@@ -14,7 +14,7 @@ disable/delete the OLD key.
 | ------------------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | **OpenRouter**                 | openrouter.ai → Keys → create new, delete old                                    | `OPENROUTER_API_KEY` (was hardcoded in server)                                      |
 | **Supabase anon + JWT secret** | Supabase → Project Settings → API → "Reset" JWT secret; rotate anon/service keys | `VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` |
-| **Twilio**                     | Twilio Console → Account → API keys & Auth Token → rotate                        | `TWILIO_AUTH_TOKEN`, `TWILIO_API_KEY`, `TWILIO_API_SECRET`                          |
+| **Vapi**                       | Vapi Dashboard → API Keys → regenerate; update assistant server secret           | `VAPI_API_KEY`, `VAPI_PUBLIC_KEY`, `VAPI_SERVER_SECRET`                             |
 | **Deepgram**                   | console.deepgram.com → API Keys → create new, revoke old                         | `DEEPGRAM_API_KEY`                                                                  |
 | **ElevenLabs**                 | elevenlabs.io → Profile → API Keys → regenerate                                  | `ELEVENLABS_API_KEY`                                                                |
 | **Munsit**                     | provider dashboard → regenerate                                                  | `MUNSIT_API_KEY`                                                                    |
@@ -80,7 +80,7 @@ The GitHub Actions `security.yml` workflow also runs Gitleaks on every push/PR.
 ```bash
 # 1. Create your local secrets file from the template and fill in REAL values.
 cp .env.example .env
-#    (edit .env: Supabase, Twilio, OpenRouter, Azure TTS, etc.)
+#    (edit .env: Supabase, Vapi, OpenRouter, Azure TTS, etc.)
 
 # 2. Create the private media bucket in Supabase (one-time):
 #    Run server/private_media_setup.sql in the Supabase SQL editor.
@@ -105,9 +105,9 @@ To stop: `docker compose down` (add `-v` to also drop Redis/Grafana volumes).
 **Recommendation:** put the **frontend on Vercel**, and the **backends on a
 container host** (Railway, Render, Fly.io, a VPS, or the included k8s manifests).
 
-Why not the backends on Vercel: the Node server needs persistent WebSocket
-connections (Twilio Media Streams for streaming voice), long-lived Redis
-connections, and background processing; the Python service loads a multi-GB
+Why not the backends on Vercel: the Node server needs long-lived Redis
+connections and background processing, and must stay reachable for Vapi's
+custom-LLM turns and webhooks; the Python service loads a multi-GB
 Whisper model. Vercel's stateless serverless functions don't support persistent
 WebSockets or long-running/GPU processes.
 
@@ -128,7 +128,7 @@ WebSockets or long-running/GPU processes.
 - Use the provided `Dockerfile.server`, `otp-service/Dockerfile`, and
   `docker-compose.yml`, or the `k8s/` manifests.
 - Set the same secrets as in `.env` via the host's secret manager.
-- Point Twilio's voice webhook and the WhatsApp webhook at the Node host's public URL.
+- Point the Vapi assistant's custom-LLM URL (`/vapi`) + server webhook (`/vapi/webhook`) and the WhatsApp webhook at the Node host's public URL.
 
 ---
 
@@ -138,15 +138,14 @@ The TTS provider is pluggable via `TTS_PROVIDER` (default `azure`).
 
 | Provider          | Env vars                                                        | Best for                                                                  |
 | ----------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `azure` (default) | `AZURE_TTS_KEY`, `AZURE_TTS_REGION`, `AZURE_TTS_VOICE`          | Arabic/Levantine + banking compliance; supports μ-law for streaming voice |
+| `azure` (default) | `AZURE_TTS_KEY`, `AZURE_TTS_REGION`, `AZURE_TTS_VOICE`          | Arabic/Levantine + banking compliance (used by the `/api/test/tts` tools) |
 | `elevenlabs`      | `ELEVENLABS_API_KEY`, `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL` | Most natural Arabic                                                       |
-| `polly`           | (none)                                                          | Zero-setup fallback via Twilio `<Say>`                                    |
+| `polly`           | (none)                                                          | Returns no audio (legacy fallback)                                        |
 | `edge`            | `EDGE_TTS_URL`                                                  | Local dev (edge_tts_server.py)                                            |
 | `voicebox`        | `VOICEBOX_URL`, `VOICEBOX_PROFILE_ID`                           | Local GPU (voicebox.sh desktop app)                                       |
 
-- Call-flow audio is synthesized, stored in the **private** `call-media` bucket,
-  and played to Twilio via a short-lived signed URL.
-- The streaming voice path (`/voice/stream`) uses Azure's `raw-8khz-8bit-mono-mulaw`
-  output to feed Twilio Media Streams directly without transcoding.
-- For the live phone path, prefer low-latency models (Azure streaming, or
-  ElevenLabs Flash v2.5).
+- On the live phone path, **Vapi** performs speech-to-text and text-to-speech;
+  configure the voice/transcriber on the Vapi assistant. The TTS providers above
+  are used by the local `/api/test/tts` diagnostics tools.
+- For low latency on real calls, pick a fast voice/transcriber in the Vapi
+  assistant configuration.

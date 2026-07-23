@@ -14,11 +14,11 @@ from typing import Iterable, List, Set
 from urllib.parse import urlparse
 
 # Path segments that are always excluded from the crawl regardless of
-# locale prefix (e.g. matches both /ar/media-center/... and
-# /en/media-center/...). Media-center content churns constantly and
+# locale prefix (e.g. matches both /ar/media-center/news and
+# /en/media-center/news). News/media-center content churns constantly and
 # is not stable banking-product knowledge, so it is deliberately kept out of
 # the knowledge base rather than filtered post-hoc after being ingested.
-EXCLUDED_PATH_SEGMENTS: tuple = ("media-center",)
+EXCLUDED_PATH_SEGMENTS: tuple = ("media-center/news",)
 
 
 def _hostname(url: str) -> str:

@@ -1,7 +1,7 @@
-// Persist Twilio voice-call activity into Supabase so calls show up live in the
+// Persist Vapi voice-call activity into Supabase so calls show up live in the
 // dashboard (Active Sessions panel + Sessions page + Analytics), exactly like
 // WhatsApp/web sessions. Uses the service-role key to bypass RLS for these
-// server-side writes.
+// server-side writes. The Vapi call id is used as the callSid key.
 //
 // Data written:
 //   customers  - one row per caller phone (reused on repeat calls)
@@ -35,8 +35,8 @@ export function isCallSessionConfigured() {
 
 // A human-friendly display name for an unknown caller.
 function callerName(phone) {
-  if (!phone) return "Phone Caller";
-  // Browser Twilio Client identities come through as e.g. "client:pib_agent".
+  if (!phone) return "Web Caller";
+  // Browser (web) Vapi calls have no phone number; only dialed calls do.
   if (phone.startsWith("client:")) return `Web Caller (${phone.slice(7)})`;
   return `Caller ${phone}`;
 }
@@ -187,7 +187,7 @@ export async function recordCallTurn({
   }
 }
 
-// Called from the Twilio status callback when the call ends.
+// Called from the Vapi webhook (status-update "ended" / end-of-call-report).
 export async function endCall({ callSid }) {
   if (!admin || !callSid) return;
   try {

@@ -2,70 +2,67 @@ import { describe, it, expect } from "vitest";
 import { render, screen } from "@/test-utils/render";
 import ChannelDistributionChart from "./ChannelDistributionChart";
 
+const data = [
+  { name: "WhatsApp", value: 50, color: "hsl(142, 70%, 45%)" },
+  { name: "Messenger", value: 30, color: "hsl(220, 90%, 56%)" },
+  { name: "Phone Calls", value: 20, color: "hsl(45, 95%, 50%)" },
+];
+
 describe("ChannelDistributionChart", () => {
   it("renders chart title", () => {
     render(<ChannelDistributionChart />);
     expect(screen.getByText("Channel Distribution")).toBeInTheDocument();
   });
 
-  it("displays default data when no data provided", () => {
+  it("displays an explicit empty state when no data is provided", () => {
     render(<ChannelDistributionChart />);
 
-    expect(screen.getByText("WhatsApp")).toBeInTheDocument();
-    expect(screen.getByText("Messenger")).toBeInTheDocument();
-    expect(screen.getByText("Phone Calls")).toBeInTheDocument();
-    expect(screen.getByText("Other")).toBeInTheDocument();
+    expect(
+      screen.getByText("No channel activity is available for this month."),
+    ).toBeInTheDocument();
   });
 
-  it("displays custom data correctly", () => {
-    const data = [
-      { name: "WhatsApp", value: 50, color: "hsl(142, 70%, 45%)" },
-      { name: "Messenger", value: 30, color: "hsl(220, 90%, 56%)" },
-      { name: "Phone Calls", value: 20, color: "hsl(45, 95%, 50%)" },
-    ];
-
+  it("displays custom data in both the legend and accessible table", () => {
     render(<ChannelDistributionChart data={data} />);
 
-    expect(screen.getByText("WhatsApp")).toBeInTheDocument();
-    expect(screen.getByText("Messenger")).toBeInTheDocument();
-    expect(screen.getByText("Phone Calls")).toBeInTheDocument();
+    expect(screen.getAllByText("WhatsApp")).toHaveLength(2);
+    expect(screen.getAllByText("Messenger")).toHaveLength(2);
+    expect(screen.getAllByText("Phone Calls")).toHaveLength(2);
+    expect(
+      screen.getByRole("table", {
+        name: "Session distribution by channel this month",
+      }),
+    ).toBeInTheDocument();
   });
 
-  it("displays total value in center", () => {
-    const data = [
-      { name: "WhatsApp", value: 50, color: "hsl(142, 70%, 45%)" },
-      { name: "Messenger", value: 30, color: "hsl(220, 90%, 56%)" },
-    ];
-
+  it("describes the chart timeframe without inventing a total", () => {
     render(<ChannelDistributionChart data={data} />);
 
-    expect(screen.getByText("80")).toBeInTheDocument();
-    expect(screen.getByText("Total")).toBeInTheDocument();
+    expect(screen.getByText("Sessions")).toBeInTheDocument();
+    expect(screen.getByText("This month")).toBeInTheDocument();
   });
 
-  it("displays percentage values in legend", () => {
-    const data = [
-      { name: "WhatsApp", value: 50, color: "hsl(142, 70%, 45%)" },
-      { name: "Messenger", value: 30, color: "hsl(220, 90%, 56%)" },
-    ];
-
+  it("displays percentage values in the legend and accessible table", () => {
     render(<ChannelDistributionChart data={data} />);
 
-    // Check that percentage values are displayed
-    const legendItems = screen.getAllByText(/50%|30%/);
-    expect(legendItems.length).toBeGreaterThan(0);
+    expect(screen.getAllByText("50%")).toHaveLength(2);
+    expect(screen.getAllByText("30%")).toHaveLength(2);
   });
 
-  it("handles empty data array", () => {
+  it("handles an explicit empty data array", () => {
     render(<ChannelDistributionChart data={[]} />);
 
     expect(screen.getByText("Channel Distribution")).toBeInTheDocument();
-    expect(screen.getByText("0")).toBeInTheDocument(); // Total should be 0
+    expect(
+      screen.getByText("No channel activity is available for this month."),
+    ).toBeInTheDocument();
   });
 
-  it("renders chart container", () => {
-    const { container } = render(<ChannelDistributionChart />);
-    const chartContainer = container.querySelector(".h-52");
-    expect(chartContainer).toBeInTheDocument();
+  it("exposes a named chart image when data is available", () => {
+    render(<ChannelDistributionChart data={data} />);
+
+    expect(
+      screen.getByRole("img", { name: /donut chart showing/i }),
+    ).toBeInTheDocument();
   });
 });

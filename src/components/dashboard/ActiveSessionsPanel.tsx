@@ -103,16 +103,16 @@ export default function ActiveSessionsPanel({
   return (
     <Card className="shadow-card">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="font-display text-lg font-semibold flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardTitle className="flex flex-wrap items-center gap-2 font-display text-lg font-semibold">
             Active AI Sessions
             <Badge
               variant="secondary"
-              className="bg-gold/10 text-gold border border-gold/20 gap-1.5"
+              className="gap-1.5 border border-gold/20 bg-gold/10 text-gold-dark dark:text-gold"
             >
-              <span className="relative flex h-2 w-2">
+              <span className="relative flex h-2 w-2" aria-hidden="true">
                 {liveCount > 0 && (
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-chart-success opacity-75" />
+                  <span className="absolute inline-flex h-full w-full rounded-full bg-chart-success opacity-75 motion-safe:animate-ping" />
                 )}
                 <span
                   className={cn(
@@ -121,7 +121,7 @@ export default function ActiveSessionsPanel({
                   )}
                 />
               </span>
-              {sessions.length} live
+              {sessions.length} open
             </Badge>
           </CardTitle>
           <Button
@@ -177,7 +177,7 @@ export default function ActiveSessionsPanel({
                 key={session.id}
                 type="button"
                 onClick={() => navigate(`/sessions/${session.id}`)}
-                className="w-full flex items-start gap-3 p-3 rounded-lg bg-secondary/30 hover:bg-secondary/60 transition-colors group fade-in-up text-left"
+                className="group flex w-full items-start gap-3 rounded-lg bg-secondary/30 p-3 text-start transition-colors hover:bg-secondary/60 fade-in-up"
                 style={{ animationDelay: `${index * 80}ms` }}
               >
                 {/* Avatar with channel badge */}
@@ -199,7 +199,10 @@ export default function ActiveSessionsPanel({
                         .toUpperCase() || "?"}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="absolute -bottom-1 -right-1 text-xs leading-none">
+                  <span
+                    className="absolute -bottom-1 -end-1 text-xs leading-none"
+                    aria-hidden="true"
+                  >
                     {channel.icon}
                   </span>
                 </div>
@@ -259,7 +262,10 @@ export default function ActiveSessionsPanel({
                   </div>
                 </div>
 
-                <ChevronRight className="h-4 w-4 text-muted-foreground self-center opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                <ChevronRight
+                  className="h-4 w-4 shrink-0 self-center text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 rtl:rotate-180"
+                  aria-hidden="true"
+                />
               </button>
             );
           })

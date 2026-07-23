@@ -160,7 +160,12 @@ whatsapp-support-backend/venv/
 .env.local
 .env.*.local
 
-.kiro/ 
+# Keep local Kiro state ignored while versioning reusable workspace skills.
+.kiro/*
+!.kiro/skills/
+.kiro/skills/*
+!.kiro/skills/*/
+!.kiro/skills/*/SKILL.md
 .opencode/
 .gemini/antigravity/
 docs/SRS.md

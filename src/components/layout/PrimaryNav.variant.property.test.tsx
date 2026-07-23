@@ -56,10 +56,10 @@ describe("PrimaryNav – variant by breakpoint (property-based, Req 7.2, 7.3)", 
             expect(nav).not.toBeNull();
             expect(toggle).toBeNull();
           } else {
-            // Collapsible menu: a toggle button controls a menu; the nav
-            // landmark is not persistently rendered (the sheet is closed).
+            // Collapsible navigation: a toggle button controls a Sheet dialog;
+            // the nav landmark is not rendered until that dialog opens.
             expect(toggle).not.toBeNull();
-            expect(toggle).toHaveAttribute("aria-haspopup", "menu");
+            expect(toggle).toHaveAttribute("aria-haspopup", "dialog");
             expect(nav).toBeNull();
           }
         } finally {

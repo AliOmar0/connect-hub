@@ -1,3 +1,4 @@
+import { useId } from "react";
 import {
   BarChart,
   Bar,
@@ -8,17 +9,30 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { useDirection } from "@/hooks/use-direction";
+import { useReducedMotion } from "@/hooks/use-reduced-motion";
 
 interface ResponseTimeChartProps {
-  data?: Array<{ hour: string; time: number }>;
+  data?: Array<{ date: string; time: number }>;
 }
 
+const getStatus = (value: number) => {
+  if (value <= 2) return "Excellent";
+  if (value <= 3) return "Good";
+  return "Needs improvement";
+};
+
 const getBarColor = (value: number) => {
-  if (value <= 2) return "hsl(var(--chart-success))"; // excellent
-  if (value <= 3) return "hsl(var(--chart-warning))"; // good
-  return "hsl(var(--destructive))"; // needs improvement
+  if (value <= 2) return "hsl(var(--chart-success))";
+  if (value <= 3) return "hsl(var(--chart-warning))";
+  return "hsl(var(--destructive))";
 };
 
 interface TooltipProps {
@@ -28,116 +42,136 @@ interface TooltipProps {
 }
 
 const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
-  if (active && payload && payload.length) {
-    const value = payload[0].value;
-    let status = "Excellent";
-    if (value > 2 && value <= 3) status = "Good";
-    if (value > 3) status = "Needs Improvement";
+  if (!active || !payload?.length) return null;
 
-    return (
-      <div className="bg-card border border-border rounded-lg p-3 shadow-elevated">
-        <p className="font-semibold text-sm mb-1">{label}</p>
-        <div className="flex items-center gap-2">
-          <div
-            className="w-3 h-3 rounded-full"
-            style={{ backgroundColor: getBarColor(value) }}
-          />
-          <span className="text-lg font-bold">{value}m</span>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1">{status}</p>
-      </div>
-    );
-  }
-  return null;
+  const value = payload[0].value;
+  return (
+    <div className="rounded-lg border border-border bg-card p-3 shadow-elevated">
+      <p className="mb-1 text-sm font-semibold">{label}</p>
+      <p className="text-lg font-bold">{value.toFixed(1)} min</p>
+      <p className="mt-1 text-xs text-muted-foreground">{getStatus(value)}</p>
+    </div>
+  );
 };
 
 export default function ResponseTimeChart({
   data = [],
 }: ResponseTimeChartProps) {
   const isRtl = useDirection() === "rtl";
-  const chartData =
-    data.length > 0
-      ? data
-      : [
-          { hour: "6AM", time: 0 },
-          { hour: "8AM", time: 0 },
-          { hour: "10AM", time: 0 },
-          { hour: "12PM", time: 0 },
-          { hour: "2PM", time: 0 },
-          { hour: "4PM", time: 0 },
-          { hour: "6PM", time: 0 },
-          { hour: "8PM", time: 0 },
-        ];
+  const reducedMotion = useReducedMotion();
+  const titleId = useId();
 
   return (
-    <Card className="shadow-card">
+    <Card className="shadow-card" aria-labelledby={titleId}>
       <CardHeader className="pb-2">
-        <CardTitle className="font-display text-lg font-semibold">
-          Response Time by Hour
+        <CardTitle id={titleId} className="font-display text-lg font-semibold">
+          Average Response Time
         </CardTitle>
-        <div className="flex items-center gap-4 text-xs mt-2">
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-chart-success" />
-            <span className="text-muted-foreground">{"<2m Excellent"}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-chart-warning" />
-            <span className="text-muted-foreground">{"2-3m Good"}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-destructive" />
-            <span className="text-muted-foreground">{">3m Improve"}</span>
-          </div>
+        <CardDescription>
+          Daily average in minutes for the most recent 7 days.
+        </CardDescription>
+        <div
+          className="flex flex-wrap gap-x-3 gap-y-2 pt-2 text-xs"
+          aria-label="Response time thresholds"
+        >
+          <span className="text-muted-foreground">
+            <span className="font-medium text-chart-success">≤2 min</span>{" "}
+            Excellent
+          </span>
+          <span className="text-muted-foreground">
+            <span className="font-medium text-chart-warning">2–3 min</span> Good
+          </span>
+          <span className="text-muted-foreground">
+            <span className="font-medium text-destructive">&gt;3 min</span>{" "}
+            Improve
+          </span>
         </div>
       </CardHeader>
       <CardContent className="pt-4">
-        <div className="h-48">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={chartData}
-              margin={{ top: 5, right: 5, left: -15, bottom: 5 }}
+        {data.length === 0 ? (
+          <p className="py-20 text-center text-sm text-muted-foreground">
+            Response-time data is unavailable for the last 7 days.
+          </p>
+        ) : (
+          <>
+            <div
+              className="h-48"
+              role="img"
+              aria-label="Bar chart of average response time in minutes by day for the last 7 days. A data table follows."
             >
-              <defs>
-                <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopOpacity={1} />
-                  <stop offset="100%" stopOpacity={0.6} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-                stroke="hsl(var(--border))"
-              />
-              <XAxis
-                dataKey="hour"
-                reversed={isRtl}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
-              />
-              <YAxis
-                orientation={isRtl ? "right" : "left"}
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
-                tickFormatter={(value) => `${value}m`}
-              />
-              <Tooltip
-                content={<CustomTooltip />}
-                cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
-              />
-              <Bar
-                dataKey="time"
-                radius={[4, 4, 0, 0]}
-                animationDuration={1000}
-              >
-                {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={getBarColor(entry.time)} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+              <div className="h-full" aria-hidden="true">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={data}
+                    margin={{ top: 5, right: 5, left: -10, bottom: 5 }}
+                  >
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke="hsl(var(--border))"
+                    />
+                    <XAxis
+                      dataKey="date"
+                      reversed={isRtl}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{
+                        fill: "hsl(var(--muted-foreground))",
+                        fontSize: 10,
+                      }}
+                    />
+                    <YAxis
+                      orientation={isRtl ? "right" : "left"}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{
+                        fill: "hsl(var(--muted-foreground))",
+                        fontSize: 10,
+                      }}
+                      tickFormatter={(value) => `${value}m`}
+                    />
+                    <Tooltip
+                      content={<CustomTooltip />}
+                      cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+                    />
+                    <Bar
+                      dataKey="time"
+                      radius={[4, 4, 0, 0]}
+                      isAnimationActive={!reducedMotion}
+                    >
+                      {data.map((entry) => (
+                        <Cell key={entry.date} fill={getBarColor(entry.time)} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+            <div className="sr-only">
+              <table>
+                <caption>
+                  Average response time by day for the last 7 days
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Day</th>
+                    <th scope="col">Average response time</th>
+                    <th scope="col">Performance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.map((item) => (
+                    <tr key={item.date}>
+                      <th scope="row">{item.date}</th>
+                      <td>{item.time.toFixed(1)} minutes</td>
+                      <td>{getStatus(item.time)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </CardContent>
     </Card>
   );

@@ -6,7 +6,8 @@ import pino from 'pino';
 const REDACT_PATHS = [
     'req.headers.authorization',
     'req.headers.cookie',
-    'req.headers["x-twilio-signature"]',
+    'req.headers["x-vapi-secret"]',
+    'req.headers["x-vapi-signature"]',
     'req.headers["x-hub-signature-256"]',
     'req.body.otp',
     'req.body.OtP',

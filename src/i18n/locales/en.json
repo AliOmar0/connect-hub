@@ -100,7 +100,7 @@
         "providers": {
           "openrouter": "OpenRouter (AI)",
           "supabase": "Supabase",
-          "twilio": "Twilio",
+          "vapi": "Vapi",
           "whatsappOtp": "WhatsApp OTP",
           "azureTts": "Azure TTS",
           "elevenlabs": "ElevenLabs",
@@ -122,11 +122,11 @@
         "aiReply": "AI reply",
         "ttsLabel": "tts: {{provider}}",
         "audioPlayed": "audio played ({{provider}})",
-        "noAudio": "no audio (provider returned none — would use Twilio Polly on a real call)",
+        "noAudio": "no audio (provider returned none — Vapi handles TTS on a real call)",
         "success": "Voice turn simulated"
       },
       "chat": {
-        "description": "Talks to /api/chat — the same AI logic the voice path uses. No Twilio.",
+        "description": "Talks to /api/chat — the same AI logic the voice path uses. No telephony.",
         "empty": "Send a message to start.",
         "placeholder": "Ask the AI...",
         "send": "Send message"
@@ -138,58 +138,57 @@
         "playerLabel": "Synthesized speech player"
       }
     },
-    "twilio": {
+    "vapi": {
       "title": "Connect Hub AI",
-      "subtitle": "Premium Voice Gateway for PIB",
-      "sdkStatus": "SDK: {{status}}",
+      "subtitle": "Vapi Voice Gateway for PIB",
+      "sdkStatus": "Voice: {{status}}",
       "sdk": {
-        "offline": "Offline",
+        "offline": "Idle",
         "connecting": "Connecting...",
-        "online": "Online (agent: {{identity}})",
+        "online": "In call",
+        "ended": "Call ended",
         "error": "Error: {{message}}",
         "setupRequired": "Setup Required: {{message}}",
-        "registered": "Voice SDK registered",
-        "errorToast": "SDK error: {{message}}",
+        "registered": "Connected to the AI assistant",
+        "errorToast": "Voice error: {{message}}",
         "setupError": "Voice setup error: {{message}}",
-        "noToken": "No token returned from server",
+        "noConfig": "Vapi is not configured on the server",
         "unknownError": "Unknown error occurred during setup"
       },
-      "incoming": {
-        "title": "Incoming call...",
-        "accept": "Accept",
-        "ignore": "Ignore",
-        "toast": "Incoming call"
+      "server": {
+        "checking": "Checking backend server…",
+        "online": "Backend server online",
+        "offline": "Backend server offline",
+        "offlineHint": "Start the backend in your terminal first: npm run channel:voice",
+        "blocked": "Start the backend server in your terminal before placing a call."
       },
       "security": {
-        "title": "Security Settings",
-        "initialize": "Initialize Voice SDK",
-        "hint": "Initializing the SDK allows your browser to receive calls directly from the Twilio cloud."
+        "title": "Browser Voice Call",
+        "start": "Start Call",
+        "stop": "End Call",
+        "hint": "Starts a live, in-browser voice conversation with the AI assistant through Vapi. Allow microphone access when prompted."
       },
       "bankingVoice": {
         "title": "Banking Voice",
-        "value": "Arabic (Polly.Zeina)"
+        "value": "Arabic (Vapi voice)"
+      },
+      "transcript": {
+        "toggle": "Show live transcript",
+        "title": "Live call transcript",
+        "empty": "Transcript will appear here once the call starts.",
+        "roleCustomer": "Customer",
+        "roleAssistant": "Assistant"
       },
       "tabs": {
         "voice": "AI Voice Call",
-        "sms": "SMS Test",
         "chat": "AI Chat Test"
       },
       "voice": {
-        "label": "Test Inbound/Outbound AI",
+        "label": "Place an outbound AI call",
         "placeholder": "+970...",
         "dial": "Dial Now",
-        "hint": "To hear the AI, you can call +1 916 659 6816 or use \"Dial Now\".",
+        "hint": "Use the browser call above, or enter a phone number and \"Dial Now\" to have the AI call it.",
         "success": "AI call initiated"
-      },
-      "sms": {
-        "recipient": "Recipient Number",
-        "recipientPlaceholder": "+970...",
-        "message": "Message",
-        "send": "Send SMS Message",
-        "missingFields": "Please fill in both number and message",
-        "success": "SMS sent successfully (SID: {{sid}})",
-        "failed": "Failed to send SMS",
-        "error": "SMS error: {{message}}"
       },
       "chat": {
         "identityLabel": "Simulate Phone Identity",
@@ -458,32 +457,21 @@
     "loadErrorDescription": "We couldn't load escalations awaiting handoff. Please try again."
   },
   "shortcutsPage": {
-    "title": "Chat Shortcuts",
-    "subtitle": "Keyboard shortcuts for composing and managing conversations.",
+    "title": "Keyboard Shortcuts",
+    "subtitle": "Reference of keyboard shortcuts for operating the dashboard.",
     "emptyTitle": "No shortcuts available",
     "emptyDescription": "There are no keyboard shortcuts to display.",
     "groups": {
       "general": "General",
-      "navigation": "Navigation",
-      "chat": "Chat"
+      "navigation": "Navigation"
     },
     "items": {
       "focusNext": "Move focus to the next control",
       "focusPrevious": "Move focus to the previous control",
       "activate": "Activate the focused control",
-      "dismiss": "Close dialogs or dismiss overlays",
-      "toggleSidebar": "Toggle the sidebar",
-      "chatSendMessage": "Send the composed message",
-      "chatOpenQuickReplies": "Open the quick reply list",
-      "chatPickerNavigate": "Move the highlighted shortcut in the shortcut picker",
-      "chatPickerInsert": "Insert the highlighted shortcut",
-      "chatPickerClose": "Close the shortcut picker",
-      "chatReplyToMessage": "Reply to a specific message",
-      "chatResolveConversation": "Resolve or close the active chat",
-      "chatSwitchConversation": "Go to the next or previous conversation",
-      "chatQuickReplyNavigate": "Move the highlighted item in the quick reply list"
-    },
-    "notYetAvailable": "Not yet available"
+      "dismiss": "Close the open dialog or menu",
+      "toggleSidebar": "Toggle the navigation sidebar"
+    }
   },
   "notFoundPage": {
     "code": "404",
@@ -626,9 +614,21 @@
     "empty": "No documents yet. Upload one to get started.",
     "emptyDescription": "Add a document so the assistant can answer from approved content.",
     "loadErrorTitle": "Couldn't load documents",
-    "backendMissing": "Knowledge-base backend is not reachable. Configure VITE_KB_API_URL.",
+    "backendMissing": "Can't reach the knowledge-base service at {{url}}. Start FastAPI and confirm its CORS settings allow this site.",
+    "errors": {
+      "unauthorized": "Your session has expired. Sign in again and retry.",
+      "forbidden": "You don't have permission to view the knowledge base.",
+      "notFound": "The configured server does not expose the knowledge-base endpoint. Check the backend version and URL.",
+      "server": "The knowledge-base service encountered an error. Check the FastAPI logs and retry.",
+      "unknown": "The knowledge-base request failed. Please retry."
+    },
     "operationFailed": "The document operation failed. Please try again.",
     "documents": "Documents",
+    "documentsDescription": "Upload and monitor approved content used in assistant responses.",
+    "uploadHelp": "PDF, TXT, MD, or JSON · up to 5 MB",
+    "versionHistoryDescription": "Review indexed versions and restore an earlier one.",
+    "noVersions": "No versions are available for this document.",
+    "versionHistoryError": "Couldn't load version history",
     "uploadSuccess": "Document uploaded and queued for indexing.",
     "rollbackSuccess": "Rolled back to the selected version.",
     "reindexSuccess": "Re-index started.",
@@ -644,7 +644,8 @@
       "otherCategory": "Other",
       "edit": "Edit session type",
       "delete": "Delete session type",
-      "deleteConfirm": "Are you sure you want to delete this session type? This might affect existing sessions.",
+      "deleteConfirm": "Delete \"{{name}}\"? This may affect existing sessions and removes its indexed AI knowledge.",
+      "deleting": "Deleting...",
       "createTitle": "Create New Session Type",
       "editTitle": "Edit Session Type",
       "dialogDescription": "Define a session category and provide detailed knowledge for the AI assistant.",
@@ -684,6 +685,13 @@
     "pagesSucceeded": "Pages succeeded",
     "pagesFailed": "Pages failed",
     "history": "Crawl history",
+    "status": "Status",
+    "statuses": {
+      "pending": "Pending",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed"
+    },
     "startedAt": "Started",
     "completedAt": "Completed",
     "empty": "No crawl jobs yet.",
@@ -741,6 +749,13 @@
     "loadErrorTitle": "Couldn't load analytics",
     "loadErrorDescription": "We couldn't load this visualization. Please try again."
   },
+  "dashboard": {
+    "refresh": {
+      "success": "Dashboard data is up to date",
+      "error": "Couldn't refresh the dashboard",
+      "errorDescription": "Some dashboard data may be out of date. Try again in a moment."
+    }
+  },
   "appShell": {
     "header": {
       "searchPlaceholder": "Search conversations, employees...",
@@ -766,7 +781,7 @@
         "analytics": "Analytics",
         "settings": "Settings",
         "notifications": "Notifications",
-        "shortcuts": "Chat Shortcuts",
+        "shortcuts": "Keyboard Shortcuts",
         "backendTest": "Backend Tester",
         "notFound": "Page Not Found"
       }
@@ -788,7 +803,7 @@
       "employees": "Employees",
       "analytics": "Analytics",
       "notifications": "Notifications",
-      "shortcuts": "Chat Shortcuts",
+      "shortcuts": "Keyboard Shortcuts",
       "knowledge": "Knowledge Base",
       "backendTest": "Backend Tester",
       "settings": "Settings",

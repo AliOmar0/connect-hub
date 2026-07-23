@@ -204,7 +204,7 @@ export default function AppShellHeader() {
                 >
                   <Bell className="h-4 w-4" />
                   {notifications && notifications.count > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1 -end-1 flex min-h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1 text-caption font-bold text-destructive-foreground">
                       {notifications.count > 99 ? "99+" : notifications.count}
                     </span>
                   )}

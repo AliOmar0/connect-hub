@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@/test-utils/render";
+import { render, screen, fireEvent, waitFor } from "@/test-utils/render";
 import { createUserEvent } from "@/test-utils/helpers";
 import SessionsTable from "./SessionsTable";
 import {
@@ -258,29 +258,18 @@ describe("SessionsTable", () => {
       />,
     );
 
-    // Find buttons by their aria-haspopup attribute (dropdown menu buttons)
     const menuButtons = screen
       .getAllByRole("button", { hidden: true })
-      .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
+      .filter((button) => button.getAttribute("aria-haspopup") === "menu");
     expect(menuButtons.length).toBeGreaterThan(0);
 
-    // Click first menu button using userEvent for better interaction
-    await act(async () => {
-      await user.click(menuButtons[0]);
-    });
+    await user.click(menuButtons[0]);
 
-    // Wait for dropdown to open and menu items to appear
-    // Use findByText which waits for the element to appear
-    const viewDetails = await screen.findByText("View conversation", {
-      timeout: 3000,
-    });
-    const assignAgent = await screen.findByText("Assign Agent to Session", {
-      timeout: 3000,
-    });
-
-    expect(viewDetails).toBeInTheDocument();
-    expect(assignAgent).toBeInTheDocument();
-  });
+    expect(await screen.findByText("View conversation")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Assign Agent to Session"),
+    ).toBeInTheDocument();
+  }, 15_000);
 
   it("calls onViewSession when 'View Details' is clicked", async () => {
     const user = createUserEvent();
@@ -296,9 +285,7 @@ describe("SessionsTable", () => {
     const menuButtons = screen
       .getAllByRole("button", { hidden: true })
       .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
-    await act(async () => {
-      await user.click(menuButtons[0]);
-    });
+    await user.click(menuButtons[0]);
 
     // Wait for menu to open and find the View Details button
     const viewDetailsButton = await screen.findByText("View conversation", {
@@ -325,9 +312,7 @@ describe("SessionsTable", () => {
     const menuButtons = screen
       .getAllByRole("button", { hidden: true })
       .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
-    await act(async () => {
-      await user.click(menuButtons[0]);
-    });
+    await user.click(menuButtons[0]);
 
     // Wait for menu to open and find the Assign Agent button
     const assignAgentButton = await screen.findByText(
@@ -476,9 +461,7 @@ describe("SessionsTable", () => {
       .getAllByRole("button", { hidden: true })
       .filter((btn) => btn.getAttribute("aria-haspopup") === "menu");
     if (menuButtons.length > 0) {
-      await act(async () => {
-        await user.click(menuButtons[0]);
-      });
+      await user.click(menuButtons[0]);
 
       // Wait for View Details to appear
       const viewDetails = await screen.findByText("View conversation", {

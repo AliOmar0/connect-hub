@@ -5,6 +5,7 @@ import { Settings, ExternalLink, Check, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tables } from "@/integrations/supabase/types";
 import { formatDistanceToNow } from "date-fns";
+import { useNavigate } from "react-router-dom";
 
 type ApiConfig = Tables<"api_configurations">;
 
@@ -44,15 +45,7 @@ const statusConfig = {
 export default function IntegrationStatus({
   integrations = [],
 }: IntegrationStatusProps) {
-  const displayIntegrations =
-    integrations.length > 0
-      ? integrations
-      : [
-          { channel: "whatsapp" as const, is_active: false },
-          { channel: "messenger" as const, is_active: false },
-          { channel: "sms" as const, is_active: false },
-          { channel: "voice" as const, is_active: false },
-        ].map((item) => ({ ...item, id: item.channel }) as ApiConfig);
+  const navigate = useNavigate();
 
   return (
     <Card className="shadow-card">
@@ -61,88 +54,113 @@ export default function IntegrationStatus({
           <CardTitle className="font-display text-lg font-semibold">
             Integrations
           </CardTitle>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <Settings className="h-4 w-4" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => navigate("/settings")}
+            aria-label="Manage integrations"
+          >
+            <Settings className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {displayIntegrations.map((integration, index) => {
-          const channelInfo = channelNames[integration.channel] || {
-            name: integration.channel,
-            description: `${integration.channel} integration`,
-          };
-          const status = integration.is_active ? "connected" : "pending";
-          const StatusIcon = statusConfig[status].icon;
-          const lastSync = integration.last_verified_at
-            ? formatDistanceToNow(new Date(integration.last_verified_at), {
-                addSuffix: true,
-              })
-            : undefined;
-
-          return (
-            <div
-              key={integration.id}
-              className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/20 hover:bg-secondary/30 transition-all group fade-in-up"
-              style={{ animationDelay: `${index * 100}ms` }}
+        {integrations.length === 0 ? (
+          <div className="py-10 text-center">
+            <p className="text-sm font-medium">No integrations configured</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Configure a channel in settings to see its status here.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => navigate("/settings")}
             >
-              {/* Icon */}
-              <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
-                <span className="text-xl">
-                  {integration.channel === "whatsapp"
-                    ? "🟢"
-                    : integration.channel === "messenger"
-                      ? "🔵"
-                      : integration.channel === "voice"
-                        ? "📞"
-                        : integration.channel === "sms"
-                          ? "💬"
-                          : "📧"}
-                </span>
-              </div>
+              Open Settings
+            </Button>
+          </div>
+        ) : (
+          integrations.map((integration, index) => {
+            const channelInfo = channelNames[integration.channel] || {
+              name: integration.channel,
+              description: `${integration.channel} integration`,
+            };
+            const status = integration.is_active ? "connected" : "pending";
+            const StatusIcon = statusConfig[status].icon;
+            const lastSync = integration.last_verified_at
+              ? formatDistanceToNow(new Date(integration.last_verified_at), {
+                  addSuffix: true,
+                })
+              : undefined;
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">
-                    {channelInfo.name}
+            return (
+              <div
+                key={integration.id}
+                className="flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/20 hover:bg-secondary/30 transition-all group fade-in-up"
+                style={{ animationDelay: `${index * 100}ms` }}
+              >
+                {/* Icon */}
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
+                  <span className="text-xl" aria-hidden="true">
+                    {integration.channel === "whatsapp"
+                      ? "🟢"
+                      : integration.channel === "messenger"
+                        ? "🔵"
+                        : integration.channel === "voice"
+                          ? "📞"
+                          : integration.channel === "sms"
+                            ? "💬"
+                            : "📧"}
                   </span>
                 </div>
-                <p className="text-xs text-muted-foreground truncate">
-                  {channelInfo.description}
-                </p>
-              </div>
 
-              {/* Status */}
-              <div className="flex flex-col items-end gap-1">
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "text-[10px] font-medium gap-1",
-                    statusConfig[status].className,
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">
+                      {channelInfo.name}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {channelInfo.description}
+                  </p>
+                </div>
+
+                {/* Status */}
+                <div className="flex flex-col items-end gap-1">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[10px] font-medium gap-1",
+                      statusConfig[status].className,
+                    )}
+                  >
+                    <StatusIcon className="h-3 w-3" aria-hidden="true" />
+                    {statusConfig[status].label}
+                  </Badge>
+                  {lastSync && (
+                    <span className="text-[10px] text-muted-foreground">
+                      Synced {lastSync}
+                    </span>
                   )}
-                >
-                  <StatusIcon className="h-3 w-3" />
-                  {statusConfig[status].label}
-                </Badge>
-                {lastSync && (
-                  <span className="text-[10px] text-muted-foreground">
-                    Synced {lastSync}
-                  </span>
-                )}
-              </div>
+                </div>
 
-              {/* Configure Button */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          );
-        })}
+                {/* Configure Button */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+                  onClick={() => navigate("/settings")}
+                  aria-label={`Configure ${channelInfo.name}`}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                </Button>
+              </div>
+            );
+          })
+        )}
       </CardContent>
     </Card>
   );

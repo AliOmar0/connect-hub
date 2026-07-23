@@ -20,16 +20,17 @@ const SecretSchema = {
   
   // Required for core functionality
   required: [
-    { name: 'TWILIO_ACCOUNT_SID', description: 'Twilio Account SID' },
-    { name: 'TWILIO_AUTH_TOKEN', description: 'Twilio Auth Token' },
-    { name: 'TWILIO_PHONE_NUMBER', description: 'Twilio phone number for voice calls' },
+    { name: 'VAPI_API_KEY', description: 'Vapi private/server API key' },
+    { name: 'VAPI_ASSISTANT_ID', description: 'Vapi assistant ID for the bank voice agent' },
+    { name: 'VAPI_PHONE_NUMBER_ID', description: 'Vapi phone number ID for inbound/outbound calls' },
   ],
   
   // Optional but recommended
   recommended: [
     { name: 'OPENROUTER_API_KEY', description: 'OpenRouter API key for AI responses' },
     { name: 'REDIS_URL', description: 'Redis URL for distributed state (recommended for production)' },
-    { name: 'NGROK_URL', description: 'Public URL for Twilio webhooks' },
+    { name: 'NGROK_URL', description: 'Public URL for Vapi webhooks / custom-LLM endpoint' },
+    { name: 'VAPI_SERVER_SECRET', description: 'Shared secret to authenticate Vapi webhook/custom-LLM requests' },
   ],
   
   // Conditionally required based on features
@@ -45,9 +46,9 @@ const SecretSchema = {
       requires: ['SECURITY_WHATSAPP_PHONE_NUMBER_ID'],
     },
     {
-      name: 'TWILIO_API_KEY',
-      description: 'Twilio API key for client token generation',
-      requires: ['TWILIO_API_SECRET', 'TWIML_APP_SID'],
+      name: 'VAPI_PUBLIC_KEY',
+      description: 'Vapi public key for browser (web) voice calls',
+      requires: ['VAPI_ASSISTANT_ID'],
     },
     {
       name: 'AZURE_TTS_KEY',

@@ -562,6 +562,9 @@ class KbDocumentOut(BaseModel):
     status: str  # "indexed" | "processing" | "failed" (mapped from backend's pending/indexing/indexed/failed)
     version: int
     updated_at: str
+    description: Optional[str] = None
+    source: str = "upload"
+    source_url: Optional[str] = None
 
 
 class KbVersionOut(BaseModel):
@@ -586,6 +589,20 @@ def _map_status_for_frontend(status: str) -> str:
 async def kb_list_documents(skip: int = 0, limit: int = 50):
     """Frontend-contract alias for GET /knowledge-base (see module docstring)."""
     documents = await list_documents(skip, limit)
+    scraper_doc_ids = [doc["id"] for doc in documents if doc.get("source") == "scraper"]
+    source_url_by_document_id = {}
+    if scraper_doc_ids:
+        pages_response = (
+            supabase.table("scraped_pages")
+            .select("knowledge_document_id, url")
+            .in_("knowledge_document_id", scraper_doc_ids)
+            .execute()
+        )
+        source_url_by_document_id = {
+            row["knowledge_document_id"]: row["url"]
+            for row in (pages_response.data or [])
+        }
+
     result = []
     for doc in documents:
         current_version_id = doc.get("current_version_id")
@@ -603,6 +620,9 @@ async def kb_list_documents(skip: int = 0, limit: int = 50):
             status=_map_status_for_frontend(doc["status"]),
             version=version_num,
             updated_at=doc["updated_at"],
+            description=doc.get("description"),
+            source=doc.get("source", "upload"),
+            source_url=source_url_by_document_id.get(doc["id"]),
         ))
     return result
 

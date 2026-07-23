@@ -5,5 +5,3 @@ npm run test:run || {
 }
 echo "✅ All tests passed!"
 
-npm run test:run
-
