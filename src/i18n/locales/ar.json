@@ -463,15 +463,26 @@
     "emptyDescription": "لا توجد اختصارات لوحة مفاتيح لعرضها.",
     "groups": {
       "general": "عام",
-      "navigation": "التنقل"
+      "navigation": "التنقل",
+      "chat": "الدردشة"
     },
     "items": {
       "focusNext": "نقل التركيز إلى العنصر التالي",
       "focusPrevious": "نقل التركيز إلى العنصر السابق",
       "activate": "تفعيل العنصر المحدد",
       "dismiss": "إغلاق النافذة أو القائمة المفتوحة",
-      "toggleSidebar": "إظهار أو إخفاء الشريط الجانبي للتنقل"
-    }
+      "toggleSidebar": "إظهار أو إخفاء الشريط الجانبي للتنقل",
+      "chatSendMessage": "إرسال رسالة",
+      "chatOpenQuickReplies": "فتح منتقي الردود السريعة",
+      "chatPickerNavigate": "التنقل بين خيارات منتقي الردود السريعة",
+      "chatPickerInsert": "إدراج الرد السريع المحدد",
+      "chatPickerClose": "إغلاق منتقي الردود السريعة",
+      "chatReplyToMessage": "الرد على الرسالة المحددة",
+      "chatResolveConversation": "وضع علامة على المحادثة كمحلولة",
+      "chatSwitchConversation": "التبديل إلى المحادثة التالية",
+      "chatQuickReplyNavigate": "التنقل بين خيارات الرد السريع"
+    },
+    "notYetAvailable": "غير متاح بعد"
   },
   "notFoundPage": {
     "code": "404",

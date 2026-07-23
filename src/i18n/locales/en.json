@@ -463,15 +463,26 @@
     "emptyDescription": "There are no keyboard shortcuts to display.",
     "groups": {
       "general": "General",
-      "navigation": "Navigation"
+      "navigation": "Navigation",
+      "chat": "Chat"
     },
     "items": {
       "focusNext": "Move focus to the next control",
       "focusPrevious": "Move focus to the previous control",
       "activate": "Activate the focused control",
       "dismiss": "Close the open dialog or menu",
-      "toggleSidebar": "Toggle the navigation sidebar"
-    }
+      "toggleSidebar": "Toggle the navigation sidebar",
+      "chatSendMessage": "Send message",
+      "chatOpenQuickReplies": "Open quick replies picker",
+      "chatPickerNavigate": "Navigate options in quick replies picker",
+      "chatPickerInsert": "Insert selected quick reply",
+      "chatPickerClose": "Close quick replies picker",
+      "chatReplyToMessage": "Reply to selected message",
+      "chatResolveConversation": "Mark conversation as resolved",
+      "chatSwitchConversation": "Switch to next conversation",
+      "chatQuickReplyNavigate": "Navigate quick reply options"
+    },
+    "notYetAvailable": "Not yet available"
   },
   "notFoundPage": {
     "code": "404",
