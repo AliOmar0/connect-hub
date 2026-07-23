@@ -1,19 +1,41 @@
 /**
- * Manual Vitest/Jest mock for @vapi-ai/web.
- * Used in tests because the actual package requires a network install
- * that may not be available in all environments.
+ * Manual mock for @vapi-ai/web.
+ * Used in dev and test environments when the npm package is not installed.
  */
-import { vi } from "vitest";
+class VapiMock {
+  constructor(_token?: string, _apiBase?: string) {}
 
-const Vapi = vi.fn().mockImplementation(() => ({
-  start: vi.fn().mockResolvedValue(undefined),
-  stop: vi.fn(),
-  send: vi.fn(),
-  on: vi.fn(),
-  off: vi.fn(),
-  removeAllListeners: vi.fn(),
-  setMuted: vi.fn(),
-  isMuted: vi.fn().mockReturnValue(false),
-}));
+  async start(..._args: unknown[]): Promise<unknown> {
+    console.log("[VapiMock] start called", ..._args);
+    return undefined;
+  }
 
-export default Vapi;
+  stop(): void {
+    console.log("[VapiMock] stop called");
+  }
+
+  send(..._args: unknown[]): void {
+    console.log("[VapiMock] send called", ..._args);
+  }
+
+  on(event: string, _callback: (...args: unknown[]) => void): this {
+    console.log("[VapiMock] on event listener added:", event);
+    return this;
+  }
+
+  off(_event: string, _callback: (...args: unknown[]) => void): this {
+    return this;
+  }
+
+  removeAllListeners(): this {
+    return this;
+  }
+
+  setMuted(_muted: boolean): void {}
+
+  isMuted(): boolean {
+    return false;
+  }
+}
+
+export default VapiMock;

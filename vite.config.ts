@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@vapi-ai/web": path.resolve(
+        __dirname,
+        "./src/__mocks__/@vapi-ai/web.ts",
+      ),
     },
   },
 }));
