@@ -122,6 +122,21 @@ export default function AppShellHeader() {
     };
   }, [user?.id, queryClient]);
 
+  const handleNotificationClick = async (notif: Notification) => {
+    try {
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", notif.id);
+    } catch {
+      // ignore
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      navigate(notif.action_url || "/notifications");
+    }
+  };
+
   const accountName = profile
     ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim()
     : "";
@@ -129,7 +144,7 @@ export default function AppShellHeader() {
     `${profile?.first_name?.[0] || ""}${profile?.last_name?.[0] || ""}`.toUpperCase();
 
   return (
-    <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between gap-4">
+    <header className="h-16 border-b border-border/80 bg-card/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30 transition-all">
       {/* Brand + page context */}
       <div className="flex items-center gap-4 min-w-0">
         {/* PIB logo with bank-name text fallback that preserves layout */}
@@ -145,7 +160,7 @@ export default function AppShellHeader() {
             <img
               src={pibLogo}
               alt={t("appShell.header.logoAlt")}
-              className="h-8 w-auto object-contain"
+              className="h-8 w-auto object-contain transition-opacity hover:opacity-90"
               onError={() => setLogoError(true)}
             />
           )}
@@ -153,38 +168,40 @@ export default function AppShellHeader() {
 
         {/* Page-context indicator naming the current page */}
         <div
-          className="hidden sm:flex flex-col border-l border-border/60 pl-4 min-w-0"
+          className="hidden sm:flex items-center gap-2 border-l border-border/70 pl-4 py-1 min-w-0"
           aria-label={t("appShell.header.pageContextLabel")}
         >
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            {t("appShell.header.pageContextLabel")}
-          </span>
-          <span
-            className="text-sm font-semibold text-foreground truncate"
-            aria-current="page"
-            data-testid="page-context"
-          >
-            {pageName}
-          </span>
+          <div className="flex flex-col min-w-0">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+              {t("appShell.header.pageContextLabel")}
+            </span>
+            <span
+              className="text-sm font-bold text-foreground truncate"
+              aria-current="page"
+              data-testid="page-context"
+            >
+              {pageName}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Search (auth-only: operates on protected data) */}
       {isAuthenticated && (
-        <div className="flex-1 max-w-md">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <div className="flex-1 max-w-md hidden md:block">
+          <div className="relative group">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
             <Input
               type="search"
               placeholder={t("appShell.header.searchPlaceholder")}
-              className="pl-10 bg-secondary/50 border-0 focus-visible:ring-1"
+              className="pl-10 h-9 bg-secondary/40 hover:bg-secondary/60 border-border/40 focus-visible:bg-background focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15 rounded-xl transition-all text-xs sm:text-sm"
             />
           </div>
         </div>
       )}
 
       {/* Right-side controls */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 shrink-0">
         {/* Language switcher — available before and after authentication */}
         <LanguageSwitcher />
 
@@ -199,22 +216,25 @@ export default function AppShellHeader() {
                 <Button
                   variant="outline"
                   size="icon"
-                  className="relative"
+                  className="relative h-9 w-9 rounded-xl border-border/60 hover:bg-accent/50 transition-all"
                   aria-label={t("appShell.header.notifications")}
                 >
-                  <Bell className="h-4 w-4" />
+                  <Bell className="h-4 w-4 text-foreground/80" />
                   {notifications && notifications.count > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-background animate-pulse">
                       {notifications.count > 99 ? "99+" : notifications.count}
                     </span>
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
-                <DropdownMenuLabel className="flex items-center justify-between">
+              <DropdownMenuContent
+                align="end"
+                className="w-80 rounded-xl shadow-xl border-border/80"
+              >
+                <DropdownMenuLabel className="flex items-center justify-between font-display font-semibold">
                   {t("appShell.header.notifications")}
                   {notifications && notifications.count > 0 && (
-                    <Badge variant="secondary">
+                    <Badge variant="secondary" className="rounded-lg">
                       {t("appShell.header.notificationsNew", {
                         count: notifications.count,
                       })}
@@ -227,20 +247,18 @@ export default function AppShellHeader() {
                     notifications.items.map((notif) => (
                       <DropdownMenuItem
                         key={notif.id}
-                        className="flex flex-col items-start gap-1 py-3 cursor-pointer"
-                        onClick={() =>
-                          navigate(notif.action_url || "/notifications")
-                        }
+                        className="flex flex-col items-start gap-1 py-3 px-3 cursor-pointer rounded-lg hover:bg-accent/60"
+                        onClick={() => handleNotificationClick(notif)}
                       >
-                        <span className="font-medium text-sm">
+                        <span className="font-semibold text-xs sm:text-sm text-foreground">
                           {notif.title}
                         </span>
                         {notif.message && (
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-muted-foreground line-clamp-2">
                             {notif.message}
                           </span>
                         )}
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-[10px] text-muted-foreground/80 font-medium mt-0.5">
                           {formatDistanceToNow(new Date(notif.created_at), {
                             addSuffix: true,
                           })}
@@ -250,7 +268,7 @@ export default function AppShellHeader() {
                   ) : (
                     <DropdownMenuItem
                       disabled
-                      className="text-center text-sm text-muted-foreground py-4"
+                      className="text-center justify-center text-xs text-muted-foreground py-6"
                     >
                       {t("appShell.header.noNotifications")}
                     </DropdownMenuItem>
@@ -258,7 +276,7 @@ export default function AppShellHeader() {
                 </div>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  className="text-center justify-center text-sm text-primary font-medium"
+                  className="text-center justify-center text-xs text-primary font-semibold py-2.5 cursor-pointer hover:bg-primary/10"
                   onClick={() => navigate("/notifications")}
                 >
                   {t("appShell.header.viewAllNotifications")}
@@ -270,7 +288,7 @@ export default function AppShellHeader() {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full"
+              className="rounded-full h-9 w-9 p-0 hover:ring-2 hover:ring-primary/40 transition-all"
               onClick={() => navigate("/settings?tab=general")}
               aria-label={
                 accountName
@@ -278,9 +296,9 @@ export default function AppShellHeader() {
                   : t("appShell.header.account")
               }
             >
-              <Avatar className="h-9 w-9 border border-border">
+              <Avatar className="h-9 w-9 border border-border/80">
                 <AvatarImage src={profile?.avatar_url || ""} alt="" />
-                <AvatarFallback className="bg-primary/10 text-primary text-xs font-bold">
+                <AvatarFallback className="bg-primary/15 text-primary text-xs font-bold">
                   {accountInitials || "U"}
                 </AvatarFallback>
               </Avatar>

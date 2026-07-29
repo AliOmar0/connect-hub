@@ -84,6 +84,25 @@ export default function DashboardHeader() {
     };
   }, [user?.id, queryClient]);
 
+  const handleNotificationClick = async (notif: Notification) => {
+    try {
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", notif.id);
+    } catch {
+      // ignore
+    } finally {
+      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      if (notif.action_url) {
+        navigate(notif.action_url);
+      } else {
+        navigate("/notifications");
+      }
+    }
+  };
+
   return (
     <header className="h-16 border-b border-border bg-card px-6 flex items-center justify-between gap-4">
       {/* Search */}
@@ -166,13 +185,7 @@ export default function DashboardHeader() {
                   <DropdownMenuItem
                     key={notif.id}
                     className="flex flex-col items-start gap-1 py-3 cursor-pointer"
-                    onClick={() => {
-                      if (notif.action_url) {
-                        navigate(notif.action_url);
-                      } else {
-                        navigate("/notifications");
-                      }
-                    }}
+                    onClick={() => handleNotificationClick(notif)}
                   >
                     <div className="flex items-center gap-2">
                       <div

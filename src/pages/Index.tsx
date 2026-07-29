@@ -140,45 +140,6 @@ export default function Index() {
   });
 
   const {
-    data: weeklyData,
-    isLoading: weeklyLoading,
-    isError: weeklyError,
-    refetch: refetchWeekly,
-  } = useQuery({
-    queryKey: ["dashboard-weekly"],
-    queryFn: async () => {
-      const days = [];
-      for (let i = 6; i >= 0; i--) {
-        const date = subDays(new Date(), i);
-        days.push(format(date, "yyyy-MM-dd"));
-      }
-
-      const data = await Promise.all(
-        days.map(async (date) => {
-          const { data: analytics } = await supabase
-            .from("analytics_daily")
-            .select("total_messages, total_calls")
-            .eq("date", date);
-
-          const totalMessages =
-            analytics?.reduce((sum, a) => sum + (a.total_messages || 0), 0) ||
-            0;
-          const totalCalls =
-            analytics?.reduce((sum, a) => sum + (a.total_calls || 0), 0) || 0;
-
-          return {
-            name: format(new Date(date), "EEE"),
-            messages: totalMessages,
-            calls: totalCalls,
-          };
-        }),
-      );
-
-      return data;
-    },
-  });
-
-  const {
     data: channelData,
     isLoading: channelLoading,
     isError: channelError,
@@ -306,30 +267,6 @@ export default function Index() {
     },
   });
 
-  const {
-    data: responseTimeData,
-    isLoading: responseTimeLoading,
-    isError: responseTimeError,
-    refetch: refetchResponseTime,
-  } = useQuery({
-    queryKey: ["dashboard-response-time"],
-    queryFn: async () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      const hours = [];
-      for (let i = 6; i <= 20; i += 2) {
-        hours.push(i);
-      }
-
-      // For now, return mock data structure - can be enhanced with actual hourly data
-      return hours.map((hour) => ({
-        hour: hour < 12 ? `${hour}AM` : hour === 12 ? "12PM" : `${hour - 12}PM`,
-        time: 2 + Math.random() * 2, // Mock data - replace with actual hourly averages
-      }));
-    },
-  });
-
   const { data: integrations } = useQuery({
     queryKey: ["dashboard-integrations"],
     queryFn: async () => {
@@ -401,7 +338,7 @@ export default function Index() {
       value: (stats?.activeAgents || 0).toString(),
       icon: Users,
       subtitle: "Online",
-      variant: "default" as const,
+      variant: "info" as const,
     },
     {
       key: "avgResponse",
@@ -460,13 +397,7 @@ export default function Index() {
         {/* Main Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <AsyncBoundary
-              status={toStatus(weeklyLoading, weeklyError)}
-              skeleton={<Skeleton className="h-[360px] w-full rounded-xl" />}
-              onRetry={() => refetchWeekly()}
-            >
-              <ConversationsChart data={weeklyData || []} />
-            </AsyncBoundary>
+            <ConversationsChart />
           </div>
           <AsyncBoundary
             status={toStatus(channelLoading, channelError)}
@@ -482,13 +413,7 @@ export default function Index() {
           <div className="lg:col-span-2">
             <ActiveSessionsPanel sessions={activeSessions || []} />
           </div>
-          <AsyncBoundary
-            status={toStatus(responseTimeLoading, responseTimeError)}
-            skeleton={<Skeleton className="h-[280px] w-full rounded-xl" />}
-            onRetry={() => refetchResponseTime()}
-          >
-            <ResponseTimeChart data={responseTimeData || []} />
-          </AsyncBoundary>
+          <ResponseTimeChart />
         </div>
 
         {/* Team & Integrations */}

@@ -345,6 +345,8 @@
       "satisfaction": "الرضا",
       "started": "البدء",
       "unassigned": "غير مُسندة",
+      "aiAgent": "المساعد الذكي (AI)",
+      "aiVoiceAgent": "المجيب الصوتي الذكي (AI)",
       "unknown": "غير معروف",
       "empty": "لا توجد جلسات"
     },

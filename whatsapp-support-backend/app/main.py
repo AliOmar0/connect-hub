@@ -57,24 +57,27 @@ def _validate_startup() -> None:
 
 
 async def session_cleanup_task():
-    """Periodic task to close inactive sessions"""
-    from app.api.v1.webhook import auto_classify_session
+    """Periodic task to close inactive WhatsApp sessions.
+
+    When a session is closed due to inactivity the customer receives a
+    polite satisfaction-check message, then the session is auto-classified.
+    Both actions are handled by `send_session_closing_message` which calls
+    `auto_classify_session` internally via its `finally` block.
+    """
+    from app.api.v1.webhook import send_session_closing_message
 
     while True:
         try:
-            # Auto-close sessions inactive for 30 min — matches the documented
-            # SESSION_TTL (SESSION_TTL_SECONDS=1800). Previously 10 min, which
-            # closed live WhatsApp/voice sessions so aggressively they vanished
-            # from the "Active Sessions" dashboard almost immediately.
+            # Auto-close sessions inactive for 10 minutes (SESSION_TTL_SECONDS=600).
             await crud.close_inactive_sessions(
-                None, minutes=30, on_close=auto_classify_session
+                None, minutes=10, on_close=send_session_closing_message
             )
             await crud.delete_old_notifications(None, hours=24)
         except Exception as e:
             logger.exception(f"Error in session cleanup task: {e}")
         await asyncio.sleep(
-            120
-        )  # Run every 2 minutes — keeps the race window tight vs the 30-min session timeout
+            60
+        )  # Run every 60 seconds — tight race window vs the 10-min session timeout
 
 
 @asynccontextmanager

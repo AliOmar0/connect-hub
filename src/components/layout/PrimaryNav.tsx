@@ -25,6 +25,9 @@ import {
   BookOpen,
   FlaskConical,
   Menu,
+  ChevronLeft,
+  ChevronRight,
+  LogOut,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -33,6 +36,13 @@ import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { filterNavByRole } from "@/lib/navigation";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import pibLogo from "@/assets/pib-logo.png";
 import type { AppRole } from "@/types/database";
 
 /** A single primary-navigation entry. */
@@ -60,6 +70,9 @@ interface PrimaryNavProps {
    */
   variant?: PrimaryNavVariant;
   className?: string;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+  showUserCard?: boolean;
 }
 
 /**
@@ -138,6 +151,7 @@ function isItemActive(pathname: string, to: string): boolean {
 interface NavItemsProps {
   items: NavItem[];
   pathname: string;
+  collapsed?: boolean;
   onNavigate?: () => void;
 }
 
@@ -147,34 +161,53 @@ interface NavItemsProps {
  * distinct selected treatment.
  */
 const NavItems = React.forwardRef<HTMLDivElement, NavItemsProps>(
-  ({ items, pathname, onNavigate }, ref) => {
+  ({ items, pathname, collapsed = false, onNavigate }, ref) => {
     const { t } = useTranslation();
 
     return (
-      <div ref={ref} className="space-y-1">
+      <div ref={ref} className="space-y-1.5">
         {items.map(({ to, icon: Icon, labelKey, badgeCount }) => {
           const active = isItemActive(pathname, to);
-          return (
+          const label = t(labelKey);
+
+          const linkContent = (
             <Link
               key={to}
               to={to}
               aria-current={active ? "page" : undefined}
+              aria-label={collapsed ? label : undefined}
               onClick={onNavigate}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 min-h-[44px]",
-                "text-sm font-medium transition-colors",
+                "group flex items-center gap-3 rounded-xl py-2.5 min-h-[44px] relative transition-all duration-200 font-medium text-sm",
+                collapsed ? "justify-center px-2" : "px-3.5",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar",
                 active
-                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground font-semibold shadow-lg shadow-sidebar-primary/20"
+                  : "text-sidebar-foreground/80 hover:bg-sidebar-accent/80 hover:text-sidebar-foreground hover:translate-x-0.5",
               )}
             >
-              <Icon className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
-              <span className="flex-1">{t(labelKey)}</span>
+              {/* Active indicator bar */}
+              {active && !collapsed && (
+                <span className="absolute start-0 top-2 bottom-2 w-1 bg-sidebar-primary-foreground rounded-r-full shadow-sm" />
+              )}
+
+              <Icon
+                className={cn(
+                  "h-5 w-5 flex-shrink-0 transition-transform duration-200 group-hover:scale-110",
+                  active
+                    ? "text-sidebar-primary-foreground"
+                    : "text-sidebar-foreground/75 group-hover:text-sidebar-foreground",
+                )}
+                aria-hidden="true"
+              />
+              {!collapsed && <span className="flex-1 truncate">{label}</span>}
               {badgeCount !== undefined && badgeCount > 0 && (
                 <span
                   className={cn(
-                    "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold",
+                    "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1.5 text-[10px] font-bold shadow-sm transition-all",
+                    collapsed
+                      ? "absolute -top-1 -right-1 ring-2 ring-sidebar"
+                      : "",
                     active
                       ? "bg-sidebar-background text-sidebar-primary"
                       : "bg-gold text-navy-dark",
@@ -185,6 +218,24 @@ const NavItems = React.forwardRef<HTMLDivElement, NavItemsProps>(
               )}
             </Link>
           );
+
+          if (collapsed) {
+            return (
+              <Tooltip key={to} delayDuration={100}>
+                <TooltipTrigger asChild>{linkContent}</TooltipTrigger>
+                <TooltipContent side="right" className="font-medium">
+                  {label}
+                  {badgeCount !== undefined && badgeCount > 0 && (
+                    <span className="ml-2 bg-gold text-navy-dark px-1.5 py-0.5 rounded-full text-[10px] font-bold">
+                      {badgeCount}
+                    </span>
+                  )}
+                </TooltipContent>
+              </Tooltip>
+            );
+          }
+
+          return linkContent;
         })}
       </div>
     );
@@ -196,9 +247,12 @@ export default function PrimaryNav({
   items = PRIMARY_NAV_ITEMS,
   variant,
   className,
+  collapsed = false,
+  onToggleCollapse,
+  showUserCard = false,
 }: PrimaryNavProps) {
   const { t } = useTranslation();
-  const { userRole } = useAuth();
+  const { user, userRole, signOut } = useAuth();
   const location = useLocation();
   const breakpoint = useBreakpoint();
 
@@ -223,11 +277,110 @@ export default function PrimaryNav({
       <nav
         aria-label={t("appShell.nav.primaryLabel")}
         className={cn(
-          "flex h-full flex-col overflow-y-auto bg-sidebar px-3 py-4",
+          "flex h-full flex-col justify-between overflow-y-auto bg-sidebar py-4 transition-all duration-300 ease-in-out shadow-xl",
+          collapsed ? "px-2" : "px-3.5",
           className,
         )}
       >
-        <NavItems items={visibleItems} pathname={location.pathname} />
+        <div className="space-y-2">
+          <NavItems
+            items={visibleItems}
+            pathname={location.pathname}
+            collapsed={collapsed}
+          />
+        </div>
+
+        {/* Bottom User Profile & Action Bar */}
+        {(showUserCard || onToggleCollapse) && (
+          <div className="pt-3 border-t border-sidebar-border/60 mt-auto space-y-2">
+            {showUserCard && user && (
+              <div
+                className={cn(
+                  "flex items-center gap-2.5 p-2 rounded-xl bg-sidebar-accent/40 border border-sidebar-border/40 transition-all",
+                  collapsed ? "justify-center" : "",
+                )}
+              >
+                <Avatar className="h-8 w-8 shrink-0 ring-2 ring-sidebar-primary/30">
+                  <AvatarImage src="" alt="" />
+                  <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground font-bold text-xs">
+                    {user.email?.[0]?.toUpperCase() || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                {!collapsed && (
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <span className="text-xs font-semibold text-sidebar-foreground truncate">
+                      {user.email?.split("@")[0] || "User"}
+                    </span>
+                    <span className="text-[10px] text-sidebar-foreground/60 capitalize truncate">
+                      {userRole || "Agent"}
+                    </span>
+                  </div>
+                )}
+                {!collapsed && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => signOut()}
+                    className="h-7 w-7 shrink-0 text-sidebar-foreground/60 hover:text-destructive hover:bg-destructive/10 rounded-lg"
+                    title={t("appShell.sidebar.signOut", {
+                      defaultValue: "Sign Out",
+                    })}
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Collapse/Expand Toggle */}
+            {onToggleCollapse && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={onToggleCollapse}
+                className={cn(
+                  "w-full text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/80 rounded-xl flex items-center gap-2 transition-all",
+                  collapsed
+                    ? "justify-center px-0 h-9"
+                    : "justify-start px-3 h-9",
+                )}
+                aria-label={
+                  collapsed
+                    ? t("appShell.sidebar.expandSidebar", {
+                        defaultValue: "Expand Sidebar",
+                      })
+                    : t("appShell.sidebar.collapseSidebar", {
+                        defaultValue: "Collapse Sidebar",
+                      })
+                }
+                title={
+                  collapsed
+                    ? t("appShell.sidebar.expandSidebar", {
+                        defaultValue: "Expand Sidebar",
+                      })
+                    : t("appShell.sidebar.collapseSidebar", {
+                        defaultValue: "Collapse Sidebar",
+                      })
+                }
+              >
+                {collapsed ? (
+                  <ChevronRight className="h-4 w-4 shrink-0" />
+                ) : (
+                  <>
+                    <ChevronLeft className="h-4 w-4 shrink-0" />
+                    <span className="text-xs font-medium truncate">
+                      {t("appShell.sidebar.collapseSidebar", {
+                        defaultValue: "Collapse Sidebar",
+                      })}
+                    </span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        )}
       </nav>
     );
   }
@@ -253,8 +406,6 @@ export default function PrimaryNav({
         side="left"
         className="w-64 bg-sidebar p-0"
         aria-describedby={undefined}
-        // Prevent Radix's default focus target so we can place focus on the
-        // first nav item deterministically.
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           focusFirstItem();

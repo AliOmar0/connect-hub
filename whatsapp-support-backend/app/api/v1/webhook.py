@@ -96,7 +96,9 @@ from app.core.storage import storage_service
 
 async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
     """
-    Background task to download audio, transcribe, and then handle like a text message
+    Background task to download audio, transcribe, and then handle like a text message.
+    The voice message is ALWAYS persisted to the DB so agents can see and play it,
+    regardless of whether transcription succeeds.
     """
     try:
         # 1. Initialize WhatsApp Client
@@ -105,58 +107,158 @@ async def process_voice_message(db_session_id: UUID, media_id: str, sender_phone
             access_token=config.get("access_token")
         )
 
-        # 1.1 Mark as read & Send typing indicator
+        # 1.1 Mark as read & send typing indicator
         await client.mark_message_as_read(message_id)
         await client.send_typing_indicator(sender_phone)
 
         # 2. Get Media URL
         media_url = await client.get_media_url(media_id)
         if not media_url:
-            logger.error("Failed to get media URL")
+            logger.error("Failed to get media URL for voice message")
             return
 
         # 3. Download Audio
         audio_bytes = await client.download_media(media_url)
         if not audio_bytes:
-            logger.error("Failed to download audio")
+            logger.error("Failed to download audio bytes")
             return
 
-        # 3.5 Upload to Storage for website playback
+        # 3.5 Upload to Supabase Storage so the dashboard can play back the audio
         stored_url = await storage_service.upload_audio(audio_bytes)
         if not stored_url:
-            logger.warning("Failed to upload audio to storage - but will still transcribe")
+            logger.warning("Failed to upload audio to storage — will still attempt transcription")
 
-        # 4. Transcribe Audio
+        # 4. Transcribe Audio via Deepgram
         transcription = await stt_service.transcribe_audio(audio_bytes)
-        if not transcription:
-            logger.error("Failed to transcribe audio")
-            # Maybe send a message saying we couldn't understand the voice message
-            await client.send_text_message(sender_phone, "نعتذر، لم نتمكن من فهم الرسالة الصوتية. هل يمكنك إرسالها بنص؟")
-            return
 
-        logger.info(f"Transcription: {transcription}")
+        if transcription:
+            # ── SUCCESS PATH ─────────────────────────────────────────────────
+            logger.info(f"Voice transcription succeeded: {transcription[:80]}")
 
-        # 5. Save Inbound Message (Transcribed + Media URL)
-        await crud.create_message(
-            None,
-            session_id=db_session_id,
-            content=f"[رسالة صوتية]: {transcription}",
-            direction=MessageDirection.inbound,
-            external_id=message_id,
-            media_url=stored_url,
-            media_type="audio/ogg"
-        )
-        
-        # 6. Check if AI should respond
-        session = await crud.get_session_by_id(None, db_session_id)
-        if session and session.employee_id is None and session.status != SessionStatus.escalated:
-            # 7. Call LLM & Send Response
-            await process_ai_response(db_session_id, transcription, sender_phone, config)
+            # 5a. Save inbound message WITH transcription text
+            await crud.create_message(
+                None,
+                session_id=db_session_id,
+                content=f"[رسالة صوتية]: {transcription}",
+                direction=MessageDirection.inbound,
+                external_id=message_id,
+                media_url=stored_url,
+                media_type="audio/ogg"
+            )
+
+            # 6. Let the AI respond (if no agent is assigned and session is not escalated)
+            session = await crud.get_session_by_id(None, db_session_id)
+            if session and session.employee_id is None and session.status != SessionStatus.escalated:
+                await process_ai_response(db_session_id, transcription, sender_phone, config)
+            else:
+                logger.info(
+                    f"Skipping AI response for voice message in session {db_session_id}. "
+                    f"Status: {session.status if session else 'Unknown'}"
+                )
         else:
-            logger.info(f"Skipping AI response for voice message in session {db_session_id}. Status: {session.status if session else 'Unknown'}")
+            # ── FAILURE PATH ─────────────────────────────────────────────────
+            # Transcription failed (no Deepgram key, network error, empty result, etc.)
+            # We still SAVE the voice message to the DB with a placeholder so agents
+            # can see the audio and listen to it in the dashboard.
+            logger.error("Voice transcription failed — saving audio-only message for agents")
+
+            await crud.create_message(
+                None,
+                session_id=db_session_id,
+                content="[رسالة صوتية]",
+                direction=MessageDirection.inbound,
+                external_id=message_id,
+                media_url=stored_url,
+                media_type="audio/ogg"
+            )
+
+            # Notify agents so they can listen manually
+            await crud.create_notification(
+                None,
+                user_id=None,  # broadcast
+                title="رسالة صوتية بحاجة لمراجعة",
+                message=f"لم يتمكن النظام من تفريغ رسالة صوتية من {sender_phone}. يرجى الاستماع إليها.",
+                type="warning",
+                action_url=f"/sessions/{db_session_id}"
+            )
+
+            # Check if an agent is assigned; if not, ask the customer to repeat as text
+            session = await crud.get_session_by_id(None, db_session_id)
+            agent_available = session and session.employee_id is not None
+            if not agent_available:
+                await client.send_text_message(
+                    sender_phone,
+                    "نعتذر، لم نتمكن من فهم رسالتك الصوتية بوضوح.\n"
+                    "هل يمكنك إعادة إرسال طلبك كرسالة نصية؟ سيسعدنا مساعدتك. 🙏"
+                )
 
     except Exception as e:
-        logger.error(f"Error in background voice processing: {e}")
+        logger.error(f"Error in background voice processing: {e}", exc_info=True)
+
+
+async def send_session_closing_message(session_id: UUID):
+    """
+    Called automatically when a WhatsApp session is closed due to inactivity.
+    Sends a polite closing / satisfaction-check message to the customer,
+    then triggers auto-classification.
+    """
+    try:
+        from app.database import supabase as _supabase
+
+        # 1. Get session
+        session = await crud.get_session_by_id(None, session_id)
+        if not session or not session.customer_id:
+            logger.warning(f"send_session_closing_message: session {session_id} not found or has no customer")
+            return
+
+        # 2. Get customer phone
+        cust_resp = _supabase.table("customers").select("phone").eq("id", str(session.customer_id)).execute()
+        if not cust_resp.data:
+            logger.warning(f"send_session_closing_message: customer not found for session {session_id}")
+            return
+        customer_phone = cust_resp.data[0].get("phone")
+        if not customer_phone:
+            return
+
+        # 3. Get WhatsApp API config
+        api_config = await crud.get_api_config(None, ChannelType.whatsapp)
+        if not api_config or not api_config.is_active or not api_config.access_token_encrypted:
+            logger.warning(f"send_session_closing_message: no active WhatsApp config for session {session_id}")
+            # Still classify even if we can't send the message
+            await auto_classify_session(session_id)
+            return
+
+        # 4. Build & send closing message
+        closing_text = (
+            "شكراً لتواصلك مع البنك الإسلامي الفلسطيني 🌟\n\n"
+            "هل تم حل مشكلتك بشكل كامل؟\n"
+            "نسعد دائماً بخدمتك، وفي حال احتجت أي مساعدة إضافية لا تتردد في التواصل معنا مجدداً. 🤝"
+        )
+
+        client = WhatsAppClient(
+            phone_number_id=api_config.phone_number_id,
+            access_token=api_config.access_token_encrypted
+        )
+        await client.send_text_message(customer_phone, closing_text)
+
+        # 5. Save the closing message to DB so agents / dashboard can see it
+        await crud.create_message(
+            None,
+            session_id=session_id,
+            content=closing_text,
+            direction=MessageDirection.outbound,
+        )
+
+        logger.info(f"Sent closing message for session {session_id} to {customer_phone}")
+
+    except Exception as e:
+        logger.error(f"Error in send_session_closing_message for session {session_id}: {e}", exc_info=True)
+    finally:
+        # Always run classification regardless of whether the message was sent
+        try:
+            await auto_classify_session(session_id)
+        except Exception as e:
+            logger.error(f"auto_classify_session failed after closing message: {e}")
 
 async def process_sticker_message(db_session_id: UUID, media_id: str, sender_phone: str, message_id: str, config: dict):
     """
@@ -412,6 +514,25 @@ async def process_ai_response(
         # 2. Call LLM with the combined message
         logger.info(f"[AI] Sending combined message to LLM for session {db_session_id}: '{user_message[:100]}...'")
         ai_text = await llm_service.get_ai_response(user_message, history, session_types, current_type_id=session.main_type_id)
+
+        # --- Personal account limits: escalate instead of redirecting to call center ---
+        msg_lower = user_message.lower()
+        personal_limits_keywords = [
+            "حدودي", "حد بطاقتي", "حد حسابي", "حدود حسابي", "حدود بطاقتي",
+            "الحدود المطبقة", "حدودي الحالية", "حد التحويل لحسابي",
+            "my card limit", "my account limit", "my limits",
+        ]
+        is_personal_limits = any(k in msg_lower for k in personal_limits_keywords)
+        if not is_personal_limits:
+            has_limit_word = any(w in msg_lower for w in ["حد", "حدود", "limit", "limits"])
+            has_personal_marker = any(p in msg_lower for p in ["حسابي", "بطاقتي", "حدودي", "حالي", "my "])
+            is_personal_limits = has_limit_word and has_personal_marker
+
+        if is_personal_limits and "[ESCALATE]" not in ai_text:
+            ai_text = (
+                "[ESCALATE]: فهمت أنك تريد معرفة الحدود المطبقة على حسابك أو بطاقتك حالياً. "
+                "سأحوّل طلبك إلى أحد موظفي خدمة العملاء لمتابعة استفسارك وتزويدك بالمعلومات الدقيقة الخاصة بحسابك."
+            )
 
         # --- Intent Detection (Bank & Critical) ---
         # Refined keywords to avoid general inquiries like "how to open an account"

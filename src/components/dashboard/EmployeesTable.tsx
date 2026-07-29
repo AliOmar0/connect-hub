@@ -30,23 +30,27 @@ interface EmployeesTableProps {
 const statusConfig = {
   online: {
     label: "Online",
-    className: "bg-chart-success text-chart-success",
-    dotClass: "bg-chart-success pulse-green",
+    className:
+      "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-emerald-500/20",
+    dotClass: "bg-emerald-500 pulse-green",
   },
   busy: {
     label: "Busy",
-    className: "bg-destructive text-destructive",
-    dotClass: "bg-destructive",
+    className:
+      "bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 border-rose-500/20",
+    dotClass: "bg-rose-500",
   },
   away: {
     label: "Away",
-    className: "bg-chart-warning text-chart-warning",
-    dotClass: "bg-chart-warning",
+    className:
+      "bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border-amber-500/20",
+    dotClass: "bg-amber-500",
   },
   offline: {
     label: "Offline",
-    className: "bg-muted-foreground text-muted-foreground",
-    dotClass: "bg-muted-foreground",
+    className:
+      "bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400 border-slate-500/20",
+    dotClass: "bg-slate-400",
   },
 };
 
@@ -175,9 +179,9 @@ export default function EmployeesTable({
                     </TableCell>
                     <TableCell>
                       <Badge
-                        variant="secondary"
+                        variant="outline"
                         className={cn(
-                          "text-[10px] font-medium",
+                          "text-[10px] font-medium px-2 py-0.5 rounded-full border",
                           statusConfig[status as keyof typeof statusConfig]
                             ?.className || statusConfig.offline.className,
                         )}

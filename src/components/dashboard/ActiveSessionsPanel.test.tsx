@@ -76,10 +76,11 @@ describe("ActiveSessionsPanel", () => {
     expect(screen.getByText(/Agent One/i)).toBeInTheDocument();
   });
 
-  it("displays 'Unassigned' when employee is null", () => {
+  it("displays 'Unassigned' when employee is null and session is waiting", () => {
     const sessions = [
       {
         ...mockSessions[0],
+        status: "waiting" as const,
         customer: mockCustomers[0],
         employee: null,
       },
@@ -88,6 +89,21 @@ describe("ActiveSessionsPanel", () => {
     render(<ActiveSessionsPanel sessions={sessions} />);
 
     expect(screen.getByText(/Unassigned/i)).toBeInTheDocument();
+  });
+
+  it("displays 'AI Agent' when employee is null and session is active", () => {
+    const sessions = [
+      {
+        ...mockSessions[0],
+        status: "active" as const,
+        customer: mockCustomers[0],
+        employee: null,
+      },
+    ];
+
+    render(<ActiveSessionsPanel sessions={sessions} />);
+
+    expect(screen.getByText(/AI Agent/i)).toBeInTheDocument();
   });
 
   it("displays 'Unknown' when customer is missing", () => {

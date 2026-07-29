@@ -180,6 +180,7 @@ export default function NotificationsPage() {
       // 20.4). Re-invalidate so the presentation reflects the new state.
       setReadStateAnnouncement(t("notifications.markedReadAnnouncement"));
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
     },
     onError: (_error, id) => {
       // Present a recoverable error and retain the unread state — the DB
@@ -208,6 +209,7 @@ export default function NotificationsPage() {
     onSuccess: () => {
       setReadStateAnnouncement(t("notifications.allMarkedReadAnnouncement"));
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
       notifySuccess(t("notifications.allMarkedRead"));
     },
     onError: () => {
@@ -231,6 +233,7 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
       notifySuccess(t("notifications.deleted"));
     },
     onError: (_error, id) => {

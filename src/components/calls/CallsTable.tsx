@@ -16,6 +16,7 @@ import {
   Play,
   MoreVertical,
   PhoneMissed,
+  Bot,
 } from "lucide-react";
 import { format, formatDuration, intervalToDuration } from "date-fns";
 import {
@@ -155,9 +156,16 @@ export default function CallsTable({ calls, loading }: CallsTableProps) {
                       </span>
                     </div>
                   ) : (
-                    <span className="text-sm text-muted-foreground">
-                      Unassigned
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6 border border-primary/30 bg-primary/10">
+                        <AvatarFallback className="text-[10px] text-primary font-bold flex items-center justify-center">
+                          <Bot className="h-3.5 w-3.5" />
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm font-medium text-primary">
+                        AI Voice Agent
+                      </span>
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="text-sm font-mono">

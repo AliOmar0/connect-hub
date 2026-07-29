@@ -151,7 +151,9 @@ export default function ActiveSessionsPanel({
             const phone = session.customer?.phone;
             const agentName = session.employee?.profile
               ? `${session.employee.profile.first_name || ""} ${session.employee.profile.last_name || ""}`.trim()
-              : null;
+              : session.status === "escalated" || session.status === "waiting"
+                ? "Unassigned"
+                : "AI Agent";
             const seconds = session.duration_seconds
               ? session.duration_seconds
               : Math.floor(
@@ -218,13 +220,7 @@ export default function ActiveSessionsPanel({
                       )}
                     >
                       <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          status.dot,
-                          (session.status === "active" ||
-                            session.status === "escalated") &&
-                            "animate-pulse",
-                        )}
+                        className={cn("h-1.5 w-1.5 rounded-full", status.dot)}
                       />
                       {status.label}
                     </Badge>
@@ -237,7 +233,7 @@ export default function ActiveSessionsPanel({
                       <span className="opacity-70">
                         {channel.label}
                         {phone ? ` · ${phone}` : ""}
-                        {agentName ? ` · ${agentName}` : " · Unassigned"}
+                        {agentName ? ` · ${agentName}` : ""}
                       </span>
                     )}
                   </p>

@@ -11,12 +11,15 @@
 // - The header, navigation, and main content keep the same relative positions
 //   on every authenticated page, which supports the shell-structure invariance
 //   property (Property 26).
-import { ReactNode, useMemo } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Menu } from "lucide-react";
 
 import { useAuth } from "@/hooks/useAuth";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import SkipLink from "./SkipLink";
 import AppShellHeader from "./AppShellHeader";
 import PrimaryNav, { PRIMARY_NAV_ITEMS, type NavItem } from "./PrimaryNav";
@@ -78,15 +81,26 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
   const isDesktop = breakpoint >= 1024;
   const navItems = usePrimaryNavItems();
 
-  // Breakpoint adaptation is pure responsive state (Requirements 7.7, 7.8):
-  // crossing a breakpoint only swaps which PrimaryNav variant is rendered — it
-  // never changes the route or remounts the page content. To guarantee that,
-  // the persistent-content wrapper (and its siblings) carry stable `key`s so
-  // React reconciles the `<main>` subtree by key. Even as the sidebar slot
-  // appears/disappears, the content subtree keeps the same fiber and its state
-  // (entered form data, scroll position, page context) survives. The whole
-  // adaptation is a synchronous re-render driven by CSS/responsive state, so it
-  // completes well within the 500ms budget with no page reload.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem("sidebar-collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("sidebar-collapsed", String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-background">
       {/* First focusable element; jumps keyboard focus to the main region. */}
@@ -98,21 +112,40 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           key="sidebar-nav"
           items={navItems}
           variant="sidebar"
-          className="w-64 shrink-0 border-r border-sidebar-border"
+          collapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebar}
+          showUserCard={true}
+          className={cn(
+            "shrink-0 border-r border-sidebar-border transition-all duration-300 ease-in-out",
+            sidebarCollapsed ? "w-16" : "w-64",
+          )}
         />
       )}
 
       <div key="shell-content" className="flex flex-1 flex-col overflow-hidden">
-        {/* Header row. Below 1024px it also carries the nav menu toggle so the
-            navigation stays reachable without a persistent sidebar. */}
-        <div className="flex items-center bg-card">
-          {!isDesktop && (
+        {/* Header row. Carries nav menu toggle for mobile & desktop collapse toggle */}
+        <div className="flex items-center bg-card border-b border-border">
+          {!isDesktop ? (
             <PrimaryNav
               key="menu-nav"
               items={navItems}
               variant="menu"
-              className="ms-2 shrink-0"
+              className="ms-3 shrink-0"
             />
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              className="ms-3 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label={
+                sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"
+              }
+              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              <Menu className="h-5 w-5" aria-hidden="true" />
+            </Button>
           )}
           <div className="min-w-0 flex-1">
             <AppShellHeader />

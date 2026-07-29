@@ -343,9 +343,10 @@ describe("SessionsTable", () => {
     );
   });
 
-  it("displays 'Unassigned' when employee is missing", () => {
+  it("displays 'Unassigned' when employee is missing and session is waiting", () => {
     const sessionWithoutEmployee: Session & { customer?: Customer } = {
       ...mockSessions[0],
+      status: "waiting",
       customer: mockCustomers[0],
     };
 
@@ -359,6 +360,25 @@ describe("SessionsTable", () => {
     );
 
     expect(screen.getByText("Unassigned")).toBeInTheDocument();
+  });
+
+  it("displays 'AI Agent' when employee is missing and session is active", () => {
+    const sessionWithoutEmployee: Session & { customer?: Customer } = {
+      ...mockSessions[0],
+      status: "active",
+      customer: mockCustomers[0],
+    };
+
+    render(
+      <SessionsTable
+        sessions={[sessionWithoutEmployee]}
+        loading={false}
+        onViewSession={mockOnViewSession}
+        onAssignAgent={mockOnAssignAgent}
+      />,
+    );
+
+    expect(screen.getByText("AI Agent")).toBeInTheDocument();
   });
 
   it("displays 'Unknown' when customer name is missing", () => {

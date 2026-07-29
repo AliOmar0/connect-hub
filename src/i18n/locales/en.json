@@ -345,6 +345,8 @@
       "satisfaction": "Satisfaction",
       "started": "Started",
       "unassigned": "Unassigned",
+      "aiAgent": "AI Agent",
+      "aiVoiceAgent": "AI Voice Agent",
       "unknown": "Unknown",
       "empty": "No sessions found"
     },

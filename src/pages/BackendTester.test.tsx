@@ -122,7 +122,7 @@ describe("BackendTester", () => {
     );
 
     // The API-endpoint chip uses surface + muted-foreground tokens.
-    const endpoint = screen.getByText("http://localhost:3001");
+    const endpoint = screen.getByText("http://localhost:5000");
     expect(endpoint.className).toContain("bg-muted");
     expect(endpoint.className).toContain("text-muted-foreground");
   });

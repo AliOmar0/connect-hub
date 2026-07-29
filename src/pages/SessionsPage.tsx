@@ -57,7 +57,7 @@ import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { toast } from "sonner";
 import ChatView from "@/components/messages/ChatView";
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+import { BACKEND_URL } from "@/lib/config";
 
 // All /api/v1/sessions* routes are protected by verify_jwt on the backend, so
 // every call needs the current Supabase access token attached (same pattern

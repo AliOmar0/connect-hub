@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   XCircle,
+  Bot,
 } from "lucide-react";
 import {
   format,
@@ -272,10 +273,22 @@ export default function SessionsTable({
                           {session.employee.profile.first_name}
                         </span>
                       </div>
-                    ) : (
+                    ) : session.status === "escalated" ||
+                      session.status === "waiting" ? (
                       <span className="text-sm text-muted-foreground">
                         {t("sessions.table.unassigned")}
                       </span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6 border border-primary/30 bg-primary/10">
+                          <AvatarFallback className="text-[10px] text-primary font-bold flex items-center justify-center">
+                            <Bot className="h-3.5 w-3.5" />
+                          </AvatarFallback>
+                        </Avatar>
+                        <span className="text-sm font-medium text-primary">
+                          {t("sessions.table.aiAgent")}
+                        </span>
+                      </div>
                     )}
                   </TableCell>
                   <TableCell>

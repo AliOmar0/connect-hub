@@ -140,7 +140,7 @@ describe("CallsTable", () => {
     expect(screen.getByText("outbound")).toBeInTheDocument();
   });
 
-  it("displays unassigned when employee is missing", () => {
+  it("displays AI Voice Agent when employee is missing", () => {
     const callWithoutEmployee: Call & { customer?: Customer } = {
       ...mockCalls[0],
       customer: mockCustomers[0],
@@ -148,7 +148,7 @@ describe("CallsTable", () => {
 
     render(<CallsTable calls={[callWithoutEmployee]} loading={false} />);
 
-    expect(screen.getByText("Unassigned")).toBeInTheDocument();
+    expect(screen.getByText("AI Voice Agent")).toBeInTheDocument();
   });
 
   it("displays unknown customer when customer is missing", () => {
