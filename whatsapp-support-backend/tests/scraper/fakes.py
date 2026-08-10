@@ -179,7 +179,8 @@ def make_fake_create_version_record(store: dict):
     queryable afterward regardless of any injected indexing failure."""
 
     async def _fake_create_version_record(
-        document_id, version_number, checksum, file_size, file_type, uploader_id
+        document_id, version_number, checksum, file_size, file_type, uploader_id,
+        content=None,
     ):
         row = {
             "id": str(uuid4()),
@@ -189,6 +190,7 @@ def make_fake_create_version_record(store: dict):
             "file_size": file_size,
             "file_type": file_type,
             "uploader_id": str(uploader_id) if uploader_id else None,
+            "content": content,
         }
         store.setdefault("knowledge_document_versions", []).append(row)
         return row

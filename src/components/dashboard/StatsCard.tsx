@@ -117,7 +117,7 @@ export default function StatsCard({
               ) : (
                 <TrendingDown className="h-3 w-3" />
               )}
-              {Math.abs(trend.value)}%
+              {Math.abs(trend.value).toFixed(2)}%
             </div>
           )}
         </div>

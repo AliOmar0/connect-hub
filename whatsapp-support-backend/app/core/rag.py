@@ -839,11 +839,9 @@ def enforce_word_limit(text: str, limit: int = WORD_LIMIT) -> str:
     if len(words) <= limit:
         return text
     
-    # Truncate and add indicator
     truncated = ' '.join(words[:limit])
-    # Add a subtle indicator in Arabic
-    truncated += " …"
-    
+    truncated += "…"
+
     return truncated
 
 

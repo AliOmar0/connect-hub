@@ -235,6 +235,7 @@ async def ingest_page(
             file_size=len(main_text.encode("utf-8")),
             file_type="scraped_html",
             uploader_id=None,
+            content=main_text,
         )
         version_id = UUID(version_record["id"])
 

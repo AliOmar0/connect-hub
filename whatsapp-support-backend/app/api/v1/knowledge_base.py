@@ -170,9 +170,13 @@ async def create_version_record(
     checksum: str,
     file_size: int,
     file_type: str,
-    uploader_id: Optional[UUID]
+    uploader_id: Optional[UUID],
+    content: Optional[str] = None,
 ) -> dict:
-    """Create a new version record in the database."""
+    """Create a new version record in the database.
+
+    `content` stores the raw extracted text so that rollback / reindex can
+    rebuild Qdrant chunks without needing the original file."""
     data = {
         "id": str(uuid4()),
         "document_id": str(document_id),
@@ -182,11 +186,14 @@ async def create_version_record(
         "file_type": file_type,
         "uploader_id": str(uploader_id) if uploader_id else None,
         "status": "pending",
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
     }
-    
+
+    if content is not None:
+        data["content"] = content
+
     response = supabase.table("knowledge_document_versions").insert(data).execute()
-    
+
     if response.data:
         return response.data[0]
     raise Exception("Failed to create version record")
@@ -329,10 +336,16 @@ async def index_document_task(
         try:
             await update_version_status(version_id, "indexing")
             await update_document_status(document_id, "indexing")
-            
+
             # Initialize Qdrant
             init_qdrant()
-            
+
+            # Delete old chunks for this document before indexing new ones.
+            # Without this, re-indexing (e.g. on re-crawl with changed content)
+            # would leave stale chunks from the previous version in Qdrant,
+            # causing search to return outdated data alongside the new chunks.
+            delete_document_chunks(str(document_id))
+
             # Index the document. index_document returns
             # (chunks_indexed, was_skipped_due_to_checksum).
             num_chunks, was_skipped = index_document(
@@ -456,7 +469,8 @@ async def upload_document(
             checksum=checksum,
             file_size=len(content),
             file_type=file_type,
-            uploader_id=uploader_id
+            uploader_id=uploader_id,
+            content=text,
         )
         version_id = UUID(version_record["id"])
     except Exception as e:
@@ -724,38 +738,65 @@ async def rollback_document(
     """
     # Get the version
     version = await get_version_by_number(document_id, version_number)
-    
+
     if not version:
         raise HTTPException(
             status_code=404,
             detail=f"Version {version_number} not found for document"
         )
-    
+
     if version["status"] != "indexed":
         raise HTTPException(
             status_code=400,
             detail="Can only rollback to an indexed version"
         )
-    
-    # Delete current chunks
+
+    # The stored content is required to rebuild Qdrant chunks for this version.
+    stored_content = version.get("content")
+    if not stored_content:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Version {version_number} has no stored content to reindex. "
+                "Re-upload the document or re-crawl the page to index it again."
+            ),
+        )
+
+    # Delete current chunks before re-indexing the rolled-back version.
     delete_document_chunks(str(document_id))
-    
-    # Note: For a full rollback, we would need to store the original text
-    # or retrieve it from a content store. For this implementation,
-    # we assume the version metadata contains what we need.
-    
-    # Update current version
+
+    # Update the version status so the background task can run.
+    await update_version_status(UUID(version["id"]), "pending")
+
+    # Build metadata from the version record.
+    metadata = {
+        "title": version.get("file_type", ""),
+        "file_type": version.get("file_type"),
+        "checksum": version.get("checksum"),
+        "source": "rollback",
+    }
+
+    # Queue re-indexing of the rolled-back version's stored content.
+    background_tasks.add_task(
+        index_document_task,
+        document_id,
+        UUID(version["id"]),
+        stored_content,
+        metadata,
+    )
+
+    # Update current version pointer immediately.
     await update_document_status(
         document_id,
-        "indexed",
+        "indexing",
         current_version_id=UUID(version["id"])
     )
-    
+
     return ReindexResponse(
         document_id=document_id,
         status="rolled_back",
-        chunks_indexed=version.get("indexed_chunks", 0),
-        message=f"Successfully rolled back to version {version_number}"
+        chunks_indexed=0,
+        message=f"Rolling back to version {version_number} (indexing in progress)",
     )
 
 
@@ -765,47 +806,71 @@ async def reindex_document(
     background_tasks: BackgroundTasks
 ):
     """
-    Trigger reindexing of a document.
+    Trigger reindexing of a document from its stored content.
     This is useful if the embedding model changed or indexing failed.
     """
     doc = await get_document_by_id(document_id)
-    
+
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    
+
     current_version_id = doc.get("current_version_id")
-    
+
     if not current_version_id:
         raise HTTPException(
             status_code=400,
             detail="Document has no indexed version to reindex"
         )
-    
+
     # Get current version
     version_response = supabase.table("knowledge_document_versions")\
         .select("*")\
         .eq("id", current_version_id)\
         .execute()
-    
+
     if not version_response.data:
         raise HTTPException(status_code=404, detail="Current version not found")
-    
+
     version = version_response.data[0]
-    
-    # Delete existing chunks
+
+    # The stored content is required to rebuild Qdrant chunks.
+    stored_content = version.get("content")
+    if not stored_content:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Current version has no stored content to reindex. "
+                "Re-upload the document or re-crawl the page to index it again."
+            ),
+        )
+
+    # Delete existing chunks before re-indexing.
     delete_document_chunks(str(document_id))
-    
-    # Update status
+
+    # Reset status so the background task transitions pending -> indexing -> indexed.
     await update_version_status(UUID(version["id"]), "pending")
     await update_document_status(document_id, "pending")
-    
-    # Note: For actual reindexing, we would need the original text
-    # This is a placeholder - in production, store text in Supabase Storage
-    
+
+    metadata = {
+        "title": doc.get("title", ""),
+        "file_type": version.get("file_type"),
+        "checksum": version.get("checksum"),
+        "source": "reindex",
+    }
+
+    # Queue the actual re-indexing work.
+    background_tasks.add_task(
+        index_document_task,
+        document_id,
+        UUID(version["id"]),
+        stored_content,
+        metadata,
+    )
+
     return {
         "document_id": document_id,
-        "status": "pending",
-        "message": "Document queued for reindexing"
+        "status": "indexing",
+        "message": "Document queued for reindexing",
     }
 
 
@@ -1158,6 +1223,7 @@ async def sync_session_type_knowledge(session_type_id: UUID):
         file_size=len(text.encode("utf-8")),
         file_type="session_type_knowledge",
         uploader_id=None,
+        content=text,
     )
     version_id = UUID(version_record["id"])
 

@@ -23,7 +23,7 @@ describe("StatsCard", () => {
       />,
     );
 
-    expect(screen.getByText("12.5%")).toBeInTheDocument();
+    expect(screen.getByText("12.50%")).toBeInTheDocument();
   });
 
   it("renders with subtitle", () => {
