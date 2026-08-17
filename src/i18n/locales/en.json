@@ -697,7 +697,7 @@
     "empty": "No crawl jobs yet.",
     "emptyDescription": "Trigger a crawl to start building the knowledge base from the website.",
     "loadErrorTitle": "Couldn't load crawl jobs",
-    "backendMissing": "Scraper backend is not reachable. Configure VITE_SCRAPER_API_URL.",
+    "backendMissing": "Can't reach the scraper service. Configure VITE_BACKEND_URL with the public FastAPI HTTPS origin.",
     "notCompleted": "In progress"
   },
   "analytics": {

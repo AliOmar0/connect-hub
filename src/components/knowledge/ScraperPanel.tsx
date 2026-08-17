@@ -2,7 +2,13 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PlayCircle, Loader2, History, FileSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -141,20 +147,18 @@ export default function ScraperPanel() {
   const isJobRunning = !isCurrentJobLoading && currentJob?.status === "running";
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">
-            {t("scraper.title")}
-          </h2>
-          <p className="text-muted-foreground">{t("scraper.subtitle")}</p>
+    <Card>
+      <CardHeader className="gap-4 sm:flex-row sm:items-start sm:justify-between sm:space-y-0">
+        <div className="space-y-1.5">
+          <CardTitle className="text-lg">{t("scraper.title")}</CardTitle>
+          <CardDescription>{t("scraper.subtitle")}</CardDescription>
         </div>
         {canTrigger && (
           <Button
             onClick={() => triggerMutation.mutate()}
             disabled={triggerMutation.isPending || isJobRunning}
             aria-busy={triggerMutation.isPending}
-            className="min-h-[44px]"
+            className="min-h-[44px] shrink-0"
           >
             {triggerMutation.isPending ? (
               <Loader2
@@ -166,19 +170,25 @@ export default function ScraperPanel() {
             )}
             {triggerMutation.isPending
               ? t("scraper.triggering")
-              : t("scraper.triggerNow")}
+              : isJobRunning
+                ? t("scraper.alreadyRunning")
+                : t("scraper.triggerNow")}
           </Button>
         )}
-      </div>
+      </CardHeader>
 
-      {isJobRunning && currentJob && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
+      <CardContent className="space-y-6">
+        {isJobRunning && currentJob && (
+          <section
+            aria-labelledby="scraper-current-job-title"
+            className="rounded-lg border border-border bg-muted/30 p-4"
+          >
+            <h3
+              id="scraper-current-job-title"
+              className="mb-4 text-sm font-semibold text-foreground"
+            >
               {t("scraper.currentJobTitle")}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+            </h3>
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>
                 <p className="text-2xl font-semibold text-foreground">
@@ -205,15 +215,13 @@ export default function ScraperPanel() {
                 </p>
               </div>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          </section>
+        )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t("scraper.history")}</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <section aria-labelledby="scraper-history-title" className="space-y-3">
+          <h3 id="scraper-history-title" className="text-sm font-semibold">
+            {t("scraper.history")}
+          </h3>
           <AsyncBoundary
             status={historyStatus}
             skeleton={<ScraperHistorySkeleton />}
@@ -277,9 +285,9 @@ export default function ScraperPanel() {
               </TableBody>
             </Table>
           </AsyncBoundary>
-        </CardContent>
-      </Card>
-    </div>
+        </section>
+      </CardContent>
+    </Card>
   );
 }
 

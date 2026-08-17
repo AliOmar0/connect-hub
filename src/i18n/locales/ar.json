@@ -697,7 +697,7 @@
     "empty": "لا توجد مهام جمع بعد.",
     "emptyDescription": "ابدأ مهمة جمع لبناء قاعدة المعرفة من الموقع.",
     "loadErrorTitle": "تعذّر تحميل مهام الجمع",
-    "backendMissing": "خدمة جامع البيانات غير متاحة. يرجى ضبط VITE_SCRAPER_API_URL.",
+    "backendMissing": "تعذّر الوصول إلى خدمة جمع البيانات. اضبط VITE_BACKEND_URL على رابط FastAPI العام والآمن.",
     "notCompleted": "قيد التنفيذ"
   },
   "analytics": {

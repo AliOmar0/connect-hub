@@ -1,29 +1,48 @@
 // Centralized runtime config for frontend API targets.
-// Override via Vite env vars (VITE_*) at build time.
+// FastAPI services intentionally share one origin so deployment settings cannot drift.
 
-// FastAPI backend (sessions, policy, knowledge base, scraper).
-export const BACKEND_URL =
-  import.meta.env.VITE_BACKEND_URL || "http://localhost:8000";
+function withoutTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, "");
+}
 
-// Node voice/API server (signed media URLs, voice, etc.).
-export const NODE_API_URL =
-  import.meta.env.VITE_NODE_API_URL || "http://localhost:3001";
+function isPublicHttpsUrl(value?: string): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      !["localhost", "127.0.0.1", "::1"].includes(url.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
 
-// Knowledge-base admin API base. Person 1 owns the backend; this is the agreed
-// contract path. Falls back to the FastAPI backend.
-export const KB_API_URL =
-  import.meta.env.VITE_KB_API_URL || `${BACKEND_URL}/api/v1/kb`;
+const configuredBackendUrl = import.meta.env.VITE_BACKEND_URL;
+const configuredNodeUrl = import.meta.env.VITE_NODE_API_URL;
 
-// Scraper admin API base (bank website crawler). Same backend, own prefix.
-export const SCRAPER_API_URL =
-  import.meta.env.VITE_SCRAPER_API_URL || `${BACKEND_URL}/api/v1/scraper`;
+// Node is the public FastAPI gateway in single-tunnel deployments. If a stale
+// production VITE_BACKEND_URL still points to localhost, prefer the public Node
+// origin; its narrow /api/v1 proxy preserves FastAPI authentication and roles.
+const backendOrigin =
+  import.meta.env.PROD &&
+  !isPublicHttpsUrl(configuredBackendUrl) &&
+  isPublicHttpsUrl(configuredNodeUrl)
+    ? configuredNodeUrl
+    : configuredBackendUrl || "http://localhost:8000";
 
-// Knowledge-base document/session-type sync API base (FastAPI backend's
-// /api/v1/knowledge-base/* routes - distinct from KB_API_URL's /api/v1/kb/*
-// frontend-contract aliases above). Same backend, own prefix.
-export const KNOWLEDGE_BASE_API_URL =
-  import.meta.env.VITE_KNOWLEDGE_BASE_API_URL ||
-  `${BACKEND_URL}/api/v1/knowledge-base`;
+export const BACKEND_URL = withoutTrailingSlash(backendOrigin);
+
+// Node voice/API server (signed media URLs, voice, FastAPI gateway).
+export const NODE_API_URL = withoutTrailingSlash(
+  configuredNodeUrl || "http://localhost:3001",
+);
+
+// Knowledge-base, scraper, and session-type sync APIs all live on FastAPI.
+// Deriving every path from one origin prevents stale per-service Vercel values.
+export const KB_API_URL = `${BACKEND_URL}/api/v1/kb`;
+export const SCRAPER_API_URL = `${BACKEND_URL}/api/v1/scraper`;
+export const KNOWLEDGE_BASE_API_URL = `${BACKEND_URL}/api/v1/knowledge-base`;
 
 // SLA windows (seconds) for the escalation queue (G28). Business vs out-of-hours.
 export const SLA_BUSINESS_HOURS_SECONDS = Number(

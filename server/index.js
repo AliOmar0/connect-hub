@@ -134,6 +134,69 @@ app.use(responseFormatterMiddleware);
 registerObservabilityRoutes(app);
 app.use(ipRateLimiter);
 
+// Public gateway for browser-facing FastAPI services. The voice deployment
+// exposes this Node server through one HTTPS tunnel while FastAPI remains on
+// the private loopback interface. Preserve the user's bearer token so FastAPI
+// continues to enforce its own role checks; this is routing, not an auth bypass.
+const FASTAPI_PROXY_PATH =
+  /^\/api\/v1\/(?:kb|scraper|knowledge-base)(?:\/.*)?$/;
+
+app.all(
+  FASTAPI_PROXY_PATH,
+  asyncHandler(async (req, res) => {
+    const backendUrl = (
+      process.env.AI_BACKEND_URL || "http://127.0.0.1:8000"
+    ).replace(/\/+$/, "");
+    const targetUrl = `${backendUrl}${req.originalUrl}`;
+    const headers = {};
+
+    for (const [name, value] of Object.entries(req.headers)) {
+      if (
+        value === undefined ||
+        ["host", "connection", "content-length", "transfer-encoding"].includes(
+          name.toLowerCase(),
+        )
+      ) {
+        continue;
+      }
+      headers[name] = Array.isArray(value) ? value.join(", ") : value;
+    }
+
+    const canHaveBody = !["GET", "HEAD"].includes(req.method);
+    const contentType = req.get("content-type") || "";
+    let body;
+    if (canHaveBody && contentType.startsWith("multipart/form-data")) {
+      body = req;
+    } else if (canHaveBody && req.body !== undefined) {
+      body = contentType.includes("application/json")
+        ? JSON.stringify(req.body)
+        : new URLSearchParams(req.body).toString();
+    }
+
+    let upstream;
+    try {
+      upstream = await fetch(targetUrl, {
+        method: req.method,
+        headers,
+        body,
+        duplex: body === req ? "half" : undefined,
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (error) {
+      throw new ExternalServiceError("FastAPI", error.message);
+    }
+
+    for (const name of ["content-type", "content-disposition", "retry-after"]) {
+      const value = upstream.headers.get(name);
+      if (value) res.set(name, value);
+    }
+
+    if (upstream.status === 204) return res.status(204).end();
+    const payload = Buffer.from(await upstream.arrayBuffer());
+    return res.status(upstream.status).send(payload);
+  }),
+);
+
 // --- Vapi (voice provider) -------------------------------------------------
 // Vapi owns the realtime voice pipeline: telephony (inbound + outbound), speech
 // recognition, and text-to-speech. This server is Vapi's "brain": Vapi calls our
@@ -197,7 +260,7 @@ async function getAIResponse(userMessage, history = [], meta = {}) {
   // the FastAPI backend. The voice channel does NOT hold bank facts or policy
   // prompts; it delegates to /api/v1/assistant/reply so WhatsApp, web chat and
   // voice all receive the SAME central decision and a validated, masked reply.
-  const backendUrl = process.env.AI_BACKEND_URL || "http://127.0.0.1:3001";
+  const backendUrl = process.env.AI_BACKEND_URL || "http://127.0.0.1:8000";
   try {
     const serviceToken = mintServiceToken();
     const headers = { "Content-Type": "application/json" };
@@ -677,7 +740,7 @@ if (TEST_ENDPOINTS_ENABLED) {
     // server only delegates to it). Ask it for the live model/provider so the
     // tester shows the truth (e.g. deepseek-v4-pro) instead of the local
     // OpenRouter fallback display value.
-    const aiBackendUrl = process.env.AI_BACKEND_URL || "http://127.0.0.1:3001";
+    const aiBackendUrl = process.env.AI_BACKEND_URL || "http://127.0.0.1:8000";
     let aiBackend = {
       reachable: false,
       url: aiBackendUrl,
@@ -887,7 +950,6 @@ app.post("/webhook/whatsapp", verifyWhatsAppSignature, async (req, res) => {
 // --- Global Error Handler -------------------------------------------------
 // Must be registered AFTER all routes so it catches errors from any handler
 
-// eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   // Log the error with context
   req.log?.error(
