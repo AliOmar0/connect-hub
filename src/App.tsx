@@ -18,7 +18,6 @@ import NotificationsPage from "./pages/NotificationsPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import QueuePage from "./pages/QueuePage";
 import KnowledgePage from "./pages/KnowledgePage";
-import BackendTester from "./pages/BackendTester";
 import NotFound from "./pages/NotFound";
 
 import EscalationListener from "@/components/EscalationListener";
@@ -40,16 +39,6 @@ const App = () => (
               <Routes>
                 <Route path="/auth" element={<AuthPage />} />
                 <Route
-                  path="/backend-test"
-                  element={
-                    <ProtectedRoute
-                      allowedRoles={["admin", "supervisor", "manager"]}
-                    >
-                      <BackendTester />
-                    </ProtectedRoute>
-                  }
-                />
-                <Route
                   path="/"
                   element={
                     <ProtectedRoute>
@@ -61,7 +50,13 @@ const App = () => (
                   path="/dashboard"
                   element={
                     <ProtectedRoute
-                      allowedRoles={["supervisor", "manager", "admin"]}
+                      allowedRoles={[
+                        "admin",
+                        "supervisor",
+                        "manager",
+                        "agent",
+                        "viewer",
+                      ]}
                     >
                       <Index />
                     </ProtectedRoute>
@@ -107,7 +102,13 @@ const App = () => (
                   path="/employees"
                   element={
                     <ProtectedRoute
-                      allowedRoles={["supervisor", "manager", "admin"]}
+                      allowedRoles={[
+                        "admin",
+                        "supervisor",
+                        "manager",
+                        "agent",
+                        "viewer",
+                      ]}
                     >
                       <EmployeesPage />
                     </ProtectedRoute>
@@ -117,7 +118,13 @@ const App = () => (
                   path="/analytics"
                   element={
                     <ProtectedRoute
-                      allowedRoles={["supervisor", "manager", "admin"]}
+                      allowedRoles={[
+                        "admin",
+                        "supervisor",
+                        "manager",
+                        "agent",
+                        "viewer",
+                      ]}
                     >
                       <AnalyticsPage />
                     </ProtectedRoute>
@@ -127,7 +134,13 @@ const App = () => (
                   path="/settings"
                   element={
                     <ProtectedRoute
-                      allowedRoles={["supervisor", "manager", "admin"]}
+                      allowedRoles={[
+                        "admin",
+                        "supervisor",
+                        "manager",
+                        "agent",
+                        "viewer",
+                      ]}
                     >
                       <SettingsPage />
                     </ProtectedRoute>

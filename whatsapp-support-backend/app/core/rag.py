@@ -587,6 +587,59 @@ def index_document(
     return len(points), False
 
 
+# Payload keys that describe where a chunk's content came from. They are set
+# once at ingestion (see app/core/scraper/ingestor.py) and live ONLY in the
+# Qdrant payload - `knowledge_document_versions` has no metadata column - so a
+# reindex that rebuilds chunks from stored text must carry them forward
+# explicitly or the provenance is lost for good. `build_context_block` reads
+# source_url/source_description to let the assistant cite the bank page
+# (Requirements 6.4, 8.4, 8.5).
+PROVENANCE_KEYS = (
+    "source",
+    "source_url",
+    "source_title",
+    "source_description",
+    "structured_fields",
+)
+
+
+def get_document_provenance(document_id: str) -> Dict[str, Any]:
+    """Read the provenance metadata off an existing chunk of `document_id`.
+
+    Call this BEFORE `delete_document_chunks`, since deleting the chunks
+    destroys the only copy. Returns an empty dict when the document has no
+    chunks or carries no provenance keys (e.g. a plain file upload).
+    """
+    try:
+        client = _get_client()
+    except Exception as e:
+        logger.warning(f"Could not read provenance for {document_id}: {e}")
+        return {}
+
+    try:
+        result = client.scroll(
+            collection_name=rag_config.qdrant_collection,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="document_id", match=MatchValue(value=document_id)
+                    )
+                ]
+            ),
+            limit=1,
+            with_payload=True,
+        )
+    except Exception as e:
+        logger.warning(f"Could not read provenance for {document_id}: {e}")
+        return {}
+
+    if not result[0]:
+        return {}
+
+    payload = result[0][0].payload or {}
+    return {k: payload[k] for k in PROVENANCE_KEYS if payload.get(k) is not None}
+
+
 def delete_document_chunks(document_id: str) -> int:
     """
     Delete all chunks for a document.
@@ -669,8 +722,10 @@ def retrieve(
         )
         return []
     
-    top_k = top_k or rag_config.top_k
-    threshold = threshold or rag_config.similarity_threshold
+    top_k = rag_config.top_k if top_k is None else top_k
+    threshold = (
+        rag_config.similarity_threshold if threshold is None else threshold
+    )
     
     client = _get_client()
     collection_name = rag_config.qdrant_collection
@@ -772,7 +827,9 @@ def retrieve_with_logging(
         chunks=chunks,
         query_redacted=query_redacted,
         total_latency_ms=latency_ms,
-        threshold_used=threshold or rag_config.similarity_threshold,
+        threshold_used=(
+            rag_config.similarity_threshold if threshold is None else threshold
+        ),
         fallback_triggered=len(chunks) == 0
     )
     
@@ -790,16 +847,20 @@ def log_retrieval(result: RetrievalResult, session_id: Optional[str] = None) -> 
         result: RetrievalResult to log
         session_id: Optional session ID
     """
+    # Keys MUST match the rag_retrieval_logs columns (see migration
+    # 20260621000000_create_knowledge_base_tables). This dict previously used
+    # "timestamp" and "fallback", neither of which is a column, so every insert
+    # failed with PGRST204 and the FR-06 audit trail silently recorded nothing.
+    # `created_at` is left out on purpose - the column defaults to now().
     log_entry = {
-        "timestamp": datetime.utcnow().isoformat(),
         "query_redacted": result.query_redacted,
         "num_results": len(result.chunks),
         "document_ids": [c.document_id for c in result.chunks],
         "scores": [c.score for c in result.chunks],
         "latency_ms": result.total_latency_ms,
         "threshold": result.threshold_used,
-        "fallback": result.fallback_triggered,
-        "session_id": session_id
+        "fallback_triggered": result.fallback_triggered,
+        "session_id": session_id,
     }
     
     logger.info(f"RAG Retrieval: {log_entry}")
@@ -1012,7 +1073,9 @@ def retrieve_with_audit(
     # RAG returned no results - try JSON knowledge base fallback
     if use_json_fallback:
         logger.info(f"RAG returned no results. Falling back to JSON knowledge base for query: {query[:50]}...")
-        json_results = retrieve_from_json_knowledge_base(query, top_n=top_k or rag_config.top_k)
+        json_results = retrieve_from_json_knowledge_base(
+            query, top_n=rag_config.top_k if top_k is None else top_k
+        )
         
         if json_results:
             # Convert JSON results to RetrievedChunk format

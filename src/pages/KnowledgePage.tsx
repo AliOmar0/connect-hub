@@ -11,6 +11,7 @@ import {
   Clock,
   AlertTriangle,
   Loader2,
+  Eye,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,6 +31,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import ScraperPanel from "@/components/knowledge/ScraperPanel";
@@ -37,7 +39,7 @@ import SessionTypesPanel from "@/components/knowledge/SessionTypesPanel";
 import type { ViewStatus } from "@/types/presentation";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAsyncAction } from "@/hooks/use-async-action";
-import { KB_API_URL, apiFetch } from "@/lib/config";
+import { KB_API_URL, apiFetch, BACKEND_URL } from "@/lib/config";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +73,33 @@ interface KbVersion {
   note?: string;
 }
 
+interface KbDocumentDetail {
+  id: string;
+  title: string;
+  description?: string | null;
+  current_version_id?: string | null;
+  current_version_number: number;
+  total_versions: number;
+  status: string;
+  uploader_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  versions: Array<{
+    id: string;
+    document_id: string;
+    version_number: number;
+    checksum: string;
+    file_size: number;
+    file_type: string;
+    uploader_id?: string | null;
+    status: string;
+    indexed_chunks: number;
+    error_message?: string | null;
+    created_at: string;
+    indexed_at?: string | null;
+  }>;
+}
+
 // Every status pairs a design-token color with a non-color cue (icon + label)
 // so meaning is never carried by color alone (Requirements 2.5, 3.5).
 const statusConfig: Record<
@@ -101,6 +130,7 @@ export default function KnowledgePage() {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [historyDoc, setHistoryDoc] = useState<KbDocument | null>(null);
+  const [detailDocId, setDetailDocId] = useState<string | null>(null);
 
   const {
     data: documents = [],
@@ -158,15 +188,24 @@ export default function KnowledgePage() {
         method: "POST",
         headers: await authHeaders(),
       });
-      if (!res.ok) throw new Error("Re-index failed");
+      if (!res.ok) {
+        let msg = "Re-index failed";
+        try {
+          const body = await res.json();
+          if (body.detail) msg = body.detail;
+        } catch {
+          // response body wasn't JSON; keep default message
+        }
+        throw new Error(msg);
+      }
       return res.json();
     },
     onSuccess: () => {
       notifySuccess(t("kb.reindexSuccess"));
       queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
     },
-    onError: (_error, id) => {
-      notifyError(t("kb.operationFailed"), {
+    onError: (error: Error, id) => {
+      notifyError(error.message || t("kb.operationFailed"), {
         action: {
           label: t("feedback.retry"),
           onClick: () => reindexMutation.mutate(id),
@@ -185,7 +224,16 @@ export default function KnowledgePage() {
         },
         body: JSON.stringify({ version }),
       });
-      if (!res.ok) throw new Error("Rollback failed");
+      if (!res.ok) {
+        let msg = "Rollback failed";
+        try {
+          const body = await res.json();
+          if (body.detail) msg = body.detail;
+        } catch {
+          // response body wasn't JSON; keep default message
+        }
+        throw new Error(msg);
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -193,8 +241,8 @@ export default function KnowledgePage() {
       setHistoryDoc(null);
       queryClient.invalidateQueries({ queryKey: ["kb-documents"] });
     },
-    onError: (_error, variables) => {
-      notifyError(t("kb.operationFailed"), {
+    onError: (error: Error, variables) => {
+      notifyError(error.message || t("kb.operationFailed"), {
         action: {
           label: t("feedback.retry"),
           onClick: () => rollbackMutation.mutate(variables),
@@ -302,7 +350,11 @@ export default function KnowledgePage() {
                     const StatusIcon = status.Icon;
                     const isScraped = doc.source === "scraper";
                     return (
-                      <TableRow key={doc.id}>
+                      <TableRow
+                        key={doc.id}
+                        className="cursor-pointer"
+                        onClick={() => setDetailDocId(doc.id)}
+                      >
                         <TableCell className="font-medium">
                           <span className="flex items-start gap-2">
                             <FileText
@@ -324,6 +376,7 @@ export default function KnowledgePage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-xs text-primary underline-offset-2 hover:underline"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
                                   {doc.source_url}
                                 </a>
@@ -355,7 +408,10 @@ export default function KnowledgePage() {
                               className="min-h-[44px] min-w-[44px]"
                               title={t("kb.reindex")}
                               aria-label={t("kb.reindex")}
-                              onClick={() => reindexMutation.mutate(doc.id)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                reindexMutation.mutate(doc.id);
+                              }}
                             >
                               <RefreshCw
                                 className="h-4 w-4"
@@ -368,7 +424,10 @@ export default function KnowledgePage() {
                               className="min-h-[44px] min-w-[44px]"
                               title={t("kb.versionHistory")}
                               aria-label={t("kb.versionHistory")}
-                              onClick={() => setHistoryDoc(doc)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setHistoryDoc(doc);
+                              }}
                             >
                               <History className="h-4 w-4" aria-hidden="true" />
                             </Button>
@@ -394,6 +453,11 @@ export default function KnowledgePage() {
         onRollback={(version) =>
           historyDoc && rollbackMutation.mutate({ id: historyDoc.id, version })
         }
+      />
+
+      <DocumentDetailDialog
+        docId={detailDocId}
+        onClose={() => setDetailDocId(null)}
       />
     </DashboardLayout>
   );
@@ -477,6 +541,186 @@ function VersionHistoryDialog({
               </div>
             ))}
           </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DocumentDetailDialog({
+  docId,
+  onClose,
+}: {
+  docId: string | null;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation();
+
+  const { data: detail, isLoading } = useQuery({
+    queryKey: ["kb-document-detail", docId],
+    enabled: !!docId,
+    queryFn: async (): Promise<KbDocumentDetail> => {
+      const res = await apiFetch(
+        `${BACKEND_URL}/api/v1/knowledge-base/${docId}`,
+        {
+          headers: await authHeaders(),
+        },
+      );
+      if (!res.ok) throw new Error("Document detail unavailable");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  const status = detail
+    ? (statusConfig[detail.status as KbDocument["status"]] ??
+      statusConfig.processing)
+    : null;
+
+  return (
+    <Dialog open={!!docId} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{t("kb.documentDetail")}</DialogTitle>
+          <DialogDescription>
+            {t("kb.documentDetailDescription")}
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-3 py-4" aria-hidden="true">
+            <Skeleton className="h-5 w-1/2" />
+            <Skeleton className="h-5 w-1/3" />
+            <Skeleton className="h-5 w-2/3" />
+          </div>
+        ) : detail ? (
+          <div className="space-y-4 py-2">
+            {/* Basic info */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">{t("kb.name")}</p>
+                <p className="mt-1 font-medium">{detail.title}</p>
+              </div>
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("kb.status")}
+                </p>
+                <div className="mt-1">
+                  {status && (
+                    <Badge
+                      variant="outline"
+                      className={cn("gap-1", status.className)}
+                    >
+                      <status.Icon className="h-3 w-3" aria-hidden="true" />
+                      {t(status.labelKey)}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("kb.version")}
+                </p>
+                <p className="mt-1 font-medium">
+                  v{detail.current_version_number}
+                </p>
+              </div>
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("kb.totalVersions")}
+                </p>
+                <p className="mt-1 font-medium">{detail.total_versions}</p>
+              </div>
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("kb.created")}
+                </p>
+                <p className="mt-1 font-medium">
+                  {new Date(detail.created_at).toLocaleString()}
+                </p>
+              </div>
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("kb.updated")}
+                </p>
+                <p className="mt-1 font-medium">
+                  {new Date(detail.updated_at).toLocaleString()}
+                </p>
+              </div>
+            </div>
+
+            {/* Description */}
+            {detail.description && (
+              <div className="rounded-md border border-border p-3">
+                <p className="text-xs text-muted-foreground">
+                  {t("kb.description")}
+                </p>
+                <p className="mt-1 text-sm">{detail.description}</p>
+              </div>
+            )}
+
+            {/* Versions list */}
+            {detail.versions.length > 0 && (
+              <div>
+                <h4 className="mb-2 text-sm font-semibold">
+                  {t("kb.versions")}
+                </h4>
+                <div className="space-y-2">
+                  {detail.versions.map((v) => {
+                    const vStatus =
+                      statusConfig[v.status as KbDocument["status"]] ??
+                      statusConfig.processing;
+                    const VStatusIcon = vStatus.Icon;
+                    return (
+                      <div
+                        key={v.id}
+                        className="flex flex-col gap-1 rounded-md border border-border p-3"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">
+                              v{v.version_number}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              className={cn("gap-1", vStatus.className)}
+                            >
+                              <VStatusIcon
+                                className="h-3 w-3"
+                                aria-hidden="true"
+                              />
+                              {t(vStatus.labelKey)}
+                            </Badge>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(v.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <span>{v.file_type.toUpperCase()}</span>
+                          <span>{(v.file_size / 1024).toFixed(1)} KB</span>
+                          {v.indexed_chunks > 0 && (
+                            <span>
+                              {v.indexed_chunks} {t("kb.chunks")}
+                            </span>
+                          )}
+                        </div>
+                        {v.error_message && (
+                          <p className="text-xs text-status-error">
+                            {v.error_message}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="py-4 text-muted-foreground">
+            {t("kb.documentNotFound")}
+          </p>
         )}
       </DialogContent>
     </Dialog>

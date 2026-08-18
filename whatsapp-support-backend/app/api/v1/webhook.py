@@ -73,6 +73,18 @@ from collections import OrderedDict
 _processed_message_ids: "OrderedDict[str, None]" = OrderedDict()
 _MAX_PROCESSED_IDS = 10000  # Prevent unbounded memory growth
 
+
+def _remember_message_id(message_id: str) -> None:
+    """Record `message_id` as processed, evicting oldest entries past the cap.
+
+    Kept separate from the webhook handler so the memory bound is testable on
+    its own — the eviction used to live inline in `extract_webhook`, where no
+    test could reach it without mocking an entire inbound request.
+    """
+    _processed_message_ids[message_id] = None
+    while len(_processed_message_ids) > _MAX_PROCESSED_IDS:
+        _processed_message_ids.popitem(last=False)
+
 async def send_whatsapp_otp(phone: str, intent: str = "BANK_ACCOUNT"):
     """
     Call the standalone OTP service to generate and send OTP
@@ -726,6 +738,12 @@ async def extract_webhook(
         # Check for messages
         messages = value.get("messages", [])
         contacts = value.get("contacts", [])
+
+        if not messages:
+            # Delivery/read receipts and other non-message events land here.
+            # Mirror the "no entry"/"no changes" guards above instead of
+            # falling through to the generic "received" at the end.
+            return {"status": "ignored", "reason": "no messages"}
         
         if messages:
             msg_data = messages[0]
@@ -747,13 +765,9 @@ async def extract_webhook(
                     logger.warning(f"[DEDUP] Duplicate webhook for message {message_id}. Ignoring.")
                     return {"status": "ignored", "reason": "duplicate message_id"}
 
-                # Add to processed set (OrderedDict preserves insertion order)
-                _processed_message_ids[message_id] = None
-
-                # Prevent unbounded memory growth: evict the OLDEST entries first
-                # (true LRU/FIFO eviction, unlike a plain set's undefined order).
-                while len(_processed_message_ids) > _MAX_PROCESSED_IDS:
-                    _processed_message_ids.popitem(last=False)
+                # Record it (OrderedDict preserves insertion order) and evict
+                # the OLDEST entries once the cap is hit.
+                _remember_message_id(message_id)
             
             # Media handling
             media_id = None

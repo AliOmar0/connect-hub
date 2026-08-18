@@ -110,7 +110,7 @@ def sample_message():
 def sample_nlp_result():
     """Create a sample NLP result."""
     from app.models.nlp import NLPResult
-    from app.models.enums import IntentLabel, LanguageLabel
+    from app.models.nlp import IntentLabel, LanguageLabel
     
     return NLPResult(
         intent=IntentLabel.ACCOUNT_INQUIRY,

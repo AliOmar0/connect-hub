@@ -333,6 +333,29 @@ class MessageBufferService:
         buffer = self._buffers.get(key)
         return buffer is not None and (len(buffer.messages) > 0 or buffer.is_processing)
 
+    def _is_locked(self, session_id: UUID) -> bool:
+        """True when an AI call is already in flight for this session."""
+        buffer = self._buffers.get(str(session_id))
+        return bool(buffer and buffer.is_processing)
+
+    async def _acquire_lock(self, session_id: UUID) -> None:
+        """Mark the session as processing, creating the buffer if needed.
+
+        Deliberately not re-entrant-safe: the flag is a plain boolean, so a
+        second acquire is a no-op rather than an error. Callers check
+        `_is_locked` first (see `_process_buffer`).
+        """
+        key = str(session_id)
+        if key not in self._buffers:
+            self._buffers[key] = SessionBuffer()
+        self._buffers[key].is_processing = True
+
+    def _release_lock(self, session_id: UUID) -> None:
+        """Clear the processing flag; safe to call when no buffer exists."""
+        buffer = self._buffers.get(str(session_id))
+        if buffer:
+            buffer.is_processing = False
+
     def clear_session_buffer(self, session_id: UUID):
         """Force clear a session's buffer (e.g., when session is escalated)."""
         key = str(session_id)

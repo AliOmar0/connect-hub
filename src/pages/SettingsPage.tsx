@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
-import TwilioDemo from "@/pages/TwilioDemo";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelType, Profile } from "@/types/database";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +27,6 @@ import {
   Shield,
   Save,
   Loader2,
-  Mic,
   Edit2,
   Palette,
   Sun,
@@ -83,6 +81,9 @@ export default function SettingsPage() {
   });
 
   const isAdmin = userRole === "admin";
+  const canManageIntegrations = ["admin", "supervisor", "manager"].includes(
+    userRole || "",
+  );
 
   const fetchConfigs = useCallback(async () => {
     // Only admins can see configs, but the RLS policies might allow reading if we changed them?
@@ -379,12 +380,17 @@ export default function SettingsPage() {
           <p className="text-muted-foreground">{t("settings.subtitle")}</p>
         </div>
 
-        <Tabs defaultValue="integrations" className="space-y-6">
+        <Tabs
+          defaultValue={canManageIntegrations ? "integrations" : "general"}
+          className="space-y-6"
+        >
           <TabsList>
-            <TabsTrigger value="integrations" className="gap-2">
-              <Key className="h-4 w-4" aria-hidden="true" />
-              {t("settings.tabs.integrations")}
-            </TabsTrigger>
+            {canManageIntegrations && (
+              <TabsTrigger value="integrations" className="gap-2">
+                <Key className="h-4 w-4" aria-hidden="true" />
+                {t("settings.tabs.integrations")}
+              </TabsTrigger>
+            )}
             <TabsTrigger value="notifications" className="gap-2">
               <Bell className="h-4 w-4" aria-hidden="true" />
               {t("settings.tabs.notifications")}
@@ -401,87 +407,85 @@ export default function SettingsPage() {
               <Settings className="h-4 w-4" aria-hidden="true" />
               {t("settings.tabs.general")}
             </TabsTrigger>
-            <TabsTrigger value="twilio" className="gap-2">
-              <Mic className="h-4 w-4" aria-hidden="true" />
-              {t("settings.tabs.voiceTesting")}
-            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="integrations" className="space-y-4">
-            <Card className="border-border/50 bg-muted/20">
-              <CardHeader>
-                <CardTitle className="text-lg">
-                  {t("settings.integrations.title")}
-                </CardTitle>
-                <CardDescription>
-                  {t("settings.integrations.description")}
-                </CardDescription>
-              </CardHeader>
-            </Card>
+          {canManageIntegrations && (
+            <TabsContent value="integrations" className="space-y-4">
+              <Card className="border-border/50 bg-muted/20">
+                <CardHeader>
+                  <CardTitle className="text-lg">
+                    {t("settings.integrations.title")}
+                  </CardTitle>
+                  <CardDescription>
+                    {t("settings.integrations.description")}
+                  </CardDescription>
+                </CardHeader>
+              </Card>
 
-            {loading ? (
-              <div className="grid gap-4">
-                {[...Array(3)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="h-48 bg-muted animate-pulse rounded-xl"
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {channels.map((channel) => (
-                  <div key={channel} className="space-y-4">
-                    <ApiKeyCard
-                      channel={channel}
-                      config={configs[channel]}
-                      onSave={(data) => handleSave(channel, data)}
-                      onTest={() => handleTestConfig(channel)}
+              {loading ? (
+                <div className="grid gap-4">
+                  {[...Array(3)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-48 bg-muted animate-pulse rounded-xl"
                     />
-                    {channel === "sms" && configs[channel]?.is_active && (
-                      <Card className="border-dashed border-primary/20 bg-primary/5">
-                        <CardHeader className="py-3">
-                          <CardTitle className="text-sm">
-                            {t("settings.integrations.smsTest")}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3 pb-4">
-                          <div className="flex gap-2">
-                            <Input
-                              id="sms-test-to"
-                              aria-label={t("settings.integrations.smsTest")}
-                              placeholder="+970..."
-                              size={30}
-                              value={smsData.to}
-                              onChange={(e) =>
-                                setSmsData({ ...smsData, to: e.target.value })
-                              }
-                            />
-                            <Button
-                              size="sm"
-                              className="min-h-[44px]"
-                              disabled={smsSending}
-                              aria-busy={smsSending}
-                              onClick={handleSendTestSms}
-                            >
-                              {smsSending ? (
-                                <Loader2
-                                  className="h-4 w-4 animate-spin"
-                                  aria-hidden="true"
-                                />
-                              ) : (
-                                t("settings.integrations.sendTest")
-                              )}
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid gap-4">
+                  {channels.map((channel) => (
+                    <div key={channel} className="space-y-4">
+                      <ApiKeyCard
+                        channel={channel}
+                        config={configs[channel]}
+                        onSave={(data) => handleSave(channel, data)}
+                        onTest={() => handleTestConfig(channel)}
+                      />
+                      {channel === "sms" && configs[channel]?.is_active && (
+                        <Card className="border-dashed border-primary/20 bg-primary/5">
+                          <CardHeader className="py-3">
+                            <CardTitle className="text-sm">
+                              {t("settings.integrations.smsTest")}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="space-y-3 pb-4">
+                            <div className="flex gap-2">
+                              <Input
+                                id="sms-test-to"
+                                aria-label={t("settings.integrations.smsTest")}
+                                placeholder="+970..."
+                                size={30}
+                                value={smsData.to}
+                                onChange={(e) =>
+                                  setSmsData({ ...smsData, to: e.target.value })
+                                }
+                              />
+                              <Button
+                                size="sm"
+                                className="min-h-[44px]"
+                                disabled={smsSending}
+                                aria-busy={smsSending}
+                                onClick={handleSendTestSms}
+                              >
+                                {smsSending ? (
+                                  <Loader2
+                                    className="h-4 w-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  t("settings.integrations.sendTest")
+                                )}
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          )}
 
           <TabsContent value="notifications" className="space-y-4">
             <Card>
@@ -956,10 +960,6 @@ export default function SettingsPage() {
                 )}
               </CardContent>
             </Card>
-          </TabsContent>
-
-          <TabsContent value="twilio" className="space-y-4">
-            <TwilioDemo />
           </TabsContent>
         </Tabs>
       </div>

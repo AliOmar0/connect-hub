@@ -192,6 +192,7 @@ class CrawlJobRunner:
                         extracted.main_text,
                         structured_fields,
                         description=extracted.description,
+                        crawl_job_id=job_id,
                     )
 
                     # NOTE on succeeded/skipped accounting: the `crawl_jobs`

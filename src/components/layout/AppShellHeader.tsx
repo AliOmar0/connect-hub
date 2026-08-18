@@ -50,7 +50,6 @@ function resolvePageKey(pathname: string): string {
     [/^\/settings/, "settings"],
     [/^\/notifications/, "notifications"],
     [/^\/shortcuts/, "shortcuts"],
-    [/^\/backend-test/, "backendTest"],
     [/^\/$/, "home"],
   ];
   const match = routes.find(([re]) => re.test(pathname));

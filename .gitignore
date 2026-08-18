@@ -123,6 +123,7 @@ context-chatterbox/
 voices/
 docker-compose-xtts.yml
 docker-compose-piper.yml
+whatsapp-support-backend/tests/
 test_*.py
 test_*.js
 *.wav
@@ -164,5 +165,6 @@ whatsapp-support-backend/venv/
 .opencode/
 .gemini/antigravity/
 docs/SRS.md
-
+.claude/    
 dataset_pib
+.agents/

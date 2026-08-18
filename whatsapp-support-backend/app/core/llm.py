@@ -302,7 +302,8 @@ class LLMService:
         session_types: List[Dict[str, Any]] = None,
         current_type_id: Optional[str] = None,
         extra_system: Optional[str] = None,
-        channel: str = "whatsapp"  # "whatsapp" for customers, "dashboard" for employees
+        channel: str = "whatsapp",  # "whatsapp" for customers, "dashboard" for employees
+        timeout: float = 60.0,
     ) -> str:
         if history is None:
             history = []
@@ -395,7 +396,7 @@ class LLMService:
             "max_tokens": 1024
         }
 
-        data = await LLMService._chat_completion(payload, timeout=60.0)
+        data = await LLMService._chat_completion(payload, timeout=timeout)
         if data is None:
             return "نعتذر، يواجه النظام صعوبة في التواصل حالياً."
 

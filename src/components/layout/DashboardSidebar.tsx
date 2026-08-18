@@ -233,16 +233,10 @@ export default function DashboardSidebar() {
       roles: ["admin", "supervisor", "manager"],
     },
     {
-      to: "/backend-test",
-      icon: FlaskConical,
-      label: t("appShell.nav.backendTest"),
-      roles: ["admin", "supervisor", "manager"],
-    },
-    {
       to: "/settings",
       icon: Settings,
       label: t("appShell.nav.settings"),
-      roles: ["admin", "supervisor", "manager"],
+      roles: ["admin", "supervisor", "manager", "agent", "viewer"],
     },
   ];
 

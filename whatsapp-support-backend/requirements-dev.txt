@@ -1,0 +1,17 @@
+# Developer / CI tooling for the backend. Not needed at runtime.
+#
+#   pip install -r requirements-dev.txt
+#
+# Versions of pytest/pytest-asyncio track evaluation/requirements-eval.txt so a
+# local run and the ai-pipeline CI job behave identically.
+
+pytest==9.1.1
+pytest-asyncio==1.4.0
+
+# Property-based tests for the scraper's pure logic. Also listed in
+# requirements.txt (test-only section) — pinned here for reproducibility.
+hypothesis>=6.98.0
+
+# Lint + format. Config lives in ruff.toml. Wired into Claude Code as a
+# PostToolUse hook (.claude/hooks/ruff_fix.py) so edits are fixed on save.
+ruff>=0.16.0

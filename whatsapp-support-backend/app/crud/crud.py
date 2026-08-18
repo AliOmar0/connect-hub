@@ -16,7 +16,12 @@ async def get_bank_account(phone: str):
 
 
 async def get_customer_by_phone(db: Any, phone: str) -> Optional[Customer]:
-    response = supabase.table("customers").select("*").eq("phone", phone).execute()
+    try:
+        response = supabase.table("customers").select("*").eq("phone", phone).execute()
+    except Exception as e:
+        # Reads degrade to "not found" rather than propagating.
+        logger.error(f"Failed to look up customer by phone: {e}")
+        return None
     if response.data:
         return Customer(**response.data[0])
     return None
@@ -27,7 +32,10 @@ async def create_customer(db: Any, phone: str, name: str) -> Customer:
         "name": name,
         "preferred_channel": ChannelType.whatsapp.value
     }
-    response = supabase.table("customers").insert(data).execute()
+    try:
+        response = supabase.table("customers").insert(data).execute()
+    except Exception as e:
+        raise Exception(f"Failed to create customer: {e}") from e
     if response.data:
         return Customer(**response.data[0])
     raise Exception("Failed to create customer")
@@ -69,7 +77,10 @@ async def create_session(db: Any, customer_id: UUID) -> Session:
         "channel": ChannelType.whatsapp.value,
         "status": SessionStatus.active.value
     }
-    response = supabase.table("sessions").insert(data).execute()
+    try:
+        response = supabase.table("sessions").insert(data).execute()
+    except Exception as e:
+        raise Exception(f"Failed to create session: {e}") from e
     if response.data:
         return Session(**response.data[0])
     raise Exception("Failed to create session")
@@ -86,10 +97,13 @@ async def update_session_status(db: Any, session_id: UUID, status: SessionStatus
             update_data["ended_at"] = ended_at.isoformat()
             update_data["duration_seconds"] = duration
 
-    response = supabase.table("sessions")\
-        .update(update_data)\
-        .eq("id", str(session_id))\
-        .execute()
+    try:
+        response = supabase.table("sessions")\
+            .update(update_data)\
+            .eq("id", str(session_id))\
+            .execute()
+    except Exception as e:
+        raise Exception(f"Failed to update session status: {e}") from e
     if response.data:
         return Session(**response.data[0])
     raise Exception("Failed to update session status")
@@ -167,7 +181,10 @@ async def create_message(
         "media_url": media_url,
         "media_type": media_type
     }
-    response = supabase.table("messages").insert(data).execute()
+    try:
+        response = supabase.table("messages").insert(data).execute()
+    except Exception as e:
+        raise Exception(f"Failed to create message: {e}") from e
     if response.data:
         return Message(**response.data[0])
     raise Exception("Failed to create message")
@@ -190,7 +207,12 @@ async def get_messages_for_session(db: Any, session_id: UUID, limit: Optional[in
     if limit is not None:
         query = query.limit(limit)
         
-    response = query.execute()
+    try:
+        response = query.execute()
+    except Exception as e:
+        # Reads degrade instead of propagating: a transient Supabase error
+        logger.error(f"Failed to fetch messages for session {session_id}: {e}")
+        return []
     
     return [Message(**m) for m in response.data]
 

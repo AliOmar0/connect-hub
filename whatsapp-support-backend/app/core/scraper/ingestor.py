@@ -64,7 +64,7 @@ async def _get_next_version_number(document_id: UUID) -> int:
     return 1
 
 
-async def _mark_skipped_empty(url: str, existing: Optional[dict]) -> None:
+async def _mark_skipped_empty(url: str, existing: Optional[dict], crawl_job_id: Optional[UUID] = None) -> None:
     """Record a page with empty extracted main text as skipped, without
     touching any knowledge_documents/knowledge_document_versions rows
     (Requirement 3.5)."""
@@ -75,6 +75,8 @@ async def _mark_skipped_empty(url: str, existing: Optional[dict]) -> None:
         "updated_at": _now_iso(),
         "error_message": None,
     }
+    if crawl_job_id:
+        data["last_crawl_job_id"] = str(crawl_job_id)
     if existing:
         supabase.table("scraped_pages").update(data).eq("url", url).execute()
     else:
@@ -83,16 +85,17 @@ async def _mark_skipped_empty(url: str, existing: Optional[dict]) -> None:
         supabase.table("scraped_pages").insert(data).execute()
 
 
-async def _mark_unchanged(existing: dict) -> None:
+async def _mark_unchanged(existing: dict, crawl_job_id: Optional[UUID] = None) -> None:
     """Checksum unchanged since the last successful (indexed) scrape of
     this url: skip re-indexing, update only `last_attempted_at` (and
     `updated_at`) (Requirements 6.1, 6.2)."""
-    supabase.table("scraped_pages").update(
-        {
-            "last_attempted_at": _now_iso(),
-            "updated_at": _now_iso(),
-        }
-    ).eq("url", existing["url"]).execute()
+    data = {
+        "last_attempted_at": _now_iso(),
+        "updated_at": _now_iso(),
+    }
+    if crawl_job_id:
+        data["last_crawl_job_id"] = str(crawl_job_id)
+    supabase.table("scraped_pages").update(data).eq("url", existing["url"]).execute()
 
 
 async def _upsert_indexed(
@@ -100,6 +103,7 @@ async def _upsert_indexed(
     existing: Optional[dict],
     knowledge_document_id: UUID,
     checksum: str,
+    crawl_job_id: Optional[UUID] = None,
 ) -> None:
     """Update scraped_pages bookkeeping after successfully creating a new
     document/version and queueing indexing. Uses status='indexed'
@@ -119,13 +123,15 @@ async def _upsert_indexed(
         "last_attempted_at": _now_iso(),
         "updated_at": _now_iso(),
     }
+    if crawl_job_id:
+        data["last_crawl_job_id"] = str(crawl_job_id)
     if existing:
         supabase.table("scraped_pages").update(data).eq("url", url).execute()
     else:
         supabase.table("scraped_pages").insert(data).execute()
 
 
-async def _mark_failed(url: str, existing: Optional[dict], error_message: str) -> None:
+async def _mark_failed(url: str, existing: Optional[dict], error_message: str, crawl_job_id: Optional[UUID] = None) -> None:
     """Record a failed ingestion attempt independently of whether a
     knowledge_documents row exists yet (Requirement 4.3)."""
     retry_count = (existing.get("retry_count", 0) if existing else 0) + 1
@@ -137,6 +143,8 @@ async def _mark_failed(url: str, existing: Optional[dict], error_message: str) -
         "last_attempted_at": _now_iso(),
         "updated_at": _now_iso(),
     }
+    if crawl_job_id:
+        data["last_crawl_job_id"] = str(crawl_job_id)
     if existing:
         supabase.table("scraped_pages").update(data).eq("url", url).execute()
     else:
@@ -150,6 +158,7 @@ async def ingest_page(
     main_text: str,
     structured_fields: List[StructuredField],
     description: str = "",
+    crawl_job_id: Optional[UUID] = None,
 ) -> ScrapedPageOutcome:
     """
     Bridge a successfully-fetched-and-extracted scraped page into the
@@ -180,7 +189,7 @@ async def ingest_page(
     existing = await _get_scraped_page(url)
 
     if not main_text or not main_text.strip():
-        await _mark_skipped_empty(url, existing)
+        await _mark_skipped_empty(url, existing, crawl_job_id)
         return ScrapedPageOutcome(
             url=url,
             outcome="skipped",
@@ -199,7 +208,7 @@ async def ingest_page(
         and existing.get("checksum") == checksum
         and existing.get("status") == "indexed"
     ):
-        await _mark_unchanged(existing)
+        await _mark_unchanged(existing, crawl_job_id)
         return ScrapedPageOutcome(
             url=url,
             outcome="skipped",
@@ -265,7 +274,7 @@ async def ingest_page(
             index_document_task(document_id, version_id, main_text, metadata)
         )
 
-        await _upsert_indexed(url, existing, document_id, checksum)
+        await _upsert_indexed(url, existing, document_id, checksum, crawl_job_id)
 
         return ScrapedPageOutcome(
             url=url,
@@ -277,7 +286,7 @@ async def ingest_page(
         # stop the rest of the crawl (Requirement 4.2/4.3).
         error_message = str(exc)
         logger.error("Failed to ingest scraped page %s: %s", url, error_message)
-        await _mark_failed(url, existing, error_message)
+        await _mark_failed(url, existing, error_message, crawl_job_id)
         existing_document_id = (
             UUID(existing["knowledge_document_id"])
             if existing and existing.get("knowledge_document_id")

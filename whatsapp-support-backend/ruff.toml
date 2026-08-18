@@ -1,0 +1,38 @@
+# Ruff config for the FastAPI backend.
+#
+# Deliberately conservative: this codebase was written without a linter, so the
+# ruleset starts at "catches real bugs" rather than "enforces every style rule".
+# Tighten it by adding rule codes to `select` once the current set stays green.
+
+line-length = 100
+target-version = "py311"   # matches .github/workflows/ai-pipeline.yml
+
+exclude = [
+    ".hypothesis",
+    ".pytest_cache",
+    "qdrant_storage",
+    "__pycache__",
+]
+
+[lint]
+select = [
+    "E4", "E7", "E9",  # pycodestyle: imports, statements, runtime errors
+    "F",               # pyflakes: undefined names, unused imports/vars
+    "I",               # isort: import ordering
+    "B",               # bugbear: likely bugs (mutable defaults, loop closures)
+    # "UP",            # pyupgrade: ~470 hits on the existing code — enable as a
+                       # one-off cleanup commit, not as an edit-time hook.
+    "ASYNC",           # async-specific pitfalls (blocking calls in async defs)
+]
+ignore = [
+    "B008",  # FastAPI's Depends()/Query() in defaults is the correct idiom.
+    "E402",  # app/main.py configures logging before importing, intentionally.
+]
+
+[lint.per-file-ignores]
+# Tests lean on star-imports, fixtures and long hypothesis strategies.
+"tests/**" = ["F401", "F811", "B011"]
+"test/**" = ["F401", "F811", "B011"]
+
+[format]
+docstring-code-format = true

@@ -23,16 +23,10 @@ have no extra role gate: all 5 roles are allowed to view history/status
 Design decisions made in this task (see task 12.1 instructions):
 
 1. Per-page outcomes on `GET /scraper/jobs/{job_id}`: `ingestor.ingest_page`
-   does not currently stamp `scraped_pages.last_crawl_job_id` with the
-   job that produced each row (`runner.py` calls `ingestor.ingest_page`
-   without threading a `job_id` through). Wiring that end-to-end would touch
-   `runner.py`'s call site and `ingestor.py`'s several `scraped_pages`
-   insert/update call sites, all of which are already covered by passing
-   property tests (Property 13/15/16) from tasks 9.2-9.4. To avoid
-   destabilizing those tests in this API-layer task, this endpoint queries
-   `scraped_pages` filtered by `last_crawl_job_id` as designed, but the
-   column will simply be empty until a follow-up task threads `job_id`
-   through the ingestion bridge. Documented here as a known gap (option a).
+   now stamps `scraped_pages.last_crawl_job_id` with the job that produced
+   each row. The `runner.py` passes `job_id` to `ingest_page`, which then
+   updates all `scraped_pages` rows with the crawl job ID for proper tracking
+   and per-page outcome queries.
 
 2. `POST /scraper/jobs` blocking vs. background: per design.md's endpoint
    table ("Starts a Crawl_Job") and Requirement 5.2 ("start a new Crawl_Job
@@ -248,11 +242,6 @@ async def get_crawl_job_detail(job_id: UUID, user: dict = Depends(verify_jwt)):
     """
     Single Crawl_Job detail including per-page outcomes. Available to all 5
     roles (Requirement 10.3).
-
-    See module docstring note 1: per-page outcomes are sourced from
-    `scraped_pages.last_crawl_job_id`, which is not yet stamped by
-    `ingestor.ingest_page`/`runner.py` - this currently returns an empty
-    `pages` list until that wiring is added in a follow-up task.
     """
     job_response = (
         supabase.table("crawl_jobs").select("*").eq("id", str(job_id)).execute()

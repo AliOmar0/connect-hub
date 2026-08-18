@@ -41,12 +41,15 @@ jobs:
 
       - name: Run AI pipeline tests
         # Only the AI/eval tests — they need no Supabase or network.
+        # NOTE: keep these paths in sync with the files that actually exist
+        # under tests/. This list previously named test/test_nlp.py,
+        # test/test_decision.py, test/test_decision_boundaries.py and
+        # test/test_evaluation.py — none of which are in the repo — so the
+        # job failed on every push that touched the backend.
         run: |
           python -m pytest \
-            test/test_nlp.py \
-            test/test_decision.py \
-            test/test_decision_boundaries.py \
-            test/test_evaluation.py \
+            tests/test_decision_engine.py \
+            tests/test_knowledge_base_indexing.py \
             -q
 
       - name: Run evaluation suite (writes evidence/)

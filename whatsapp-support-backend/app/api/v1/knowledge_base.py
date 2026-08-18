@@ -28,6 +28,7 @@ from app.core.rag import (
     calculate_checksum,
     retrieve_with_logging,
     build_context_block,
+    get_document_provenance,
     rag_config,
     init_qdrant
 )
@@ -754,13 +755,17 @@ async def rollback_document(
     # The stored content is required to rebuild Qdrant chunks for this version.
     stored_content = version.get("content")
     if not stored_content:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Version {version_number} has no stored content to reindex. "
-                "Re-upload the document or re-crawl the page to index it again."
-            ),
-        )
+        # Check if it's a scraper document to give the right error message
+        doc = await get_document_by_id(document_id)
+        is_scraper = doc.get("source") == "scraper" if doc else False
+        return {
+            "document_id": document_id,
+            "status": "failed",
+            "message": (
+                f"Version {version_number} has no stored content to reindex. " +
+                ("Re-crawl the page to index it again." if is_scraper else "Re-upload the document to index it again.")
+            )
+        }
 
     # Delete current chunks before re-indexing the rolled-back version.
     delete_document_chunks(str(document_id))
@@ -817,10 +822,16 @@ async def reindex_document(
     current_version_id = doc.get("current_version_id")
 
     if not current_version_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Document has no indexed version to reindex"
-        )
+        versions = doc.get("versions", [])
+        if versions:
+            versions.sort(key=lambda x: x["version_number"], reverse=True)
+            current_version_id = versions[0]["id"]
+        else:
+            return {
+                "document_id": document_id,
+                "status": "failed",
+                "message": "Document has no version to reindex",
+            }
 
     # Get current version
     version_response = supabase.table("knowledge_document_versions")\
@@ -836,13 +847,21 @@ async def reindex_document(
     # The stored content is required to rebuild Qdrant chunks.
     stored_content = version.get("content")
     if not stored_content:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Current version has no stored content to reindex. "
-                "Re-upload the document or re-crawl the page to index it again."
+        is_scraper = doc.get("source") == "scraper"
+        return {
+            "document_id": document_id,
+            "status": "failed",
+            "message": (
+                "Current version has no stored content to reindex. " +
+                ("Re-crawl the page to index it again." if is_scraper else "Re-upload the document to index it again.")
             ),
-        )
+        }
+
+    # Provenance (source_url / source_description / structured_fields) lives
+    # ONLY in the Qdrant payload, so read it BEFORE deleting the chunks and
+    # carry it forward — otherwise reindexing a scraped page strips the source
+    # the assistant cites (Requirements 6.4, 8.4).
+    provenance = get_document_provenance(str(document_id))
 
     # Delete existing chunks before re-indexing.
     delete_document_chunks(str(document_id))
@@ -856,6 +875,9 @@ async def reindex_document(
         "file_type": version.get("file_type"),
         "checksum": version.get("checksum"),
         "source": "reindex",
+        # Provenance last so the original source/source_url survive the rebuild
+        # and are not clobbered by the "reindex" marker above.
+        **provenance,
     }
 
     # Queue the actual re-indexing work.
@@ -1003,8 +1025,6 @@ async def sync_knowledge_base(background_tasks: BackgroundTasks):
     Trigger full re-indexing of all knowledge base documents.
     Uses checksum validation to skip unchanged documents.
     """
-    from app.database import supabase
-    
     try:
         # Get all documents from the knowledge base
         docs_response = supabase.table("knowledge_documents").select("id, title, current_version_id").execute()
@@ -1032,7 +1052,7 @@ async def sync_knowledge_base(background_tasks: BackgroundTasks):
             
             # Get the version details including the checksum
             version_response = supabase.table("knowledge_document_versions")\
-                .select("id, checksum, version_number, status")\
+                .select("id, checksum, version_number, status, content, file_type")\
                 .eq("id", current_version_id)\
                 .execute()
             
@@ -1047,10 +1067,43 @@ async def sync_knowledge_base(background_tasks: BackgroundTasks):
                 skipped_count += 1
                 continue
             
-            # Queue reindex task
-            # Note: For actual reindexing, we would need the original text content
-            # This is a placeholder that marks the version for reindexing
-            background_tasks.add_task(reindex_document_task, UUID(doc_id), UUID(version["id"]), "", {})
+            # Rebuilding Qdrant chunks requires the original text. Versions
+            # created before `content` was stored (migration
+            # 20260625000000_add_content_to_knowledge_versions) have none, so
+            # they cannot be reindexed here — re-upload or re-crawl instead.
+            stored_content = version.get("content")
+            if not stored_content:
+                skipped_count += 1
+                continue
+
+            document_uuid = UUID(doc_id)
+            version_uuid = UUID(version["id"])
+
+            # Read provenance before the chunks (its only home) are deleted.
+            provenance = get_document_provenance(str(document_uuid))
+
+            # Drop the stale chunks, then reset status so the background task
+            # transitions pending -> indexing -> indexed (mirrors the
+            # single-document /knowledge-base/{document_id}/reindex endpoint).
+            delete_document_chunks(str(document_uuid))
+            await update_version_status(version_uuid, "pending")
+            await update_document_status(document_uuid, "pending")
+
+            metadata = {
+                "title": doc.get("title", ""),
+                "file_type": version.get("file_type"),
+                "checksum": version.get("checksum"),
+                "source": "reindex",
+                **provenance,
+            }
+
+            background_tasks.add_task(
+                index_document_task,
+                document_uuid,
+                version_uuid,
+                stored_content,
+                metadata,
+            )
             queued_count += 1
         
         return {

@@ -130,16 +130,10 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     roles: ["admin", "supervisor", "manager"],
   },
   {
-    to: "/backend-test",
-    icon: FlaskConical,
-    labelKey: "appShell.nav.backendTest",
-    roles: ["admin", "supervisor", "manager"],
-  },
-  {
     to: "/settings",
     icon: Settings,
     labelKey: "appShell.nav.settings",
-    roles: ["admin", "supervisor", "manager"],
+    roles: ["admin", "supervisor", "manager", "agent", "viewer"],
   },
 ];
 
