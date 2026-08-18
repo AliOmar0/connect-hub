@@ -62,7 +62,6 @@ const KNOWN_ROUTES: Array<{ prefix: string; label: string }> = [
   { prefix: "/settings", label: "Settings" },
   { prefix: "/notifications", label: "Notifications" },
   { prefix: "/shortcuts", label: "Chat Shortcuts" },
-  { prefix: "/backend-test", label: "Backend Tester" },
 ];
 const HOME_LABEL = "Home";
 const NOT_FOUND_LABEL = "Page Not Found";

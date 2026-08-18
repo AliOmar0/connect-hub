@@ -192,7 +192,6 @@ describe("SettingsPage", () => {
         "Security",
         "Appearance",
         "General",
-        "Voice Testing",
       ];
       for (const name of expectedTabs) {
         const tab = screen.getByRole("tab", { name: new RegExp(name, "i") });

@@ -46,14 +46,14 @@ describe("PrimaryNav – role filtering (Req 11.3)", () => {
     mockUseAuth.mockReturnValue({ userRole: "agent" });
     render(<PrimaryNav variant="sidebar" />);
 
-    // Agent sees sessions/queue/shortcuts but not employees/analytics/settings.
+    // Agent sees sessions/queue/shortcuts/settings but not employees/analytics.
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
     expect(screen.getByText("Escalation Queue")).toBeInTheDocument();
     expect(screen.getByText("Chat Shortcuts")).toBeInTheDocument();
+    expect(screen.getByText("Settings")).toBeInTheDocument();
 
     expect(screen.queryByText("Employees")).not.toBeInTheDocument();
     expect(screen.queryByText("Analytics")).not.toBeInTheDocument();
-    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
     // Dashboard is not visible to agent per config.
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
   });

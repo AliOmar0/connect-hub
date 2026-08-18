@@ -74,11 +74,21 @@ function setup(opts: {
   isLoading?: boolean;
   isError?: boolean;
 }) {
-  (useQuery as ReturnType<typeof vi.fn>).mockReturnValue({
-    data: opts.documents ?? [],
-    isLoading: opts.isLoading ?? false,
-    isError: opts.isError ?? false,
-  });
+  // DocumentDetailDialog and VersionHistoryDialog stay mounted (for open/close
+  // transitions) and run their own useQuery calls even when their dialog is
+  // closed; only the "kb-documents" query should reflect this setup's data.
+  (useQuery as ReturnType<typeof vi.fn>).mockImplementation(
+    ({ queryKey }: { queryKey: unknown[] }) => {
+      if (queryKey[0] === "kb-documents") {
+        return {
+          data: opts.documents ?? [],
+          isLoading: opts.isLoading ?? false,
+          isError: opts.isError ?? false,
+        };
+      }
+      return { data: undefined, isLoading: false, isError: false };
+    },
+  );
   (useMutation as ReturnType<typeof vi.fn>).mockReturnValue({
     mutate: reindexMutate,
     isPending: false,
