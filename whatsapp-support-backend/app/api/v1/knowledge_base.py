@@ -17,6 +17,7 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from app.api.v1.deps import require_admin_access
 from pydantic import BaseModel, Field
 
 from app.database import supabase
@@ -396,7 +397,10 @@ async def index_document_task(
 
 # --- API Endpoints ---
 
-@router.post("/knowledge-base/upload", response_model=UploadResponse)
+@router.post(
+    "/knowledge-base/upload", response_model=UploadResponse,
+    dependencies=[Depends(require_admin_access)],
+)
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -622,7 +626,10 @@ async def kb_list_documents(skip: int = 0, limit: int = 50):
     return result
 
 
-@router.post("/kb/documents", response_model=KbDocumentOut)
+@router.post(
+    "/kb/documents", response_model=KbDocumentOut,
+    dependencies=[Depends(require_admin_access)],
+)
 async def kb_upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -655,7 +662,10 @@ async def kb_list_versions(document_id: UUID):
     ]
 
 
-@router.post("/kb/documents/{document_id}/reindex", response_model=dict)
+@router.post(
+    "/kb/documents/{document_id}/reindex", response_model=dict,
+    dependencies=[Depends(require_admin_access)],
+)
 async def kb_reindex_document(document_id: UUID, background_tasks: BackgroundTasks):
     """Frontend-contract alias for POST /knowledge-base/{id}/reindex."""
     return await reindex_document(document_id, background_tasks)
@@ -665,7 +675,10 @@ class KbRollbackRequest(BaseModel):
     version: int
 
 
-@router.post("/kb/documents/{document_id}/rollback", response_model=dict)
+@router.post(
+    "/kb/documents/{document_id}/rollback", response_model=dict,
+    dependencies=[Depends(require_admin_access)],
+)
 async def kb_rollback_document(
     document_id: UUID,
     body: KbRollbackRequest,
@@ -728,7 +741,10 @@ async def get_document(document_id: UUID):
     )
 
 
-@router.post("/knowledge-base/{document_id}/rollback/{version_number}", response_model=ReindexResponse)
+@router.post(
+    "/knowledge-base/{document_id}/rollback/{version_number}", response_model=ReindexResponse,
+    dependencies=[Depends(require_admin_access)],
+)
 async def rollback_document(
     document_id: UUID,
     version_number: int,
@@ -805,7 +821,10 @@ async def rollback_document(
     )
 
 
-@router.post("/knowledge-base/{document_id}/reindex", response_model=dict)
+@router.post(
+    "/knowledge-base/{document_id}/reindex", response_model=dict,
+    dependencies=[Depends(require_admin_access)],
+)
 async def reindex_document(
     document_id: UUID,
     background_tasks: BackgroundTasks
@@ -917,7 +936,10 @@ async def get_document_status(document_id: UUID):
     }
 
 
-@router.delete("/knowledge-base/{document_id}")
+@router.delete(
+    "/knowledge-base/{document_id}",
+    dependencies=[Depends(require_admin_access)],
+)
 async def delete_document(document_id: UUID):
     """
     Delete a document and all its chunks from the vector store.
@@ -1019,7 +1041,10 @@ async def get_relevance_stats():
     }
 
 
-@router.post("/knowledge-base/sync")
+@router.post(
+    "/knowledge-base/sync",
+    dependencies=[Depends(require_admin_access)],
+)
 async def sync_knowledge_base(background_tasks: BackgroundTasks):
     """
     Trigger full re-indexing of all knowledge base documents.
@@ -1122,7 +1147,10 @@ async def sync_knowledge_base(background_tasks: BackgroundTasks):
         }
 
 
-@router.post("/knowledge-base/sync-scraper")
+@router.post(
+    "/knowledge-base/sync-scraper",
+    dependencies=[Depends(require_admin_access)],
+)
 async def sync_scraper_knowledge_base(background_tasks: BackgroundTasks):
     """
     Trigger re-indexing of all scraper-sourced (`source='scraper'`) knowledge
@@ -1320,7 +1348,10 @@ async def sync_session_type_knowledge(session_type_id: UUID):
     )
 
 
-@router.delete("/knowledge-base/sync-session-type/{session_type_id}")
+@router.delete(
+    "/knowledge-base/sync-session-type/{session_type_id}",
+    dependencies=[Depends(require_admin_access)],
+)
 async def delete_session_type_knowledge(session_type_id: UUID):
     """
     Remove the knowledge_documents row (and its Qdrant chunks) generated

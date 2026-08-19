@@ -1,27 +1,43 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict, NoDecode
-from pydantic import Field, AliasChoices, field_validator
-from typing import List, Optional
-from typing_extensions import Annotated
 import os
+from typing import List, Optional
+
 from dotenv import load_dotenv
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from typing_extensions import Annotated
 
 # Load .env file explicitly
 load_dotenv()
 
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=True,
-        extra="ignore"
+        env_file=".env", env_file_encoding="utf-8", case_sensitive=True, extra="ignore"
     )
 
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "WhatsApp Support Backend"
-    
+
     # Supabase (Used for both API and DB via Supabase Client)
-    SUPABASE_URL: str = Field(..., validation_alias=AliasChoices("SUPABASE_URL", "VITE_SUPABASE_URL"))
-    SUPABASE_KEY: str = Field(..., validation_alias=AliasChoices("SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY"))
+    SUPABASE_URL: str = Field(
+        ..., validation_alias=AliasChoices("SUPABASE_URL", "VITE_SUPABASE_URL")
+    )
+    SUPABASE_KEY: str = Field(
+        ..., validation_alias=AliasChoices("SUPABASE_KEY", "SUPABASE_SERVICE_ROLE_KEY")
+    )
+
+    # "Bank_db_oss" — separate Supabase project holding customers/accounts, queried
+    # to answer customer account questions (balance/IBAN lookups) after OTP
+    # verification. Optional: falls back to the main SUPABASE_URL/KEY above
+    # when unset, so single-DB setups keep working.
+    # BANK_DB_OSS_KEY MUST be the bank project's PUBLISHABLE (anon) key.
+    # service_role bypasses RLS, which would defeat the read-only grants in
+    # scripts/sql/bank_db_oss_readonly.sql -- the app refuses to start with one.
+    BANK_DB_OSS_URL: Optional[str] = None
+    BANK_DB_OSS_KEY: Optional[str] = None
+    # When True, the server refuses to boot unless Bank_db_oss and the OTP
+    # service are both configured. Set False to run without account lookups.
+    BANK_LOOKUP_ENABLED: bool = True
 
     # OpenRouter
     OPENROUTER_API_KEY: str
@@ -34,14 +50,15 @@ class Settings(BaseSettings):
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com/v1"
 
     # WhatsApp Settings (Defaults, but usually pulled from DB)
-    WHATSAPP_VERIFY_TOKEN: str = "pib_verify_token_2024"
+    # No default: a shipped-in-source verify token is a token everyone knows.
+    WHATSAPP_VERIFY_TOKEN: str = ""
 
     # Speech-to-Text (voice messages). Deepgram is used via REST (httpx) so no
     # heavy local model/deps are required. Arabic by default.
     DEEPGRAM_API_KEY: Optional[str] = None
     VOICE_ASR_MODEL: str = "nova-3"
     VOICE_ASR_LANGUAGE: str = "ar"
-    
+
     # Security WhatsApp (For OTPs)
     SECURITY_WHATSAPP_PHONE_NUMBER_ID: Optional[str] = None
     SECURITY_WHATSAPP_ACCESS_TOKEN: Optional[str] = None
@@ -54,7 +71,12 @@ class Settings(BaseSettings):
     # Set to False to skip signature verification entirely (local dev / simulators).
     # Must be True in production when WHATSAPP_APP_SECRET is also set.
     WHATSAPP_VERIFY_SIGNATURE: bool = True
-    
+
+    # Escape hatch for local dev / simulators. Signature verification now FAILS
+    # CLOSED when WHATSAPP_APP_SECRET is unset; set this to True to accept
+    # unsigned webhooks anyway. Never enable in production.
+    WHATSAPP_ALLOW_UNSIGNED: bool = False
+
     # App
     # SECURITY: default to blocking all cross-origin requests. A wildcard here
     # would let ANY website read authenticated API responses. Set explicit
@@ -66,13 +88,28 @@ class Settings(BaseSettings):
     USE_NGROK: bool = False
     NGROK_ID: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_ID", "ID"))
     NGROK_URL: Optional[str] = Field(None, validation_alias=AliasChoices("NGROK_URL", "URL"))
-    OTP_SERVICE_URL: str = "https://cupulate-azaria-tented.ngrok-free.dev/generate"
-    
+    # OTP service. OTP_SERVICE_BASE_URL is canonical; OTP_SERVICE_URL is the
+    # deprecated legacy form (it used to hardcode a third-party ngrok subdomain
+    # *including* the /generate path). Default is empty on purpose: if that
+    # tunnel ever lapses, whoever claims the subdomain next receives customer
+    # phone numbers and can send texts that look like our OTPs.
+    OTP_SERVICE_BASE_URL: Optional[str] = None
+    OTP_SERVICE_URL: str = ""  # DEPRECATED - use OTP_SERVICE_BASE_URL
+    OTP_SERVICE_SHARED_SECRET: Optional[str] = None
+    OTP_REQUEST_TIMEOUT: float = 10.0
+    OTP_CODE_LENGTH: int = 6
+    OTP_MAX_ATTEMPTS: int = 3
+    OTP_SESSION_TTL_SECONDS: int = 300  # mirrors the OTP service's 5-min expiry
+    OTP_RESEND_COOLDOWN_SECONDS: int = 60
+    OTP_MAX_SENDS_PER_PHONE_PER_15MIN: int = 3
+
     # JWT Authentication (shared with Node.js backend - uses same Supabase JWT secret)
-    SUPABASE_JWT_SECRET: str = Field(..., validation_alias=AliasChoices("SUPABASE_JWT_SECRET", "JWT_SECRET"))
+    SUPABASE_JWT_SECRET: str = Field(
+        ..., validation_alias=AliasChoices("SUPABASE_JWT_SECRET", "JWT_SECRET")
+    )
     JWT_ALGORITHM: str = "HS256"
     JWT_AUTHORIZED_ROLES: List[str] = ["viewer", "agent", "manager", "supervisor", "admin"]
-    
+
     # RAG Configuration (FR-03.03)
     QDRANT_URL: Optional[str] = None  # Remote Qdrant URL (optional, uses local if not set)
     QDRANT_STORAGE_PATH: str = "./qdrant_storage"  # Local storage path
@@ -81,6 +118,25 @@ class Settings(BaseSettings):
     RAG_SIMILARITY_THRESHOLD: float = 0.75  # Minimum cosine similarity
     RAG_MAX_UPLOAD_BYTES: int = 5 * 1024 * 1024  # 5 MB max file size
     EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"  # Multilingual for Arabic
+
+    @property
+    def otp_base_url(self) -> str:
+        """OTP service base URL, tolerating the deprecated path-suffixed form."""
+        if self.OTP_SERVICE_BASE_URL:
+            return self.OTP_SERVICE_BASE_URL.rstrip("/")
+        u = (self.OTP_SERVICE_URL or "").rstrip("/")
+        for suffix in ("/generate", "/webhook"):
+            if u.endswith(suffix):
+                return u[: -len(suffix)]
+        return u
+
+    @property
+    def otp_generate_url(self) -> str:
+        return f"{self.otp_base_url}/generate"
+
+    @property
+    def otp_verify_url(self) -> str:
+        return f"{self.otp_base_url}/verify"
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod
@@ -95,6 +151,7 @@ class Settings(BaseSettings):
             if v.startswith("["):
                 # Already JSON — let pydantic's default decoder handle it.
                 import json
+
                 return json.loads(v)
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         return v
@@ -115,6 +172,9 @@ class Settings(BaseSettings):
     RATE_LIMIT_IP_PER_MIN: int = 60
     RATE_LIMIT_SESSION_PER_MIN: int = 10
     RATE_LIMIT_ENABLED: bool = True
+    # Only enable behind a proxy you control (Render/Vercel/nginx). When False,
+    # X-Forwarded-For is ignored, because any client can forge it.
+    TRUST_PROXY_HEADERS: bool = False
 
     # Data retention (NFR-03.05) - automated cleanup of old records.
     DATA_RETENTION_DAYS: int = 30
@@ -140,6 +200,7 @@ class Settings(BaseSettings):
     VISION_SUPPORTED_TYPES: List[str] = ["image/jpeg", "image/png", "image/webp"]
     VISION_TIMEOUT: int = 90  # Timeout for vision API calls (seconds)
 
+
 # Initialize settings
 try:
     settings = Settings()
@@ -158,6 +219,10 @@ except Exception as e:
         DEEPSEEK_MODEL=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro"),
         SECURITY_WHATSAPP_PHONE_NUMBER_ID=os.getenv("SECURITY_WHATSAPP_PHONE_NUMBER_ID"),
         SECURITY_WHATSAPP_ACCESS_TOKEN=os.getenv("SECURITY_WHATSAPP_ACCESS_TOKEN"),
+        BANK_DB_OSS_URL=os.getenv("BANK_DB_OSS_URL"),
+        BANK_DB_OSS_KEY=os.getenv("BANK_DB_OSS_KEY"),
+        OTP_SERVICE_BASE_URL=os.getenv("OTP_SERVICE_BASE_URL"),
+        OTP_SERVICE_SHARED_SECRET=os.getenv("OTP_SERVICE_SHARED_SECRET"),
         NGROK_ID=os.getenv("ID"),
-        NGROK_URL=os.getenv("URL")
+        NGROK_URL=os.getenv("URL"),
     )

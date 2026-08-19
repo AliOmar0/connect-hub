@@ -53,6 +53,30 @@ def _validate_startup() -> None:
     if missing:
         logger.error(f"CRITICAL: Missing required environment variables: {missing}")
         raise RuntimeError(f"Missing required configuration: {missing}")
+    # Bank account lookups: refuse to boot half-configured rather than silently
+    # degrading. The bank client NEVER falls back to the main (service-role)
+    # Supabase project, so an unset BANK_DB_OSS_* means the feature is off, not
+    # that it quietly reads from somewhere else.
+    if settings.BANK_LOOKUP_ENABLED:
+        from app import database
+
+        problems = []
+        if database.bank_db_oss is None:
+            problems.append(
+                "Bank_db_oss is not available "
+                f"({database._BANK_DB_ERROR or 'BANK_DB_OSS_URL/BANK_DB_OSS_KEY not set'})"
+            )
+        if not settings.otp_base_url:
+            problems.append("OTP_SERVICE_BASE_URL is not set")
+        if not settings.OTP_SERVICE_SHARED_SECRET:
+            problems.append("OTP_SERVICE_SHARED_SECRET is not set")
+        if problems:
+            logger.error(f"CRITICAL: BANK_LOOKUP_ENABLED but {problems}")
+            raise RuntimeError(
+                f"Bank account lookups are enabled but misconfigured: {problems}. "
+                "Set BANK_LOOKUP_ENABLED=false to run without them."
+            )
+
     logger.info("✅ Startup validation passed - all critical settings configured")
 
 
@@ -65,6 +89,7 @@ async def session_cleanup_task():
     `auto_classify_session` internally via its `finally` block.
     """
     from app.api.v1.webhook import send_session_closing_message
+    from app.core.verification_state import verification_store
 
     while True:
         try:
@@ -73,6 +98,8 @@ async def session_cleanup_task():
                 None, minutes=10, on_close=send_session_closing_message
             )
             await crud.delete_old_notifications(None, hours=24)
+            # Evict verification state whose OTP has expired.
+            verification_store.purge_expired()
         except Exception as e:
             logger.exception(f"Error in session cleanup task: {e}")
         await asyncio.sleep(

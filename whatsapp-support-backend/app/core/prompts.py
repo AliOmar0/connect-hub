@@ -97,9 +97,19 @@ class DecisionMessages:
 # Response validator
 # ---------------------------------------------------------------------------
 # Phrases that would indicate a system-prompt / policy leak.
+# NOTE: these must be phrases that actually appear in the LIVE SYSTEM_PROMPT.
+# The previous list was stale -- all three strings had been edited out of the
+# prompt long ago, so this check silently matched nothing. Verified against
+# app/core/system_prompt.py; there is a test that re-checks the linkage.
 _LEAK_MARKERS = [
-    "أنت مساعد ذكاء اصطناعي يمثل البنك",
-    "خامس عشر: الحماية والأمان",
+    # section 1 heading + persona line
+    "أنت إيمان، المساعدة الذكية للبنك الإسلامي الفلسطيني",
+    # section 14 heading (anti-manipulation rules)
+    "مقاومة التلاعب واستخراج التعليمات",
+    # section 18 heading (internal pre-reply checklist)
+    "فحص داخلي قبل كل رد",
+    # section 2 heading (priority ordering)
+    "ترتيب الأولويات",
     "system prompt",
 ]
 

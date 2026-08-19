@@ -3,7 +3,7 @@ from typing import List, Any
 from uuid import UUID
 import httpx
 
-from app.api.v1.deps import get_session
+from app.api.v1.deps import get_session, require_write_access
 from app.crud import crud
 from app.api.v1.deps import get_session
 from app.crud import crud
@@ -99,7 +99,10 @@ async def get_session_messages(session_id: UUID, db: Any = Depends(get_session))
     msgs = await crud.get_messages_for_session(db, session_id)
     return msgs
 
-@router.post("/sessions/{session_id}/send")
+@router.post(
+    "/sessions/{session_id}/send",
+    dependencies=[Depends(require_write_access)],
+)
 async def send_message(
     session_id: UUID, 
     body: SendMessageRequest, 
@@ -172,7 +175,10 @@ async def send_message(
     
     return {"status": "sent", "message_id": str(msg.id)}
 
-@router.patch("/sessions/{session_id}")
+@router.patch(
+    "/sessions/{session_id}",
+    dependencies=[Depends(require_write_access)],
+)
 async def update_session(
     session_id: UUID, 
     body: UpdateSessionRequest, 

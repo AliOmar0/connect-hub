@@ -27,10 +27,13 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Backwards-compatible private alias (this class was named _SlidingWindowCounter).
+
+
 _WINDOW_SECONDS = 60
 
 
-class _SlidingWindowCounter:
+class SlidingWindowCounter:
     """Per-key sliding window request counter using a deque of timestamps."""
 
     def __init__(self, limit_per_min: int):
@@ -50,6 +53,9 @@ class _SlidingWindowCounter:
 
         bucket.append(now)
         return True
+
+    def reset(self) -> None:
+        self._hits.clear()
 
     def gc(self, max_keys: int = 5000) -> None:
         """Best-effort eviction of stale keys so the dict doesn't grow forever."""
@@ -76,21 +82,30 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     customers; that endpoint has its own signature-based protection instead).
     """
 
-    _EXEMPT_PATHS = {"/", "/health", "/webhook"}
+    # Both webhook routes are exempt: Meta's servers share IPs across many
+    # customers. /api/wa/webhook was missing here, so the alternate route was
+    # IP-limited while the primary one was not.
+    _EXEMPT_PATHS = {"/", "/health", "/webhook", "/api/wa/webhook"}
 
     def __init__(self, app):
         super().__init__(app)
-        self._ip_counter = _SlidingWindowCounter(settings.RATE_LIMIT_IP_PER_MIN)
-        self._session_counter = _SlidingWindowCounter(settings.RATE_LIMIT_SESSION_PER_MIN)
+        self._ip_counter = SlidingWindowCounter(settings.RATE_LIMIT_IP_PER_MIN)
+        self._session_counter = SlidingWindowCounter(settings.RATE_LIMIT_SESSION_PER_MIN)
 
     @staticmethod
     def _client_ip(request: Request) -> str:
-        # Respect a proxy-set forwarded header (Render/Vercel/nginx) but fall
-        # back to the direct peer address so this can't be spoofed to bypass
-        # limiting when there is no trusted proxy in front.
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
+        """Resolve the client IP for rate-limiting.
+
+        SECURITY: X-Forwarded-For is only honoured when TRUST_PROXY_HEADERS is
+        explicitly enabled. Anyone can set that header, so trusting it
+        unconditionally (as this did) meant one extra header per request
+        defeated IP rate limiting entirely. Behind a real proxy the direct peer
+        address is the proxy, so enable the flag there and only there.
+        """
+        if settings.TRUST_PROXY_HEADERS:
+            forwarded = request.headers.get("x-forwarded-for")
+            if forwarded:
+                return forwarded.split(",")[0].strip()
         return request.client.host if request.client else "unknown"
 
     async def dispatch(self, request: Request, call_next):
@@ -116,3 +131,6 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._ip_counter.gc()
         self._session_counter.gc()
         return await call_next(request)
+
+
+_SlidingWindowCounter = SlidingWindowCounter

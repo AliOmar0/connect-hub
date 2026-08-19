@@ -13,6 +13,7 @@ import httpx
 
 from app.core.config import settings
 from app.core.llm import llm_service, USE_DEEPSEEK
+from app.core.pii import redact_pii
 
 logger = logging.getLogger(__name__)
 
@@ -132,13 +133,33 @@ class VisionService:
 4. **حماية البيانات**: إذا كانت الصورة تحتوي على بطاقة بنكية، حذري العميل من مشاركة أرقام البطاقة ولا تعيدي كتابة أي بيانات حساسة.
 """
             
+            # SECURITY: the WhatsApp caption is attacker-controlled and used to
+            # reach the prompt without ever passing the text path's checks.
+            if user_text:
+                user_text = llm_service.sanitize_input(user_text)
+                if llm_service.detect_injection(user_text):
+                    logger.warning(
+                        "BLOCKED: prompt injection detected in image caption: "
+                        + redact_pii(user_text)[:200]
+                    )
+                    return (
+                        "\u0639\u0630\u0631\u0627\u064b\u060c \u0644\u0627 \u064a\u0645\u0643\u0646\u0646\u064a \u062a\u0646\u0641\u064a\u0630 \u0647\u0630\u0627 \u0627\u0644\u0637\u0644\u0628. "
+                        "\u0643\u064a\u0641 \u064a\u0645\u0643\u0646\u0646\u064a \u0645\u0633\u0627\u0639\u062f\u062a\u0643 \u0641\u064a \u0627\u0633\u062a\u0641\u0633\u0627\u0631\u0627\u062a\u0643 \u0627\u0644\u0628\u0646\u0643\u064a\u0629\u061f"
+                    )
+
+            nonce = llm_service._new_nonce()
             dynamic_prompt = SYSTEM_PROMPT + vision_instructions
             
             # If user sent a caption, try to find context from knowledge base
             if user_text:
                 context = llm_service._find_context(user_text)
                 if context:
-                    dynamic_prompt += f"\n\n=== معلومات إضافية من قاعدة المعرفة ===\n{context}\n"
+                    # `_find_context` already emits its own "===" header; the
+                    # second wrapper here was double-heading it. Fenced instead,
+                    # so scraped page text cannot imitate a section delimiter.
+                    dynamic_prompt += "\n\n" + llm_service.fence(
+                        context, nonce, "knowledge"
+                    ) + "\n"
             
             # Build messages array in OpenAI multimodal format
             messages = [
@@ -165,7 +186,11 @@ class VisionService:
             })
             
             # Add text (caption or default)
-            text = user_text if user_text else "هذه صورة مرفقة. الرجاء فحصها حسب تعليمات تحليل الصور والرد مباشرة."
+            if user_text:
+                # Caption is untrusted: fence it like any other customer text.
+                text = llm_service.fence(user_text, nonce, "user_input")
+            else:
+                text = "هذه صورة مرفقة. الرجاء فحصها حسب تعليمات تحليل الصور والرد مباشرة."
             user_content.append({
                 "type": "text",
                 "text": text

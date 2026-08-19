@@ -1,6 +1,7 @@
 from .crud import (
     # Bank
-    get_bank_account,
+    get_bank_account_fields,
+    ACCOUNT_FIELDS,
     # Customers
     get_customer_by_phone,
     create_customer,

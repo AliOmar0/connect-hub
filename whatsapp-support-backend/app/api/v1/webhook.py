@@ -8,6 +8,31 @@ from app.core.stt import stt_service
 from app.core.whatsapp import WhatsAppClient
 from app.core.notifications import NotificationService
 from app.core.message_buffer import message_buffer
+from app.core.bank import (
+    PROTECTED_PREFIX,
+    AccountField,
+    build_account_audit_line,
+    build_account_not_found_reply,
+    build_account_reply,
+    build_account_unavailable_reply,
+    build_field_unavailable_reply,
+    build_otp_cancelled_reply,
+    build_otp_error_reply,
+    build_otp_exhausted_reply,
+    build_otp_prompt_reply,
+    build_otp_rate_limited_reply,
+    build_otp_send_failed_reply,
+    build_otp_wrong_reply,
+    extract_otp_code,
+    is_critical_request,
+    match_account_intent,
+    mentions_cancel,
+    mentions_unavailable_field,
+    required_crud_fields,
+)
+from app.core.otp_client import otp_client
+from app.core.verification_state import otp_send_limiter, verification_store
+from app.database import BankDbUnavailable
 from typing import Any, Optional
 import logging
 import hmac
@@ -35,11 +60,20 @@ def _verify_whatsapp_signature(raw_body: bytes, signature_header: Optional[str])
 
     app_secret = settings.WHATSAPP_APP_SECRET
     if not app_secret:
-        logger.warning(
-            "WHATSAPP_APP_SECRET not configured - skipping webhook signature "
-            "verification. Set it in production to reject forged requests."
+        # FAIL CLOSED. This used to return True with a warning, which meant a
+        # default deployment (WHATSAPP_APP_SECRET defaults to None) accepted any
+        # forged webhook - anyone could inject messages into any session.
+        if settings.WHATSAPP_ALLOW_UNSIGNED:
+            logger.warning(
+                "WHATSAPP_APP_SECRET not configured and WHATSAPP_ALLOW_UNSIGNED=true "
+                "- accepting an UNVERIFIED webhook. Never do this in production."
+            )
+            return True
+        logger.error(
+            "Webhook rejected: WHATSAPP_APP_SECRET is not configured. Set it to "
+            "verify Meta's signature, or set WHATSAPP_ALLOW_UNSIGNED=true for local dev."
         )
-        return True
+        return False
 
     if not signature_header or not signature_header.startswith("sha256="):
         logger.warning(
@@ -63,8 +97,10 @@ def _verify_whatsapp_signature(raw_body: bytes, signature_header: Optional[str])
     return match
 
 
-# In-memory store for OTP sessions (Similar to Node.js backend)
-otp_sessions = {} # {db_session_id: {"type": "WAITING_OTP", "phone": "..."}}
+# OTP state lives in app/core/verification_state.py (`verification_store`).
+# It deliberately does NOT hold the code: verification is delegated to the OTP
+# service's /verify endpoint, so this process never has the secret to leak or
+# to compare incorrectly.
 
 # Track processed WhatsApp message IDs to prevent duplicate webhook processing.
 # Uses an OrderedDict as a true LRU: oldest-inserted entries are evicted first
@@ -85,23 +121,62 @@ def _remember_message_id(message_id: str) -> None:
     while len(_processed_message_ids) > _MAX_PROCESSED_IDS:
         _processed_message_ids.popitem(last=False)
 
-async def send_whatsapp_otp(phone: str, intent: str = "BANK_ACCOUNT"):
+async def _start_verification(
+    db_session_id: UUID,
+    customer_phone: str,
+    fields: tuple,
+) -> str:
+    """Send an OTP and record the pending verification. Returns the reply text.
+
+    Never returns or stores the code -- see app/core/otp_client.py.
     """
-    Call the standalone OTP service to generate and send OTP
+    if not otp_send_limiter.allow(customer_phone):
+        return build_otp_rate_limited_reply()
+
+    outcome = await otp_client.generate(customer_phone, intent="ACCOUNT_INFO")
+    if outcome == "rate_limited":
+        return build_otp_rate_limited_reply()
+    if outcome != "sent":
+        return build_otp_send_failed_reply()
+
+    verification_store.start(
+        str(db_session_id),
+        phone=customer_phone,
+        intent="ACCOUNT_INFO",
+        fields=tuple(f.value for f in fields),
+    )
+    return build_otp_prompt_reply()
+
+
+async def _deliver_account_data(customer_phone: str, field_values: tuple) -> tuple:
+    """Fetch and render the verified customer's account data.
+
+    Returns ``(customer_text, persisted_text)`` -- deliberately two different
+    strings. The transcript copy carries no balance and no full identifiers,
+    because the webhook rebuilds LLM history from stored messages.
     """
+    fields = tuple(AccountField(v) for v in field_values)
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                settings.OTP_SERVICE_URL,
-                json={"phone": phone, "intent": intent},
-                timeout=10.0
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("otp")
+        account = await crud.get_bank_account_fields(
+            customer_phone, required_crud_fields(fields)
+        )
+    except BankDbUnavailable as e:
+        logger.error(f"Bank lookup unavailable: {e}")
+        text = build_account_unavailable_reply()
+        return text, text
     except Exception as e:
-        logger.error(f"[OTP Error] Failed to call OTP service: {e}")
-        return None
+        logger.error(f"Bank lookup failed: {e}")
+        text = build_account_unavailable_reply()
+        return text, text
+
+    if not account:
+        text = build_account_not_found_reply()
+        return text, text
+
+    return (
+        build_account_reply(fields, account),
+        build_account_audit_line(fields, account),
+    )
 
 
 from app.core.storage import storage_service
@@ -472,42 +547,114 @@ async def process_ai_response(
             await client.mark_message_as_read(message_id)
         await client.send_typing_indicator(customer_phone)
 
-        # --- Bank & Critical Verification Logic ---
-        state = otp_sessions.get(str(db_session_id))
-        
-        # Scenario: User provided OTP (digits only)
-        import re
-        if state and state.get("type") == "WAITING_OTP":
-            digits = "".join(re.findall(r'\d+', user_message))
-            if digits and digits == state.get("otp"):
-                intent = state.get("intent", "BANK_ACCOUNT")
-                # Cleanup state
-                otp_sessions.pop(str(db_session_id), None)
-                
-                if intent == "BANK_ACCOUNT":
-                    account = await crud.get_bank_account(customer_phone)
-                    if account:
-                        ai_text = f"تم التحقق بنجاح! سيد {account['owner_name']}، رصيد حسابك هو {account['balance']} {account['currency']}. رقم حسابك: {account['account_number']}. هل هناك شيء آخر؟"
-                    else:
-                        ai_text = "تم التحقق، ولكن لم نجد بيانات حساب مرتبطة بهذا الرقم."
-                elif intent == "CRITICAL_ACTION":
-                    ai_text = "✅ تم التحقق من هويتك بنجاح. لقد قمنا بتوثيق هذا الإجراء الحساس. كيف يمكنني متابعة طلبك الآن؟"
-                else:
-                    ai_text = "تم التحقق بنجاح! شكراً لك."
-                
-                await client.send_text_message(customer_phone, ai_text)
-                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+        # ------------------------------------------------------------------
+        # Bank verification + account questions.
+        #
+        # This whole block runs BEFORE the LLM call, deliberately: an account
+        # question must never be sent to the model at all, and the old ordering
+        # burned an LLM call whose answer was then thrown away.
+        # ------------------------------------------------------------------
+        sid = str(db_session_id)
+        pending = verification_store.get(sid)
+
+        async def _reply_and_store(customer_text: str, persisted_text: str = None) -> None:
+            await client.send_text_message(customer_phone, customer_text)
+            await crud.create_message(
+                None,
+                session_id=db_session_id,
+                content=persisted_text if persisted_text is not None else customer_text,
+                direction=MessageDirection.outbound,
+            )
+
+        if pending:
+            # Cancel is checked first and anywhere in the message: it used to be
+            # nested under "did they send digits", so a bare "إلغاء" fell through
+            # to the LLM and left the verification state alive.
+            if mentions_cancel(user_message):
+                verification_store.clear(sid)
+                await _reply_and_store(build_otp_cancelled_reply())
                 return
-            elif digits:
-                # User sent digits but they were wrong
-                if "إلغاء" in user_message or "cancel" in user_message.lower():
-                    otp_sessions.pop(str(db_session_id), None)
-                    ai_text = "تم إلغاء طلب التحقق. كيف يمكنني مساعدتك بشكل عام؟"
+
+            code = extract_otp_code(user_message, settings.OTP_CODE_LENGTH)
+            if code:
+                outcome = await otp_client.verify(pending.phone, code)
+
+                if outcome == "valid":
+                    verification_store.clear(sid)
+                    customer_text, persisted_text = await _deliver_account_data(
+                        customer_phone, pending.fields
+                    )
+                    await _reply_and_store(customer_text, persisted_text)
+                    return
+
+                if outcome == "error":
+                    # Our outage, not their mistake - do NOT consume an attempt.
+                    await _reply_and_store(build_otp_error_reply())
+                    return
+
+                attempts = verification_store.record_failure(sid)
+                remaining = settings.OTP_MAX_ATTEMPTS - attempts
+                if remaining <= 0:
+                    verification_store.clear(sid)
+                    await _reply_and_store(build_otp_exhausted_reply())
                 else:
-                    ai_text = "رمز التحقق غير صحيح. يرجى المحاولة مرة أخرى أو قول 'إلغاء'."
-                
-                await client.send_text_message(customer_phone, ai_text)
-                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
+                    await _reply_and_store(build_otp_wrong_reply(remaining))
+                return
+            # No code in the message: fall through to the assistant, keeping the
+            # pending verification alive so they can still send it.
+
+        else:
+            # Deterministic, allowlist-only. `ai_mentions_otp` used to be an
+            # additional trigger here; it is GONE ON PURPOSE. The system prompt
+            # tells the model to mention the OTP step for any transfer question
+            # (system_prompt.py, sections 20.3 / security rules), so model output
+            # could make us send a real code. Model output must never initiate a
+            # verification. Do not reintroduce it.
+            account_fields = match_account_intent(user_message)
+            if account_fields and settings.BANK_LOOKUP_ENABLED:
+                reply = await _start_verification(
+                    db_session_id, customer_phone, account_fields
+                )
+                await _reply_and_store(reply)
+                return
+
+            if mentions_unavailable_field(user_message):
+                # e.g. "ما هو رقم الآيبان الخاص بحسابي؟". Bank_db_oss has no
+                # IBAN column, so answer plainly instead of sending an OTP that
+                # would gate nothing -- and instead of letting the question
+                # reach the LLM, which has no account data and would guess.
+                await _reply_and_store(build_field_unavailable_reply())
+                return
+
+            if is_critical_request(user_message):
+                # Transfers / password resets / account closure: escalate to a
+                # human. Never send an OTP for these - the assistant cannot
+                # perform the action, so the code would gate nothing and would
+                # only teach customers to type codes into chat.
+                clean_text = (
+                    "فهمت أنك ترغب في تنفيذ عملية حساسة على حسابك. "
+                    "سأحوّل طلبك إلى أحد موظفي خدمة العملاء لمتابعته معك مباشرة."
+                )
+                await client.send_text_message(customer_phone, clean_text)
+                await crud.update_session_status(None, db_session_id, SessionStatus.escalated)
+                message_buffer.clear_session_buffer(db_session_id)
+                try:
+                    await crud.create_notification(
+                        None,
+                        user_id=None,
+                        title="⚠️ New Escalation Request",
+                        message=f"Customer {customer_phone} requested a sensitive action.",
+                        type="escalation",
+                        action_url=f"/sessions/{db_session_id}",
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to create escalation notification: {e}")
+                await crud.create_message(
+                    None,
+                    session_id=db_session_id,
+                    content=clean_text,
+                    direction=MessageDirection.outbound,
+                )
                 return
         # --- End Verification Logic ---
 
@@ -518,7 +665,15 @@ async def process_ai_response(
         # Take the last 5 messages for context, excluding the current one
         for m in msgs[-5:]:
             role = "user" if m.direction == MessageDirection.inbound else "assistant"
-            history.append({"role": role, "content": m.content})
+            content = m.content or ""
+            # Account replies are stored with a sentinel prefix so they can be
+            # kept out of the prompt. Without this the customer's balance and
+            # account number would be fed back to the model on their next turn,
+            # which is exactly what "account data never reaches the LLM" has to
+            # prevent. Also neutralises rows written by the previous code.
+            if content.startswith(PROTECTED_PREFIX):
+                content = "[تم تزويد العميل ببيانات حسابه بعد تحقق ناجح.]"
+            history.append({"role": role, "content": content})
         
         # 1.5 Get Session Types for awareness
         session_types = await crud.get_session_main_types(None)
@@ -546,48 +701,7 @@ async def process_ai_response(
                 "سأحوّل طلبك إلى أحد موظفي خدمة العملاء لمتابعة استفسارك وتزويدك بالمعلومات الدقيقة الخاصة بحسابك."
             )
 
-        # --- Intent Detection (Bank & Critical) ---
-        # Refined keywords to avoid general inquiries like "how to open an account"
-        account_keywords = ["رصيدي", "رصيد حسابي", "كشف حساب", "حسابي الشخصي", "my balance", "account balance"]
-        critical_keywords = ["تحويل أموال", "تغيير كلمة المرور", "إغلاق حسابي", "money transfer", "reset password"]
-        
-        is_asking_private = any(k in user_message.lower() for k in account_keywords)
-        is_critical = any(k in user_message.lower() for k in critical_keywords)
-        
-        # Check if AI itself decided an OTP is needed (from SYSTEM_PROMPT instructions)
-        ai_mentions_otp = "رمز تحقق" in ai_text or "OTP" in ai_text
-        
-        if (is_asking_private or is_critical or ai_mentions_otp) and not state:
-            # Determine intent
-            intent = "BANK_ACCOUNT" if (is_asking_private or "رصيد" in user_message or "حساب" in user_message) else "CRITICAL_ACTION"
-            
-            # Additional check: If it's a general question about opening accounts or locations, ignore
-            general_inquiry_keywords = ["كيف", "اين", "طريقة", "شروط", "how", "where", "location"]
-            is_general = any(k in user_message.lower() for k in general_inquiry_keywords) and not is_asking_private
-            
-            if not is_general or ai_mentions_otp:
-                otp = await send_whatsapp_otp(customer_phone, intent=intent)
-                
-                if otp:
-                    otp_sessions[str(db_session_id)] = {
-                        "type": "WAITING_OTP", 
-                        "otp": otp, 
-                        "phone": customer_phone,
-                        "intent": intent
-                    }
-                    # Ensure AI response correctly explains the OTP wait
-                    if "رمز تحقق" not in ai_text:
-                        if intent == "BANK_ACCOUNT":
-                            ai_text = "للقيام بذلك بأمان، سأقوم بإرسال رمز تحقق (OTP) الآن إلى رقمك المسجل. يرجى تزويدي بالرمز بمجرد وصوله لنتمكن من عرض بيانات حسابك."
-                        else:
-                            ai_text = "يتطلب هذا الإجراء الحساس عملية تحقق. لقد أرسلنا رمز (OTP) إلى هاتفك لضمان هويتك. يرجى تزويدي بالرمز للمتابعة."
-                else:
-                    ai_text = "عذراً، واجهنا مشكلة في إرسال رمز التحقق حالياً. يرجى المحاولة لاحقاً."
-                
-                await client.send_text_message(customer_phone, ai_text)
-                await crud.create_message(None, session_id=db_session_id, content=ai_text, direction=MessageDirection.outbound)
-                return
-        # --- End Intent Detection ---
+        # (Bank/critical intent detection now runs before the LLM call, above.)
         
         # 2.5 Classify session (Understanding Required)
         if session.main_type_id is None:

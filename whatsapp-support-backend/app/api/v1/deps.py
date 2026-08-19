@@ -91,11 +91,17 @@ async def verify_jwt(credentials: HTTPAuthorizationCredentials = Depends(securit
                 audience="authenticated",
             )
 
-        # Derive role from payload (mirrors Node.js auth.js logic)
+        # Derive role from payload.
+        #
+        # SECURITY: `user_metadata` is deliberately NOT consulted. In Supabase it
+        # maps to `raw_user_meta_data`, which the user can write themselves via
+        # supabase.auth.updateUser({ data: { role: 'admin' } }) -- so trusting it
+        # let any signed-up user mint themselves an admin token. Authorization
+        # data must come from `app_metadata` (service-role writable only) or a
+        # custom `role_name` claim minted by the access-token hook.
         role_name = (
             payload.get("role_name") or
             payload.get("app_metadata", {}).get("role") or
-            payload.get("user_metadata", {}).get("role") or
             "viewer"
         )
         
@@ -144,3 +150,43 @@ async def get_optional_user(
         return await verify_jwt(credentials)
     except HTTPException:
         return None
+
+# ---------------------------------------------------------------------------
+# Role gates
+# ---------------------------------------------------------------------------
+# `verify_jwt` only proves the caller holds one of the 5 JWT_AUTHORIZED_ROLES --
+# and the role defaults to "viewer" when no claim is present. Every router was
+# mounted with `verify_jwt` alone, so any authenticated user could send WhatsApp
+# messages to customers and delete knowledge-base documents. These gates add the
+# missing authorization step (the same shape as `require_scraper_admin`).
+#
+# DEPLOYMENT NOTE: roles reach the JWT via the `custom_access_token_hook`
+# (supabase/migrations/20260623000000_custom_access_token_hook.sql), which must
+# be enabled under Authentication -> Hooks. Without it every token resolves to
+# "viewer" and these gates will 403 legitimate staff.
+
+# Can act on a conversation: reply to customers, change session state.
+WRITE_ROLES = ("agent", "manager", "supervisor", "admin")
+# Can change what the assistant knows, or destroy records.
+ADMIN_ROLES = ("manager", "supervisor", "admin")
+
+
+def require_roles(*allowed: str):
+    """Build a dependency that 403s unless the caller holds one of `allowed`."""
+
+    async def _dependency(user: dict = Depends(verify_jwt)) -> dict:
+        if user.get("role") not in allowed:
+            logger.warning(
+                f"Forbidden: role {user.get('role')!r} not in {allowed}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions for this action.",
+            )
+        return user
+
+    return _dependency
+
+
+require_write_access = require_roles(*WRITE_ROLES)
+require_admin_access = require_roles(*ADMIN_ROLES)

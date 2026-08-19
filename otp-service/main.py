@@ -1,8 +1,12 @@
-from fastapi import FastAPI, HTTPException, Body
+from fastapi import Depends, FastAPI, Header, HTTPException
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
+import hmac
 import secrets
 import logging
+import time
+from collections import deque
+from typing import Deque, Dict
 import os
 from typing import Optional
 import httpx
@@ -71,7 +75,6 @@ async def root():
         "endpoints": {
             "generate": "/generate [POST]",
             "verify": "/verify [POST]",
-            "webhook": "/webhook [POST] (alias for generate)",
             "health": "/health [GET]"
         }
     }
@@ -84,11 +87,12 @@ async def health():
 # Supabase init (accept the project's env var names as fallbacks so the service
 # runs with the shared root .env, which uses VITE_SUPABASE_URL + service-role key).
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("VITE_SUPABASE_URL")
-SUPABASE_KEY = (
-    os.getenv("SUPABASE_KEY")
-    or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    or os.getenv("VITE_SUPABASE_PUBLISHABLE_KEY")
-)
+# NO publishable-key fallback. VITE_SUPABASE_PUBLISHABLE_KEY is the key the
+# React frontend ships to browsers; using it here meant live OTP codes in
+# bank_otps were readable by anything holding that key. This service needs the
+# service-role key, and bank_otps must have RLS on with no anon policies
+# (see whatsapp-support-backend/scripts/sql/bank_otps_hardening.sql).
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 supabase: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_KEY:
@@ -106,6 +110,59 @@ else:
 SECURITY_WHATSAPP_PHONE_NUMBER_ID = os.getenv("SECURITY_WHATSAPP_PHONE_NUMBER_ID")
 SECURITY_WHATSAPP_ACCESS_TOKEN = os.getenv("SECURITY_WHATSAPP_ACCESS_TOKEN")
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WhatsAPP_BUSSINES")
+
+OTP_SERVICE_SHARED_SECRET = os.getenv("OTP_SERVICE_SHARED_SECRET")
+OTP_CODE_LENGTH = int(os.getenv("OTP_CODE_LENGTH", "6"))
+OTP_MAX_VERIFY_ATTEMPTS = int(os.getenv("OTP_MAX_VERIFY_ATTEMPTS", "5"))
+
+if not OTP_SERVICE_SHARED_SECRET:
+    # Fail closed: /generate can send WhatsApp messages to any number and
+    # /verify is a brute-force oracle, so neither may be reachable anonymously.
+    raise RuntimeError(
+        "OTP_SERVICE_SHARED_SECRET is not set. Refusing to start: this service "
+        "would otherwise accept unauthenticated requests from the public internet."
+    )
+
+
+async def require_service_key(x_otp_service_key: Optional[str] = Header(None)) -> None:
+    """Shared-secret auth between the backend and this service.
+
+    Note this only helps over TLS -- a bearer secret on plain HTTP buys nothing.
+    """
+    if not x_otp_service_key or not hmac.compare_digest(
+        x_otp_service_key, OTP_SERVICE_SHARED_SECRET
+    ):
+        logger.warning("Rejected OTP request with missing/invalid service key")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+class _RateLimiter:
+    """Per-key sliding window."""
+
+    def __init__(self, limit: int, window_seconds: int) -> None:
+        self.limit = limit
+        self.window = window_seconds
+        self._hits: Dict[str, Deque[float]] = {}
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        bucket = self._hits.setdefault(key, deque())
+        while bucket and now - bucket[0] > self.window:
+            bucket.popleft()
+        if len(bucket) >= self.limit:
+            return False
+        bucket.append(now)
+        return True
+
+
+# 3 codes per phone per 15 min; 10 verify attempts per phone per 5 min.
+_generate_limiter = _RateLimiter(3, 15 * 60)
+_verify_limiter = _RateLimiter(10, 5 * 60)
+
+
+def _normalize_phone(phone: str) -> str:
+    return "".join(ch for ch in (phone or "") if ch.isdigit())
+
 
 class OtpRequest(BaseModel):
     phone: str
@@ -132,18 +189,33 @@ async def send_whatsapp_message(phone: str, text: str):
         response.raise_for_status()
         return response.json()
 
-@app.post("/generate")
+@app.post("/generate", dependencies=[Depends(require_service_key)])
 async def generate_otp(request: OtpRequest):
     if supabase is None:
         raise HTTPException(status_code=503, detail="Supabase not configured on the OTP service")
     phone = request.phone
+    if not _generate_limiter.allow(_normalize_phone(phone)):
+        raise HTTPException(status_code=429, detail="Too many OTP requests for this number")
+
     # CSPRNG for verification codes (A02: avoid predictable PRNG).
-    otp = f"{secrets.randbelow(9000) + 1000}"
+    # 6 digits, not 4: a 4-digit code is a 9,000-value space, which is trivially
+    # brute-forced inside the 5-minute window.
+    upper = 10 ** OTP_CODE_LENGTH
+    lower = 10 ** (OTP_CODE_LENGTH - 1)
+    otp = str(secrets.randbelow(upper - lower) + lower)
     # SECURITY: never log the OTP value (A09: sensitive data in logs).
     logger.info(f"Generating OTP for {phone}")
     
     # 1. Save to Supabase (bank_otps table)
     expires_at = (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+    try:
+        # Retire any outstanding codes for this phone so only the newest is live.
+        supabase.table("bank_otps").update(
+            {"consumed_at": datetime.now(timezone.utc).isoformat()}
+        ).eq("phone_number", phone).is_("consumed_at", "null").execute()
+    except Exception as e:
+        logger.error(f"Failed to retire previous OTPs: {e}")
+
     try:
         supabase.table("bank_otps").insert({
             "phone_number": phone, 
@@ -177,30 +249,63 @@ async def generate_otp(request: OtpRequest):
     except:
         pass
 
+    # INVARIANT: never return the code. The backend must not hold it -- it asks
+    # /verify instead. Do not "helpfully" add an `otp` field here.
     return {"status": "sent", "phone": phone}
 
-@app.post("/verify")
+@app.post("/verify", dependencies=[Depends(require_service_key)])
 async def verify_otp(request: VerifyRequest):
     if supabase is None:
         raise HTTPException(status_code=503, detail="Supabase not configured on the OTP service")
+
+    if not _verify_limiter.allow(_normalize_phone(request.phone)):
+        raise HTTPException(status_code=429, detail="Too many verification attempts")
+
     try:
-        response = supabase.table("bank_otps")\
-            .select("*")\
-            .eq("phone_number", request.phone)\
-            .eq("otp_code", request.otp)\
-            .eq("verified", False)\
-            .gt("expires_at", datetime.now(timezone.utc).isoformat())\
-            .order("created_at", desc=True)\
-            .limit(1)\
+        # Select by PHONE ONLY, then compare the code in Python. Matching on
+        # .eq("otp_code", ...) meant a wrong guess returned no row, so there was
+        # nothing to count -- attempts were effectively unlimited.
+        response = (
+            supabase.table("bank_otps")
+            .select("*")
+            .eq("phone_number", request.phone)
+            .eq("verified", False)
+            .is_("consumed_at", "null")
+            .gt("expires_at", datetime.now(timezone.utc).isoformat())
+            .order("created_at", desc=True)
+            .limit(1)
             .execute()
-        
-        if response.data:
-            # Mark as verified
-            otp_id = response.data[0]['id']
-            supabase.table("bank_otps").update({"verified": True}).eq("id", otp_id).execute()
-            return {"status": "verified", "valid": True}
-        else:
+        )
+
+        if not response.data:
             return {"status": "invalid", "valid": False}
+
+        row = response.data[0]
+        attempts = (row.get("attempts") or 0) + 1
+
+        if attempts > OTP_MAX_VERIFY_ATTEMPTS:
+            supabase.table("bank_otps").update(
+                {"consumed_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", row["id"]).execute()
+            logger.warning("OTP burned after too many attempts")
+            return {"status": "invalid", "valid": False}
+
+        if hmac.compare_digest(str(row.get("otp_code") or ""), str(request.otp)):
+            supabase.table("bank_otps").update(
+                {
+                    "verified": True,
+                    "attempts": attempts,
+                    "consumed_at": datetime.now(timezone.utc).isoformat(),
+                }
+            ).eq("id", row["id"]).execute()
+            return {"status": "verified", "valid": True}
+
+        supabase.table("bank_otps").update({"attempts": attempts}).eq(
+            "id", row["id"]
+        ).execute()
+        return {"status": "invalid", "valid": False}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Verification error: {e}")
         raise HTTPException(status_code=500, detail="Database error")

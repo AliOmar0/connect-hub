@@ -83,6 +83,25 @@ def strip_clitics_text(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Masking
 # ---------------------------------------------------------------------------
+def normalize_msisdn(phone: str) -> str:
+    r"""Reduce a phone number to bare digits for cross-system matching.
+
+    WhatsApp delivers the sender as ``970599123456`` (no ``+``) while
+    ``customers.phone`` in Bank_db_oss is typically stored ``+970 59 912 3456``.
+    Comparing the raw strings never matches, so both sides are digit-normalised
+    (the bank-side RPC does the same with ``regexp_replace(.., '\D', '', 'g')``).
+
+    A leading international prefix (``00``) is stripped so ``00970..`` and
+    ``+970..`` collapse to the same value.
+    """
+    if not phone:
+        return ""
+    digits = re.sub(r"\D", "", normalize_digits(phone))
+    if digits.startswith("00"):
+        digits = digits[2:]
+    return digits
+
+
 def mask_identifier(value: str, visible: int = 4) -> str:
     """Mask all but the last ``visible`` digits of an identifier.
 

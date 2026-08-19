@@ -125,11 +125,13 @@ def sample_nlp_result():
 
 @pytest.fixture(autouse=True)
 def clear_otp_sessions():
-    """Clear OTP sessions before each test."""
-    from app.api.v1.webhook import otp_sessions
-    otp_sessions.clear()
+    """Clear pending verifications and OTP send throttles before each test."""
+    from app.core.verification_state import otp_send_limiter, verification_store
+    verification_store.clear_all()
+    otp_send_limiter.reset()
     yield
-    otp_sessions.clear()
+    verification_store.clear_all()
+    otp_send_limiter.reset()
 
 
 @pytest.fixture(autouse=True)
@@ -168,7 +170,15 @@ def mock_settings():
         mock.WHATSAPP_VERIFY_TOKEN = "test_verify_token"
         mock.WHATSAPP_APP_SECRET = "test_app_secret"
         mock.WHATSAPP_VERIFY_SIGNATURE = True
-        mock.OTP_SERVICE_URL = "http://localhost:8001/otp"
+        mock.OTP_SERVICE_URL = ""
+        mock.OTP_SERVICE_BASE_URL = "http://localhost:8001"
+        mock.OTP_SERVICE_SHARED_SECRET = "test_otp_secret"
+        mock.OTP_CODE_LENGTH = 6
+        mock.OTP_MAX_ATTEMPTS = 3
+        mock.OTP_SESSION_TTL_SECONDS = 300
+        mock.BANK_LOOKUP_ENABLED = True
+        mock.BANK_DB_OSS_URL = "https://bank.supabase.co"
+        mock.BANK_DB_OSS_KEY = "test_anon_key"
         mock.QDRANT_URL = "http://localhost:6333"
         mock.QDRANT_COLLECTION = "test_collection"
         mock.QDRANT_API_KEY = None
