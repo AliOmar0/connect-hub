@@ -29,7 +29,6 @@ PIB Connect is a monorepo of several cooperating services:
 | -------------------- | --------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | **Web dashboard**    | `src/`                      | React 18 + TypeScript + Vite + shadcn/ui + Tailwind | Agent/supervisor UI, auth, analytics                                                    |
 | **Node API**         | `server/`                   | Express 5                                           | Twilio voice, web chat, OTP, TTS orchestration, WhatsApp webhook, signed media          |
-| **OTP service**      | `otp-service/`              | Python / FastAPI                                    | Standalone WhatsApp OTP delivery microservice                                           |
 | **WhatsApp backend** | `whatsapp-support-backend/` | Python / FastAPI                                    | Full WhatsApp channel: Whisper STT, RAG, classification, session management, escalation |
 | **Edge TTS**         | `edge_tts_server.py`        | Python                                              | Free local Arabic text-to-speech server                                                 |
 | **Data / Auth**      | `supabase/`                 | Supabase (Postgres, Auth, Storage)                  | Users, sessions, messages, roles, migrations                                            |
@@ -141,7 +140,7 @@ For full details, see [`docs/RUNNING_BACKEND.md`](docs/RUNNING_BACKEND.md).
 ### 5. Run with Docker (optional)
 
 ```sh
-# Core stack: redis + node-api + edge-tts + otp-service + web
+# Core stack: redis + node-api + edge-tts + web
 docker compose up --build
 
 # Add Prometheus + Grafana
@@ -279,7 +278,9 @@ All variables live in the root `.env` (copy from [`.env.example`](.env.example))
 | `NODE_ENV`, `LOG_LEVEL`                                      | Runtime mode and log level                                              |
 | `ENABLE_TEST_ENDPOINTS`                                      | Expose `/api/test/*` on a deployed backend (keep `false` in production) |
 
-> The Python services (`otp-service`, `whatsapp-support-backend`) use some non-`VITE_` variable names — see their respective `.env.example` files.
+> `whatsapp-support-backend` (which includes WhatsApp OTP delivery -- there is
+> no separate `otp-service`) uses some non-`VITE_` variable names — see its
+> `.env.example`.
 
 ---
 

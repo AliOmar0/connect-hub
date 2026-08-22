@@ -43,6 +43,20 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 
 BANK_ACCOUNT_RPC = "get_bank_account_by_phone"
+# Resolves (full_name, national_id) -> phone-on-file. Backs the identity-first
+# verification flow in app/core/bank/verification_flow.py -- see
+# scripts/sql/bank_db_oss_identity_lookup.sql.
+BANK_IDENTITY_RPC = "get_bank_customer_phone_by_identity"
+
+# The wider account surface, added in scripts/sql/bank_db_oss_account_details.sql.
+# Each answers one question with a fixed column set and its own row cap; none of
+# them exposes a table. The shared bank_resolve_account_id() helper that file
+# defines is deliberately absent here -- it is never granted to anon, because an
+# account id for an arbitrary phone number is an enumeration primitive.
+BANK_ACCOUNT_PROFILE_RPC = "get_bank_account_profile_by_phone"
+BANK_TRANSACTIONS_RPC = "get_bank_recent_transactions_by_phone"
+BANK_CARDS_RPC = "get_bank_cards_by_phone"
+BANK_LOANS_RPC = "get_bank_loans_by_phone"
 
 
 class BankDbUnavailable(RuntimeError):
@@ -103,7 +117,14 @@ def _build_bank_client() -> Optional[ReadOnlyClient]:
         url,
         key,
         allowed_tables=set(),
-        allowed_rpc={BANK_ACCOUNT_RPC},
+        allowed_rpc={
+            BANK_ACCOUNT_RPC,
+            BANK_IDENTITY_RPC,
+            BANK_ACCOUNT_PROFILE_RPC,
+            BANK_TRANSACTIONS_RPC,
+            BANK_CARDS_RPC,
+            BANK_LOANS_RPC,
+        },
     )
     logger.info("Bank_db_oss read-only client initialised.")
     return client

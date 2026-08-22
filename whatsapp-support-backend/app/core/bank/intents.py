@@ -23,23 +23,60 @@ from app.core.nlp.normalize import (
     strip_clitics_text,
 )
 
+# Palestinian national ID: 9 digits. Used to pull the ID out of a free-text
+# identity claim the same way extract_otp_code pulls out a 6-digit code.
+NATIONAL_ID_LENGTH = 9
+
+# Stripped off the start of an identity claim before whatever's left is taken
+# as the name, so "الاسم محمد احمد" and "محمد احمد" both yield "محمد احمد".
+# Order matters: longer/more specific phrases first, so a prefix match doesn't
+# eat part of a shorter one it also contains.
+_RAW_IDENTITY_LABELS = (
+    "رقم الهوية الوطنية",
+    "رقم الهوية",
+    "الهوية الوطنية",
+    "الهوية",
+    "اسمي",
+    "الاسم الكامل",
+    "الاسم",
+    "اسم",
+    "name",
+    "id number",
+    "national id",
+)
+
 
 class AccountField(str, Enum):
     """The only fields that may ever be disclosed to a verified customer.
 
-    These map 1:1 onto the OUT parameters of ``get_bank_account_by_phone`` in
-    the bank project (scripts/sql/bank_db_oss_readonly.sql). IBAN is absent on
-    purpose: that schema has no IBAN column. IBAN questions are still
-    recognised, but by :func:`mentions_unavailable_field` -- see the comment
-    there for why they must not simply fall through.
+    The scalar members map onto the OUT parameters of
+    ``get_bank_account_profile_by_phone``; the three SECTION_FIELDS members each
+    map onto their own RPC. Both live in the bank project -- see
+    scripts/sql/bank_db_oss_readonly.sql and
+    scripts/sql/bank_db_oss_account_details.sql.
+
+    IBAN is absent on purpose: that schema has no IBAN column. IBAN questions
+    are still recognised, but by :func:`mentions_unavailable_field` -- see the
+    comment there for why they must not simply fall through.
     """
 
     BALANCE = "balance"
+    AVAILABLE_BALANCE = "available_balance"
     ACCOUNT_NUMBER = "account_number"
     CURRENCY = "currency"
+    ACCOUNT_TYPE = "account_type"
+    ACCOUNT_STATUS = "account_status"
+    TRANSACTIONS = "transactions"
+    CARDS = "cards"
+    LOANS = "loans"
 
 
 ALLOWED_FIELDS = frozenset(AccountField)
+
+# Fields whose value is a LIST of rows rather than a scalar. They come from
+# their own RPC (one call each), and their renderers emit a multi-line block --
+# so ``field.value in account`` still gates them, but the value is a list.
+SECTION_FIELDS = frozenset({AccountField.TRANSACTIONS, AccountField.CARDS, AccountField.LOANS})
 
 # Never answer more than this many fields from one message; a broad question
 # should escalate rather than dump the whole account.
@@ -66,6 +103,47 @@ _RAW_FIELD_KEYWORDS: dict[AccountField, tuple[str, ...]] = {
         "عملة الحساب",
         "account currency",
     ),
+    AccountField.AVAILABLE_BALANCE: (
+        "الرصيد المتاح",
+        "رصيد متاح",
+        "available balance",
+    ),
+    AccountField.ACCOUNT_TYPE: (
+        "نوع حسابي",
+        "نوع الحساب",
+        "account type",
+    ),
+    AccountField.ACCOUNT_STATUS: (
+        "حالة حسابي",
+        "حالة الحساب",
+        "حسابي مفعل",
+        "account status",
+    ),
+    AccountField.TRANSACTIONS: (
+        "اخر حركات",
+        "اخر الحركات",
+        "حركاتي",
+        "الحركات الاخيرة",
+        "اخر العمليات",
+        "كشف حساب",
+        "كشف الحساب",
+        "transactions",
+        "statement",
+    ),
+    AccountField.CARDS: (
+        "بطاقاتي",
+        "بطاقتي",
+        "my cards",
+        "my card",
+    ),
+    AccountField.LOANS: (
+        "تمويلي",
+        "تمويلاتي",
+        "قرضي",
+        "اقساطي",
+        "my loan",
+        "my financing",
+    ),
 }
 
 # A personal marker is REQUIRED. Without it "كيف افتح حساب" (how do I open an
@@ -74,6 +152,12 @@ _RAW_PERSONAL_MARKERS = (
     "حسابي",
     "رصيدي",
     "بطاقتي",
+    "بطاقاتي",
+    "تمويلي",
+    "تمويلاتي",
+    "قرضي",
+    "اقساطي",
+    "حركاتي",
     "حدودي",
     "لدي",
     "عندي",
@@ -113,9 +197,29 @@ _RAW_UNAVAILABLE_FIELD_KEYWORDS = (
     "iban",
 )
 
+# Personal limits (card limit, transfer limit, ...). system_prompt.py section
+# 11.1 routes these to a human: Bank_db_oss holds no limit column, so there is
+# nothing to disclose after an OTP.
+#
+# This list exists because the CARDS and TRANSACTIONS lexicons above are broad
+# enough to swallow a limit question -- "ما هي حدود بطاقتي" contains "بطاقتي".
+# Before those keywords existed the message matched no field and fell through
+# to the assistant, which escalated; suppressing here preserves exactly that.
+_RAW_LIMIT_MARKERS = (
+    "حدود",
+    "حد السحب",
+    "حد التحويل",
+    "سقف",
+    "limit",
+)
+
 # Actions this assistant cannot perform. These ESCALATE to a human; they must
 # never trigger an OTP, because an OTP that gates nothing just trains customers
 # to type verification codes into chat.
+#
+# "ايقاف بطاقتي" and "كشف حساب رسمي" overlap the CARDS / TRANSACTIONS lexicons
+# on purpose: is_critical_request is evaluated BEFORE match_account_intent in
+# app/api/v1/webhook.py, so these keep escalating instead of being answered.
 _RAW_CRITICAL_KEYWORDS = (
     "تحويل اموال",
     "تحويل مبلغ",
@@ -124,10 +228,13 @@ _RAW_CRITICAL_KEYWORDS = (
     "تغيير الرقم السري",
     "اغلاق حسابي",
     "ايقاف بطاقتي",
+    "كشف حساب رسمي",
+    "كشف الحساب الرسمي",
     "money transfer",
     "reset password",
     "close my account",
     "block my card",
+    "official statement",
 )
 
 
@@ -153,8 +260,16 @@ _PERSONAL_MARKERS = _canon_all(_RAW_PERSONAL_MARKERS)
 _GENERAL_INQUIRY_MARKERS = _canon_all(_RAW_GENERAL_INQUIRY_MARKERS)
 _CRITICAL_KEYWORDS = _canon_all(_RAW_CRITICAL_KEYWORDS)
 _UNAVAILABLE_FIELD_KEYWORDS = _canon_all(_RAW_UNAVAILABLE_FIELD_KEYWORDS)
-_STRONG_PERSONAL = _canon_all(("حسابي", "رصيدي", "بطاقتي"))
+_LIMIT_MARKERS = _canon_all(_RAW_LIMIT_MARKERS)
+_STRONG_PERSONAL = _canon_all(("حسابي", "رصيدي", "بطاقتي", "بطاقاتي", "تمويلي", "قرضي"))
 _CANCEL_KEYWORDS = _canon_all(("إلغاء", "الغاء", "cancel", "stop", "توقف"))
+
+# NOT run through _canon() like the other lexicons: _canon() strips clitics
+# and folds letters aggressively (built for matching short keywords against
+# normalised text), which would mangle a label before it's stripped back out
+# of a name. Matched case-sensitively-normalised-lowercase only, in
+# _strip_identity_labels below.
+_IDENTITY_LABELS = tuple(dict.fromkeys(_RAW_IDENTITY_LABELS))
 
 
 def match_account_intent(text: str) -> Tuple[AccountField, ...]:
@@ -170,6 +285,12 @@ def match_account_intent(text: str) -> Tuple[AccountField, ...]:
 
     has_personal = any(m in canon for m in _PERSONAL_MARKERS)
     if not has_personal:
+        return ()
+
+    # Personal limits go to a human (system_prompt.py 11.1) -- there is no limit
+    # column to disclose, so an OTP here would gate nothing. Checked before the
+    # field lexicon because "حدود بطاقتي" would otherwise match CARDS.
+    if any(m in canon for m in _LIMIT_MARKERS):
         return ()
 
     # "كيف اعرف رصيد حسابي" is still a how-to; only a strong possessive wins.
@@ -231,3 +352,50 @@ def mentions_cancel(text: str) -> bool:
     """True when the customer wants to abandon verification."""
     canon = _canon(text)
     return any(k in canon for k in _CANCEL_KEYWORDS)
+
+
+def _strip_identity_labels(text: str) -> str:
+    """Remove leading/embedded field labels ("الاسم:", "name:", ...) and
+    stray punctuation, leaving just the name text."""
+    stripped = text
+    for label in _IDENTITY_LABELS:
+        stripped = re.sub(re.escape(label), " ", stripped, flags=re.IGNORECASE)
+    # Labels are often followed by ":" or "："; digits are pulled out by the
+    # caller before this runs, so any leftover punctuation is just noise.
+    stripped = re.sub(r"[:：,،\-.]+", " ", stripped)
+    return re.sub(r"\s+", " ", stripped).strip()
+
+
+def extract_identity_claim(text: str) -> Optional[Tuple[str, str]]:
+    """Pull a (full_name, national_id) pair out of a free-text reply.
+
+    Mirrors extract_otp_code: looks for exactly NATIONAL_ID_LENGTH digits (not
+    part of a longer run) after Arabic-Indic normalisation, and treats
+    whatever text is left -- once known field labels and punctuation are
+    stripped -- as the name. Returns None when no plausible ID run is found,
+    or when nothing recognisable as a name is left; the caller re-prompts
+    rather than guessing, and does NOT count that as a failed attempt (only a
+    resolved-but-not-found identity should).
+    """
+    if not text:
+        return None
+    digits_text = normalize_digits(text)
+    # "123-456-789" / "123.456.789" are still one ID -- collapse a '-' or '.'
+    # only when BOTH neighbours are digits, so hyphens/periods elsewhere in the
+    # message (including inside the name) are left alone.
+    digits_text = re.sub(r"(?<=\d)[-.](?=\d)", "", digits_text)
+    matches = re.findall(rf"(?<!\d)(\d{{{NATIONAL_ID_LENGTH}}})(?!\d)", digits_text)
+    if not matches:
+        return None
+    national_id = matches[-1]
+
+    # Drop every run of NATIONAL_ID_LENGTH+ digits (not just the matched one)
+    # so a longer adjacent run -- which failed the exact-length match above --
+    # doesn't get left behind in the "name".
+    name_source = re.sub(rf"\d{{{NATIONAL_ID_LENGTH},}}", " ", digits_text)
+    name = _strip_identity_labels(name_source)
+    # A bare single word ("محمد") is too weak to treat as a full name claim --
+    # re-prompt instead of sending an RPC that is certain to miss.
+    if len(name) < 4 or " " not in name:
+        return None
+    return name, national_id

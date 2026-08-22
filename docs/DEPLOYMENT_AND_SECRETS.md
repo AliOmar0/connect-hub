@@ -85,7 +85,7 @@ cp .env.example .env
 # 2. Create the private media bucket in Supabase (one-time):
 #    Run server/private_media_setup.sql in the Supabase SQL editor.
 
-# 3. Build and start everything (web, node-api, otp-service, redis, prometheus, grafana):
+# 3. Build and start everything (web, node-api, redis, prometheus, grafana):
 docker compose up --build
 
 # 4. Open:
@@ -125,8 +125,9 @@ WebSockets or long-running/GPU processes.
 
 ### Backends on a container host
 
-- Use the provided `Dockerfile.server`, `otp-service/Dockerfile`, and
-  `docker-compose.yml`, or the `k8s/` manifests.
+- Use the provided `Dockerfile.server` and `docker-compose.yml`, or the `k8s/`
+  manifests. whatsapp-support-backend (which includes OTP delivery) is run
+  separately -- see whatsapp-support-backend/docs/RUNNING_BACKEND.md.
 - Set the same secrets as in `.env` via the host's secret manager.
 - Point Twilio's voice webhook and the WhatsApp webhook at the Node host's public URL.
 

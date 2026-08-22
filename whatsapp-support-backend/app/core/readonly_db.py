@@ -24,6 +24,7 @@ else "GET" if get else "POST"``). We always pass ``get=True`` so RPC survives
 the transport guard - which requires the SQL function to be declared ``STABLE``,
 since PostgREST only serves non-volatile functions over GET.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,7 +33,18 @@ from typing import Any, Dict, Iterable, Optional
 import httpx
 from postgrest import SyncRPCFilterRequestBuilder, SyncSelectRequestBuilder
 from supabase import Client, create_client
-from supabase.lib.client_options import ClientOptions
+
+# The base ClientOptions in supabase.lib.client_options has no httpx_client
+# field in supabase-py >= 2.x -- that field lives on SyncClientOptions (added
+# for the sync/async split). supabase/_sync/client.py itself constructs its
+# options this same way internally; importing the base ClientOptions here
+# would build an object create_client()'s sync Client can't actually use,
+# raising "ClientOptions.__init__() got an unexpected keyword argument
+# 'httpx_client'" the first time this ever ran with real Bank_db_oss
+# credentials configured (base ClientOptions() was previously being
+# constructed with no error only because BANK_DB_OSS_URL/KEY were never set,
+# so create_readonly_client() was never actually called end-to-end).
+from supabase.lib.client_options import SyncClientOptions as ClientOptions
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +80,9 @@ class _ReadOnlyTable:
         self._builder = builder
         self._name = name
 
-    def select(self, *columns: str, count: Any = None, head: bool = False) -> SyncSelectRequestBuilder:
+    def select(
+        self, *columns: str, count: Any = None, head: bool = False
+    ) -> SyncSelectRequestBuilder:
         # Returns the real postgrest builder on purpose: the fluent chain
         # (.eq().limit().execute()) cannot turn a SELECT into a write, so
         # re-wrapping it would add code without adding safety.
@@ -126,8 +140,7 @@ class ReadOnlyClient:
     def rpc(self, fn: str, params: Optional[Dict[str, Any]] = None) -> SyncRPCFilterRequestBuilder:
         if fn not in self._allowed_rpc:
             raise ReadOnlyViolation(
-                f"rpc {fn!r} is not on the bank_db_oss read allowlist "
-                f"({sorted(self._allowed_rpc)})"
+                f"rpc {fn!r} is not on the bank_db_oss read allowlist ({sorted(self._allowed_rpc)})"
             )
         # get=True -> GET, which the transport guard allows and which PostgREST
         # only serves for STABLE/IMMUTABLE functions.

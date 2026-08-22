@@ -22,6 +22,7 @@ import {
   Bell,
   Zap,
   Inbox,
+  MessageSquareWarning,
   BookOpen,
   FlaskConical,
   Menu,
@@ -98,6 +99,12 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     icon: Inbox,
     labelKey: "appShell.nav.queue",
     roles: ["admin", "supervisor", "manager", "agent"],
+  },
+  {
+    to: "/complaints",
+    icon: MessageSquareWarning,
+    labelKey: "appShell.nav.complaints",
+    roles: ["admin", "supervisor", "manager"],
   },
   {
     to: "/employees",

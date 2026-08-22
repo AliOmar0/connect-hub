@@ -56,6 +56,7 @@ const KNOWN_ROUTES: Array<{ prefix: string; label: string }> = [
   { prefix: "/dashboard", label: "Dashboard" },
   { prefix: "/sessions", label: "Sessions" },
   { prefix: "/queue", label: "Escalation Queue" },
+  { prefix: "/complaints", label: "Complaints" },
   { prefix: "/knowledge", label: "Knowledge Base" },
   { prefix: "/employees", label: "Employees" },
   { prefix: "/analytics", label: "Analytics" },

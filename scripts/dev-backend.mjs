@@ -7,17 +7,20 @@
  *
  * Usage:
  *   node scripts/dev-backend.mjs                # default: node + tts  (free, no Twilio cost)
- *   node scripts/dev-backend.mjs node tts otp   # pick services explicitly
+ *   node scripts/dev-backend.mjs node tts wa    # pick services explicitly
  *   node scripts/dev-backend.mjs all            # everything incl. heavy WhatsApp/Whisper backend
  *
  * Services:
  *   node  -> Node voice/API server      (server/index.js, port 3001)
  *   tts   -> Edge TTS server (free)      (edge_tts_server.py, port 5070)
- *   otp   -> OTP microservice            (otp-service/main.py, port 5001)
  *   wa    -> WhatsApp support backend    (whatsapp-support-backend, port 3001, heavy)
  *
+ * There is no separate "otp" service: OTP generation/delivery/verification is
+ * embedded in whatsapp-support-backend (app/core/otp_client.py), so it starts
+ * with `wa`, not on its own.
+ *
  * Python services use the shared venv created by scripts/setup-backend.(ps1|sh).
- * Run that setup script once before using otp/tts/wa.
+ * Run that setup script once before using wa.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -54,13 +57,6 @@ const SERVICES = {
     cwd: ROOT,
     python: true,
   },
-  otp: {
-    label: "otp-svc ",
-    cmd: PY,
-    args: ["main.py"],
-    cwd: join(ROOT, "otp-service"),
-    python: true,
-  },
   wa: {
     label: "whatsapp",
     cmd: PY,
@@ -80,7 +76,7 @@ const SERVICES = {
 
 // --- Parse which services to run ---
 let requested = process.argv.slice(2).map((s) => s.toLowerCase());
-if (requested.includes("all")) requested = ["node", "tts", "otp", "wa"];
+if (requested.includes("all")) requested = ["node", "tts", "wa"];
 if (requested.length === 0) requested = ["node", "tts"]; // free default stack
 
 const unknown = requested.filter((s) => !SERVICES[s]);

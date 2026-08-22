@@ -103,6 +103,71 @@ class VerificationStore:
 verification_store = VerificationStore()
 
 
+@dataclass
+class PendingIdentity:
+    """State for a customer mid-way through the identity-first verification
+    flow: they've asked an account question but have not yet stated a
+    (name, national_id) pair that resolves to a Bank_db_oss phone.
+
+    Deliberately does NOT hold the phone -- there isn't one yet, that's the
+    point of this state. Once identity resolves, this is cleared and a
+    PendingVerification (above) takes over, keyed by the SAME session_id.
+    """
+
+    fields: Tuple[str, ...]  # AccountField values the customer originally asked for
+    expires_at: float
+    attempts: int = 0
+
+
+@dataclass
+class IdentityVerificationStore:
+    """Mirrors VerificationStore's shape (TTL + attempt cap), for the identity
+    step that now runs before OTP verification even starts."""
+
+    _pending: Dict[str, PendingIdentity] = field(default_factory=dict)
+
+    def start(
+        self, session_id: str, *, fields: Tuple[str, ...], ttl: Optional[float] = None
+    ) -> PendingIdentity:
+        ttl = settings.OTP_SESSION_TTL_SECONDS if ttl is None else ttl
+        entry = PendingIdentity(fields=fields, expires_at=time.monotonic() + ttl)
+        self._pending[session_id] = entry
+        return entry
+
+    def get(self, session_id: str) -> Optional[PendingIdentity]:
+        entry = self._pending.get(session_id)
+        if entry is None:
+            return None
+        if time.monotonic() >= entry.expires_at:
+            self._pending.pop(session_id, None)
+            logger.info(f"Identity verification state expired for session {session_id}")
+            return None
+        return entry
+
+    def record_failure(self, session_id: str) -> int:
+        entry = self._pending.get(session_id)
+        if entry is None:
+            return 0
+        entry.attempts += 1
+        return entry.attempts
+
+    def clear(self, session_id: str) -> None:
+        self._pending.pop(session_id, None)
+
+    def purge_expired(self) -> int:
+        now = time.monotonic()
+        stale = [k for k, v in self._pending.items() if now >= v.expires_at]
+        for k in stale:
+            self._pending.pop(k, None)
+        return len(stale)
+
+    def __len__(self) -> int:
+        return len(self._pending)
+
+
+identity_pending_store = IdentityVerificationStore()
+
+
 class OtpSendLimiter:
     """Per-phone send throttle: a cooldown plus a rolling cap.
 

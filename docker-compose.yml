@@ -2,8 +2,13 @@
 # Secrets are read from a local .env file (never committed). Copy .env.example.
 #
 # Common commands:
-#   docker compose up --build              # core stack: redis, node-api, edge-tts, otp, web
+#   docker compose up --build              # core stack: redis, node-api, edge-tts, web
 #   docker compose --profile monitoring up # also start Prometheus + Grafana
+#
+# There is no otp-service here: OTP generation/delivery/verification is
+# embedded in whatsapp-support-backend (app/core/otp_client.py) rather than a
+# separate process. That backend is not part of this compose file; run it
+# separately (see whatsapp-support-backend/docs/RUNNING_BACKEND.md).
 #
 # TTS defaults to the FREE edge-tts service so no paid TTS credits are used.
 # Override by setting TTS_PROVIDER (e.g. azure) in your .env.
@@ -48,14 +53,6 @@ services:
         condition: service_healthy
       edge-tts:
         condition: service_started
-    restart: unless-stopped
-
-  otp-service:
-    build:
-      context: ./otp-service
-    env_file: .env
-    ports:
-      - "5001:5001"
     restart: unless-stopped
 
   web:

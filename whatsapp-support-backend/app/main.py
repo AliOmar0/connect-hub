@@ -3,9 +3,9 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import Depends, FastAPI
 
-from app.core.logger import configure_logging, CorrelationIdMiddleware
+from app.core.logger import CorrelationIdMiddleware, configure_logging
 
 # Structured JSON logging (NFR-05.02) must be configured before anything else
 # logs, so every subsequent logger.* call in this process emits JSON with a
@@ -16,13 +16,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.v1.assistant import router as assistant_router
+from app.api.v1.complaints import router as complaints_router
 from app.api.v1.decision import router as decision_router
+from app.api.v1.deps import verify_jwt
 from app.api.v1.knowledge_base import router as knowledge_base_router
 from app.api.v1.nlp import router as nlp_router
 from app.api.v1.scraper import router as scraper_router
 from app.api.v1.sessions import router as sessions_router
+from app.api.v1.voice_agent import router as voice_agent_router
 from app.api.v1.webhook import router as webhook_router
-from app.api.v1.deps import get_session, verify_jwt
 from app.core.config import settings
 from app.crud import crud
 
@@ -66,15 +68,36 @@ def _validate_startup() -> None:
                 "Bank_db_oss is not available "
                 f"({database._BANK_DB_ERROR or 'BANK_DB_OSS_URL/BANK_DB_OSS_KEY not set'})"
             )
-        if not settings.otp_base_url:
-            problems.append("OTP_SERVICE_BASE_URL is not set")
-        if not settings.OTP_SERVICE_SHARED_SECRET:
-            problems.append("OTP_SERVICE_SHARED_SECRET is not set")
+        # OTP delivery is embedded (app/core/otp_client.py) rather than a
+        # separate service now, so what's required is the dedicated security
+        # WhatsApp sender, not a service URL/secret.
+        if not settings.SECURITY_WHATSAPP_PHONE_NUMBER_ID:
+            problems.append("SECURITY_WHATSAPP_PHONE_NUMBER_ID is not set")
+        if not settings.SECURITY_WHATSAPP_ACCESS_TOKEN:
+            problems.append("SECURITY_WHATSAPP_ACCESS_TOKEN is not set")
         if problems:
             logger.error(f"CRITICAL: BANK_LOOKUP_ENABLED but {problems}")
             raise RuntimeError(
                 f"Bank account lookups are enabled but misconfigured: {problems}. "
                 "Set BANK_LOOKUP_ENABLED=false to run without them."
+            )
+
+    # ElevenLabs voice agent: same fail-closed shape as BANK_LOOKUP_ENABLED above.
+    if settings.VOICE_AGENT_ENABLED:
+        voice_problems = []
+        if not settings.ELEVENLABS_API_KEY:
+            voice_problems.append("ELEVENLABS_API_KEY is not set")
+        if not settings.ELEVENLABS_AGENT_ID:
+            voice_problems.append("ELEVENLABS_AGENT_ID is not set")
+        if not settings.ELEVENLABS_TOOL_SHARED_SECRET:
+            voice_problems.append("ELEVENLABS_TOOL_SHARED_SECRET is not set")
+        if not settings.ELEVENLABS_WEBHOOK_SECRET:
+            voice_problems.append("ELEVENLABS_WEBHOOK_SECRET is not set")
+        if voice_problems:
+            logger.error(f"CRITICAL: VOICE_AGENT_ENABLED but {voice_problems}")
+            raise RuntimeError(
+                f"Voice agent is enabled but misconfigured: {voice_problems}. "
+                "Set VOICE_AGENT_ENABLED=false to run without it."
             )
 
     logger.info("✅ Startup validation passed - all critical settings configured")
@@ -89,7 +112,9 @@ async def session_cleanup_task():
     `auto_classify_session` internally via its `finally` block.
     """
     from app.api.v1.webhook import send_session_closing_message
-    from app.core.verification_state import verification_store
+    from app.core.complaints import complaint_store
+    from app.core.verification_state import identity_pending_store, verification_store
+    from app.core.voice_agent_state import voice_conversation_store
 
     while True:
         try:
@@ -100,6 +125,12 @@ async def session_cleanup_task():
             await crud.delete_old_notifications(None, hours=24)
             # Evict verification state whose OTP has expired.
             verification_store.purge_expired()
+            # Evict identity-verification state (name+national ID, pre-OTP).
+            identity_pending_store.purge_expired()
+            # Evict stale in-process conversation<->session links for voice calls.
+            voice_conversation_store.purge_expired()
+            # Evict abandoned complaint intake forms.
+            complaint_store.purge_expired()
         except Exception as e:
             logger.exception(f"Error in session cleanup task: {e}")
         await asyncio.sleep(
@@ -125,7 +156,7 @@ async def lifespan(app: FastAPI):
 
     # --- 1. Initialize Qdrant vector database ---
     try:
-        from app.core.rag import init_qdrant, _get_client
+        from app.core.rag import _get_client, init_qdrant
         init_qdrant()
         # Verify collection exists
         client = _get_client()
@@ -207,11 +238,11 @@ async def lifespan(app: FastAPI):
 
                 try:
                     public_url = ngrok.connect(**connect_kwargs).public_url
-                    print(f"\n==============================================")
-                    print(f"NGROK Tunnel is live!")
+                    print("\n==============================================")
+                    print("NGROK Tunnel is live!")
                     print(f"Public URL: {public_url}")
                     print(f"WhatsApp Webhook URL: {public_url}/webhook")
-                    print(f"==============================================\n")
+                    print("==============================================\n")
                 except Exception as connect_error:
                     if "already online" in str(connect_error).lower():
                         print(
@@ -274,6 +305,13 @@ else:
 # Webhook endpoints remain UNAUTHENTICATED (Meta servers cannot send JWTs)
 app.include_router(webhook_router, tags=["webhook"])
 
+# Voice agent endpoints remain UNAUTHENTICATED by JWT (ElevenLabs and the
+# public website widget cannot send staff JWTs) -- each route authenticates
+# itself: the /tools/* routes require a shared secret, the post-call webhook
+# verifies ElevenLabs' HMAC signature, and /signed-url is intentionally public
+# (rate-limited + CORS-scoped) since a browser can't hold a server secret.
+app.include_router(voice_agent_router, prefix=settings.API_V1_STR, tags=["voice-agent"])
+
 # Public health/root (still no auth)
 @app.get("/")
 def root():
@@ -328,5 +366,11 @@ app.include_router(
     scraper_router,
     prefix=settings.API_V1_STR,
     tags=["scraper"],
+    dependencies=[Depends(verify_jwt)],
+)
+app.include_router(
+    complaints_router,
+    prefix=settings.API_V1_STR,
+    tags=["complaints"],
     dependencies=[Depends(verify_jwt)],
 )

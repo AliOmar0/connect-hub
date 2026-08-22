@@ -43,6 +43,53 @@ from app.core.pii import redact_pii
 from app.core.system_prompt import SYSTEM_PROMPT
 
 
+class LLMUnavailable(Exception):
+    """The provider produced no usable completion.
+
+    Raised instead of returning an apology string. The old code returned text
+    like "نعتذر، لم أتمكن من معالجة طلبك حالياً." from :meth:`LLMService.get_ai_response`,
+    which the WhatsApp path could not tell apart from a real answer -- so it was
+    sent to the customer as if it were one, the session stayed `active`, and
+    nobody was notified. The customer was left at a dead end.
+
+    Deciding what the customer sees is the CALLER's job (WhatsApp escalates to a
+    human), so this exception deliberately carries no customer-facing text --
+    only the operational detail needed for logging.
+
+    Note this covers provider FAILURE only. A refusal the model was asked to
+    produce (prompt-injection block, system-prompt leak scrub) is a successful
+    completion and still returns text.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        provider: str = "",
+        model: str = "",
+        status_code: Optional[int] = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.provider = provider
+        self.model = model
+        self.status_code = status_code
+
+    def log_data(self) -> Dict[str, Any]:
+        """Fields for ``logger.error(..., extra={"data": ...})``.
+
+        app/core/logger.py's JsonFormatter promotes this into the JSON record,
+        so a fallback becomes queryable instead of an f-string in a message.
+        """
+        return {
+            "event": "llm_unavailable",
+            "reason": self.reason,
+            "provider": self.provider,
+            "model": self.model,
+            "status_code": self.status_code,
+        }
+
+
 class LLMService:
     _dataset = None
 
@@ -263,6 +310,141 @@ class LLMService:
             "X-Title": "Connect Hub",
         }
 
+    # Statuses worth a second attempt: the provider is momentarily unhealthy,
+    # not refusing us. 429 is handled separately (it carries quota headers).
+    _RETRYABLE_STATUSES = frozenset({408, 500, 502, 503, 504, 522, 524})
+
+    @staticmethod
+    async def _post_once(
+        payload: Dict[str, Any],
+        *,
+        provider: str,
+        timeout: float,
+        max_retries: int,
+    ) -> Dict[str, Any]:
+        """POST to ONE provider, with retry/backoff.
+
+        Returns the parsed JSON body, or raises :class:`LLMUnavailable`.
+        """
+        import asyncio
+
+        payload = dict(payload)
+        if provider == "deepseek":
+            url = DEEPSEEK_URL
+            payload.pop("models", None)
+            payload.setdefault("model", DEEPSEEK_MODEL)
+            model = str(payload.get("model", DEEPSEEK_MODEL))
+        else:
+            url = LLMService._OPENROUTER_URL
+            # Coming from a DeepSeek-shaped payload on the fallback hop: give
+            # OpenRouter its own failover array back instead of a single model.
+            if "models" not in payload:
+                payload["models"] = MODEL_LIST
+            payload.pop("model", None)
+            model = ", ".join(payload.get("models") or MODEL_LIST)
+
+        headers = LLMService._headers(provider)
+        backoff = 1.0
+
+        async with httpx.AsyncClient() as client:
+            for attempt in range(max_retries + 1):
+                try:
+                    response = await client.post(
+                        url, json=payload, headers=headers, timeout=timeout
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"{provider} request error (attempt {attempt + 1}): {e}",
+                        extra={
+                            "data": {
+                                "event": "llm_request_error",
+                                "provider": provider,
+                                "model": model,
+                                "attempt": attempt + 1,
+                            }
+                        },
+                    )
+                    if attempt < max_retries:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    raise LLMUnavailable(
+                        f"transport error: {e}", provider=provider, model=model
+                    )
+
+                if response.status_code == 200:
+                    return response.json()
+
+                status = response.status_code
+
+                if status == 429:
+                    remaining = response.headers.get("X-RateLimit-Remaining")
+                    reset = response.headers.get("X-RateLimit-Reset")
+                    # Daily quota exhausted -> retrying THIS provider is pointless
+                    # until reset. Fail fast so the caller can try the other one.
+                    if remaining == "0":
+                        logger.error(
+                            f"{provider} daily quota exhausted (resets at {reset}). "
+                            "Add credits or configure a paid model.",
+                            extra={
+                                "data": {
+                                    "event": "llm_quota_exhausted",
+                                    "provider": provider,
+                                    "model": model,
+                                    "resets_at": reset,
+                                }
+                            },
+                        )
+                        raise LLMUnavailable(
+                            "daily quota exhausted",
+                            provider=provider,
+                            model=model,
+                            status_code=status,
+                        )
+                    if attempt < max_retries:
+                        logger.warning(
+                            f"{provider} 429 (transient, attempt {attempt + 1}/"
+                            f"{max_retries + 1}). Retrying in {backoff}s."
+                        )
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                        continue
+                    raise LLMUnavailable(
+                        "rate limited after retries",
+                        provider=provider,
+                        model=model,
+                        status_code=status,
+                    )
+
+                # 5xx and friends: the provider is unhealthy, not refusing us.
+                # These used to return immediately with NO retry, which is the
+                # most common way a customer ended up reading an apology.
+                if status in LLMService._RETRYABLE_STATUSES and attempt < max_retries:
+                    logger.warning(
+                        f"{provider} {status} (attempt {attempt + 1}/{max_retries + 1}). "
+                        f"Retrying in {backoff}s."
+                    )
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                    continue
+
+                logger.error(
+                    f"{provider} API error {status}: {response.text[:500]}",
+                    extra={
+                        "data": {
+                            "event": "llm_http_error",
+                            "provider": provider,
+                            "model": model,
+                            "status_code": status,
+                        }
+                    },
+                )
+                raise LLMUnavailable(
+                    f"HTTP {status}", provider=provider, model=model, status_code=status
+                )
+
+        raise LLMUnavailable("no attempt succeeded", provider=provider, model=model)
+
     @staticmethod
     async def _chat_completion(
         payload: Dict[str, Any],
@@ -270,80 +452,72 @@ class LLMService:
         max_retries: int = 2,
         force_openrouter: bool = False,
     ) -> Optional[Dict[str, Any]]:
+        """Parsed JSON body, or ``None`` when every provider failed.
+
+        Kept Optional-returning because classify_session / classify_message /
+        vision all treat "no answer" as a benign ``None``. The ANSWERING path
+        uses :meth:`_chat_completion_or_raise` instead, so it can tell a provider
+        outage apart from a model that simply had nothing to say.
         """
-        POST to OpenRouter with retry/backoff handling.
+        try:
+            return await LLMService._chat_completion_or_raise(
+                payload,
+                timeout=timeout,
+                max_retries=max_retries,
+                force_openrouter=force_openrouter,
+            )
+        except LLMUnavailable as e:
+            logger.error(
+                f"Chat completion failed: {e.reason}", extra={"data": e.log_data()}
+            )
+            return None
 
-        - Retries transient 429s (provider temporarily rate-limited upstream)
-          with exponential backoff.
-        - Does NOT retry when the free-tier daily cap is exhausted
-          (X-RateLimit-Remaining: 0), since the quota only resets at
-          X-RateLimit-Reset — retrying just wastes time.
-        Returns the parsed JSON body on success, or None on failure.
+    @staticmethod
+    async def _chat_completion_or_raise(
+        payload: Dict[str, Any],
+        *,
+        timeout: float = 60.0,
+        max_retries: int = 2,
+        force_openrouter: bool = False,
+    ) -> Dict[str, Any]:
+        """POST to the configured provider, falling back to the other one.
+
+        DeepSeek is primary when its key is set, OpenRouter otherwise. There used
+        to be NO fallback: with DEEPSEEK_API_KEY set, a DeepSeek outage produced
+        an apology even with a perfectly healthy OpenRouter key in the same .env.
+
+        Raises :class:`LLMUnavailable` when every configured provider fails.
         """
-        import asyncio
+        primary = "openrouter" if (force_openrouter or not USE_DEEPSEEK) else "deepseek"
 
-        # Pick provider: DeepSeek (native, OpenAI-compatible) is primary when its
-        # key is set; OpenRouter is the fallback. DeepSeek needs a single `model`
-        # field, while OpenRouter accepts a `models` failover array.
-        if USE_DEEPSEEK and not force_openrouter:
-            provider = "deepseek"
-            url = DEEPSEEK_URL
-            payload = dict(payload)
-            payload.pop("models", None)
-            payload.setdefault("model", DEEPSEEK_MODEL)
-        else:
-            provider = "openrouter"
-            url = LLMService._OPENROUTER_URL
-        headers = LLMService._headers(provider)
+        # Only a provider we actually hold a key for is worth a hop.
+        chain = [primary]
+        if not force_openrouter:
+            secondary = "openrouter" if primary == "deepseek" else "deepseek"
+            if API_KEY if secondary == "openrouter" else DEEPSEEK_API_KEY:
+                chain.append(secondary)
 
-        backoff = 1.0
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_retries + 1):
-                try:
-                    response = await client.post(
-                        url,
-                        json=payload,
-                        headers=headers,
-                        timeout=timeout,
-                    )
-                except Exception as e:
-                    logger.error(f"OpenRouter request error (attempt {attempt + 1}): {e}")
-                    if attempt < max_retries:
-                        await asyncio.sleep(backoff)
-                        backoff *= 2
-                        continue
-                    return None
-
-                if response.status_code == 200:
-                    return response.json()
-
-                if response.status_code == 429:
-                    remaining = response.headers.get("X-RateLimit-Remaining")
-                    reset = response.headers.get("X-RateLimit-Reset")
-                    # Daily quota exhausted -> retrying is pointless until reset.
-                    if remaining == "0":
-                        logger.error(
-                            "OpenRouter daily free-tier quota exhausted "
-                            f"(resets at {reset}). Add credits or set "
-                            "OPENROUTER_API_KEY/paid model. Response: {}".format(response.text)
-                        )
-                        return None
-                    # Transient upstream rate-limit -> back off and retry.
+        last: Optional[LLMUnavailable] = None
+        for index, provider in enumerate(chain):
+            try:
+                return await LLMService._post_once(
+                    payload,
+                    provider=provider,
+                    timeout=timeout,
+                    # The fallback provider gets one shot: the customer has
+                    # already waited out the primary's full retry budget.
+                    max_retries=max_retries if index == 0 else 0,
+                )
+            except LLMUnavailable as e:
+                last = e
+                if index + 1 < len(chain):
                     logger.warning(
-                        f"OpenRouter 429 (transient, attempt {attempt + 1}/{max_retries + 1}). "
-                        f"Retrying in {backoff}s."
+                        f"Provider {provider} unavailable ({e.reason}); "
+                        f"falling back to {chain[index + 1]}.",
+                        extra={"data": e.log_data()},
                     )
-                    if attempt < max_retries:
-                        await asyncio.sleep(backoff)
-                        backoff *= 2
-                        continue
-                    logger.error(f"OpenRouter 429 after retries: {response.text}")
-                    return None
 
-                # Any other non-200
-                logger.error(f"OpenRouter API error {response.status_code}: {response.text}")
-                return None
-        return None
+        raise last or LLMUnavailable("no provider configured")
 
     @staticmethod
     async def get_ai_response(
@@ -353,7 +527,7 @@ class LLMService:
         current_type_id: Optional[str] = None,
         extra_system: Optional[str] = None,
         channel: str = "whatsapp",  # "whatsapp" for customers, "dashboard" for employees
-        timeout: float = 60.0,
+        timeout: float = 25.0,
     ) -> str:
         if history is None:
             history = []
@@ -482,18 +656,36 @@ class LLMService:
 
         payload = {"models": MODEL_LIST, "messages": messages, "max_tokens": 1024}
 
-        data = await LLMService._chat_completion(payload, timeout=timeout)
-        if data is None:
-            return "نعتذر، يواجه النظام صعوبة في التواصل حالياً."
+        # _or_raise, not _chat_completion: on the answering path "the provider is
+        # down" and "the model answered" must not collapse into the same return
+        # type. Every branch below that has no usable text raises instead of
+        # returning an apology, so the caller escalates to a human rather than
+        # handing the customer a dead end.
+        data = await LLMService._chat_completion_or_raise(payload, timeout=timeout)
 
         if "choices" in data and len(data["choices"]) > 0:
-            raw_content = data["choices"][0]["message"].get(
-                "content", "نعتذر، لم أتمكن من معالجة طلبك حالياً."
-            )
-            return LLMService.sanitize_output(raw_content)
+            # `.get("content", fallback)` only substitutes when the KEY is
+            # missing -- DeepSeek/OpenRouter can return `content: ""` (a present,
+            # empty string), which sailed straight through as "". That empty
+            # string then reached WhatsAppClient.send_text_message() as
+            # `text.body`, which the Graph API rejects with a 400 ("The parameter
+            # text.body is required"), silently dropping the reply entirely.
+            raw_content = data["choices"][0]["message"].get("content")
+            if not raw_content or not str(raw_content).strip():
+                raise LLMUnavailable("empty completion content")
+            sanitized = LLMService.sanitize_output(raw_content)
+            # sanitize_output() can also collapse a whitespace-only completion to
+            # "" via its trailing strip() -- guard the output too, not just the
+            # input.
+            if not sanitized:
+                raise LLMUnavailable("completion empty after sanitisation")
+            return sanitized
 
-        logger.error(f"AI API unexpected response: {data}")
-        return "نعتذر، حدث خطأ في النظام."
+        logger.error(
+            f"AI API unexpected response: {data}",
+            extra={"data": {"event": "llm_malformed_response"}},
+        )
+        raise LLMUnavailable("response had no choices")
 
     @staticmethod
     def _is_mobile_app_navigation_query(user_message: str) -> bool:

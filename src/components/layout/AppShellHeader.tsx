@@ -44,6 +44,7 @@ function resolvePageKey(pathname: string): string {
     [/^\/dashboard/, "dashboard"],
     [/^\/sessions/, "sessions"],
     [/^\/queue/, "queue"],
+    [/^\/complaints/, "complaints"],
     [/^\/knowledge/, "knowledge"],
     [/^\/employees/, "employees"],
     [/^\/analytics/, "analytics"],

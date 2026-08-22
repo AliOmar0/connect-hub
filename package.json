@@ -22,7 +22,7 @@
     "setup:backend": "node -e \"process.platform==='win32' ? require('child_process').execSync('powershell -ExecutionPolicy Bypass -File scripts/setup-backend.ps1',{stdio:'inherit'}) : require('child_process').execSync('bash scripts/setup-backend.sh',{stdio:'inherit'})\"",
     "backend": "node scripts/dev-backend.mjs node tts",
     "backend:node": "node scripts/dev-backend.mjs node",
-    "backend:otp": "node scripts/dev-backend.mjs node tts otp",
+    "backend:otp": "node scripts/dev-backend.mjs node tts wa",
     "backend:all": "node scripts/dev-backend.mjs all",
     "channel:whatsapp": "node scripts/run-channel.mjs whatsapp",
     "channel:voice": "node scripts/run-channel.mjs voice",
@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.3",
+    "@elevenlabs/react": "^1.12.4",
     "@fontsource/outfit": "^5.2.8",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.11",

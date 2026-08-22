@@ -17,7 +17,9 @@ import SettingsPage from "./pages/SettingsPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import ShortcutsPage from "./pages/ShortcutsPage";
 import QueuePage from "./pages/QueuePage";
+import ComplaintsPage from "./pages/ComplaintsPage";
 import KnowledgePage from "./pages/KnowledgePage";
+import SupportPage from "./pages/SupportPage";
 import NotFound from "./pages/NotFound";
 
 import EscalationListener from "@/components/EscalationListener";
@@ -38,6 +40,9 @@ const App = () => (
             >
               <Routes>
                 <Route path="/auth" element={<AuthPage />} />
+                {/* Public, unauthenticated: the one customer-facing route in
+                    this staff dashboard -- see SupportPage.tsx. */}
+                <Route path="/support" element={<SupportPage />} />
                 <Route
                   path="/"
                   element={
@@ -85,6 +90,31 @@ const App = () => (
                       allowedRoles={["admin", "supervisor", "manager", "agent"]}
                     >
                       <QueuePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/complaints"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["admin", "supervisor", "manager"]}
+                    >
+                      <ComplaintsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                {/* Complaint notifications link to /complaints/{id} (see
+                    create_notification in app/api/v1/webhook.py). Without this
+                    route that link fell through to NotFound, so the "View"
+                    action on every complaint toast led to a 404 page. Same
+                    component and guard -- the id opens the detail dialog. */}
+                <Route
+                  path="/complaints/:complaintId"
+                  element={
+                    <ProtectedRoute
+                      allowedRoles={["admin", "supervisor", "manager"]}
+                    >
+                      <ComplaintsPage />
                     </ProtectedRoute>
                   }
                 />

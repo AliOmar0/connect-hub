@@ -1,48 +1,75 @@
-import httpx
-from app.core.config import settings
 import logging
 from typing import Optional
 
+import httpx
+
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
+
 
 class WhatsAppClient:
     def __init__(self, phone_number_id: Optional[str] = None, access_token: Optional[str] = None):
         # Prefer passed values, then environment settings if they exist, otherwise None
-        self.phone_number_id = phone_number_id or getattr(settings, "WHATSAPP_PHONE_NUMBER_ID", None)
+        self.phone_number_id = phone_number_id or getattr(
+            settings, "WHATSAPP_PHONE_NUMBER_ID", None
+        )
         self.access_token = access_token or getattr(settings, "WHATSAPP_ACCESS_TOKEN", None)
         self.base_url = "https://graph.facebook.com/v21.0"
 
+    # httpx defaults to NO read timeout. A hung Graph endpoint used to freeze the
+    # background AI task forever, holding the message buffer's per-session lock
+    # with it. Sends are small; media downloads carry a payload, so they get more.
+    _SEND_TIMEOUT = 15.0
+    _MEDIA_TIMEOUT = 60.0
+
     def _get_api_url(self):
         if not self.phone_number_id:
-            raise Exception("WhatsApp Phone Number ID is not configured (missing in both settings and database)")
+            raise Exception(
+                "WhatsApp Phone Number ID is not configured (missing in both settings and database)"
+            )
         return f"{self.base_url}/{self.phone_number_id}/messages"
 
     def _get_headers(self):
         if not self.access_token:
-            raise Exception("WhatsApp Access Token is not configured (missing in both settings and database)")
-        return {
-            "Authorization": f"Bearer {self.access_token}",
-            "Content-Type": "application/json"
-        }
+            raise Exception(
+                "WhatsApp Access Token is not configured (missing in both settings and database)"
+            )
+        return {"Authorization": f"Bearer {self.access_token}", "Content-Type": "application/json"}
 
     def _is_configured(self) -> bool:
         """Return True only when both credentials are present."""
         return bool(self.phone_number_id and self.access_token)
 
     async def send_text_message(self, to_phone: str, text: str):
+        # The Graph API rejects an empty (or whitespace-only) body outright --
+        # 400 "The parameter text.body is required" -- which silently drops the
+        # reply instead of the customer seeing anything. An empty `text` here
+        # means an upstream bug produced one (e.g. an LLM completion that came
+        # back "" rather than missing, or an [ESCALATE] tag with nothing after
+        # it); guard here too, not just at the source, so no caller can ever
+        # trigger this failure mode again.
+        if not text or not text.strip():
+            logger.error(
+                f"send_text_message called with an empty body for {to_phone}; "
+                "sending a fallback instead of a body-less WhatsApp request."
+            )
+            text = "نعتذر، حدث خطأ أثناء إعداد الرد. يرجى إعادة إرسال رسالتك."
+
         payload = {
             "messaging_product": "whatsapp",
             "to": to_phone,
             "type": "text",
-            "text": {"body": text}
+            "text": {"body": text},
         }
-        
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    self._get_api_url(), 
-                    json=payload, 
-                    headers=self._get_headers()
+                    self._get_api_url(),
+                    json=payload,
+                    headers=self._get_headers(),
+                    timeout=self._SEND_TIMEOUT,
                 )
                 response.raise_for_status()
                 return response.json()
@@ -59,8 +86,7 @@ class WhatsAppClient:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.get(
-                    url,
-                    headers=self._get_headers()
+                    url, headers=self._get_headers(), timeout=self._MEDIA_TIMEOUT
                 )
                 response.raise_for_status()
                 return response.json().get("url")
@@ -77,7 +103,8 @@ class WhatsAppClient:
                 # Media download requires the same access token
                 response = await client.get(
                     media_url,
-                    headers={"Authorization": f"Bearer {self.access_token}"}
+                    headers={"Authorization": f"Bearer {self.access_token}"},
+                    timeout=self._MEDIA_TIMEOUT,
                 )
                 response.raise_for_status()
                 return response.content
@@ -92,7 +119,9 @@ class WhatsAppClient:
         """
         # WhatsApp Cloud API does not support sender_action="typing_on"
         # Logging only for awareness without making a network call
-        logger.debug(f"Typing indicator requested for {to_phone} (Skipped: Not supported by WhatsApp API)")
+        logger.debug(
+            f"Typing indicator requested for {to_phone} (Skipped: Not supported by WhatsApp API)"
+        )
         return None
 
     async def mark_message_as_read(self, message_id: str):
@@ -108,18 +137,15 @@ class WhatsAppClient:
             )
             return None
 
-        payload = {
-            "messaging_product": "whatsapp",
-            "status": "read",
-            "message_id": message_id
-        }
-        
+        payload = {"messaging_product": "whatsapp", "status": "read", "message_id": message_id}
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    self._get_api_url(), 
-                    json=payload, 
-                    headers=self._get_headers()
+                    self._get_api_url(),
+                    json=payload,
+                    headers=self._get_headers(),
+                    timeout=self._SEND_TIMEOUT,
                 )
                 response.raise_for_status()
                 return response.json()
@@ -133,7 +159,9 @@ class WhatsAppClient:
                 logger.warning(f"WhatsApp Mark as Read Error: {e}")
                 return None
 
-    async def upload_media(self, media_bytes: bytes, filename: str, content_type: str) -> Optional[str]:
+    async def upload_media(
+        self, media_bytes: bytes, filename: str, content_type: str
+    ) -> Optional[str]:
         """
         Upload media to Meta (required before sending).
         Returns the media_id.
@@ -141,9 +169,9 @@ class WhatsAppClient:
         form = {
             "file": (filename, media_bytes, content_type),
             "messaging_product": (None, "whatsapp"),
-            "type": (None, content_type.split('/')[0])
+            "type": (None, content_type.split("/")[0]),
         }
-        
+
         async with httpx.AsyncClient() as client:
             try:
                 # Use multipart/form-data for media upload
@@ -152,7 +180,8 @@ class WhatsAppClient:
                     f"{self.base_url}/{self.phone_number_id}/media",
                     headers={"Authorization": f"Bearer {self.access_token}"},
                     files={"file": (filename, media_bytes, content_type)},
-                    data={"messaging_product": "whatsapp", "type": content_type}
+                    data={"messaging_product": "whatsapp", "type": content_type},
+                    timeout=self._MEDIA_TIMEOUT,
                 )
                 response.raise_for_status()
                 return response.json().get("id")
@@ -169,21 +198,23 @@ class WhatsAppClient:
             "messaging_product": "whatsapp",
             "to": to_phone,
             "type": "audio",
-            "audio": {"id": media_id}
+            "audio": {"id": media_id},
         }
-        
+
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    self._get_api_url(), 
-                    json=payload, 
-                    headers=self._get_headers()
+                    self._get_api_url(),
+                    json=payload,
+                    headers=self._get_headers(),
+                    timeout=self._SEND_TIMEOUT,
                 )
                 response.raise_for_status()
                 return response.json()
             except httpx.HTTPError as e:
                 logger.error(f"WhatsApp Send Audio Error: {e}")
                 raise e
+
 
 # Default client
 whatsapp_client = WhatsAppClient()

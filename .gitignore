@@ -168,3 +168,9 @@ docs/SRS.md
 .claude/    
 dataset_pib
 .agents/
+# Local Qdrant store. Only whatsapp-support-backend/.gitignore covered this, so
+# a store created with the repo root as cwd showed up as untracked and was one
+# `git add .` away from being committed. QDRANT_STORAGE_PATH is anchored to the
+# backend root now (app/core/config.py), but the pattern stays unanchored so a
+# stray store from an older checkout is still ignored.
+qdrant_storage/

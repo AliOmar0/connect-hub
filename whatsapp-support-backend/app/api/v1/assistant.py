@@ -24,8 +24,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from app.core.decision_engine import DecisionEngine
-from app.core.llm import LLMService
-from app.core.prompts import validate_response
+from app.core.llm import LLMService, LLMUnavailable
+from app.core.prompts import DecisionMessages, validate_response
 from app.core.nlp.engine import nlp_engine
 from app.models.decision import ActionDecision
 
@@ -156,8 +156,18 @@ async def reply(req: ReplyRequest) -> ReplyResponse:
     if decision == ActionDecision.RESPOND:
         extra = _VOICE_STYLE if is_voice else None
         max_words = 60 if extra else 150
-        raw = await LLMService.get_ai_response(req.text, history, extra_system=extra)
-        message = validate_response(raw, max_words=max_words)
+        try:
+            raw = await LLMService.get_ai_response(req.text, history, extra_system=extra)
+            message = validate_response(raw, max_words=max_words)
+        except LLMUnavailable as e:
+            # Every provider is down. A grounded answer is impossible, so this
+            # becomes a real escalation rather than an apology the caller cannot
+            # distinguish from a genuine reply.
+            logger.error("LLM unavailable on /assistant/reply", extra={"data": e.log_data()})
+            decision = ActionDecision.ESCALATE
+            result.escalation_reason = "LLM Unavailable"
+            result.escalation_summary = "LLM Unavailable"
+            message = DecisionMessages.escalate(result.language)
     else:
         message = result.localized_message
 

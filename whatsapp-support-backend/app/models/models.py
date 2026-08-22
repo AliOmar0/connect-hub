@@ -1,8 +1,11 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List, Any, Dict
-from uuid import UUID, uuid4
 from datetime import datetime
-from app.models.enums import ChannelType, SessionStatus, MessageDirection
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, Field
+
+from app.models.enums import ChannelType, MessageDirection, SessionStatus
+
 
 class Customer(BaseModel):
     id: UUID = Field(default_factory=uuid4)
@@ -16,6 +19,7 @@ class Customer(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
+
 class Employee(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     profile_id: Optional[UUID] = None
@@ -26,6 +30,7 @@ class Employee(BaseModel):
     performance_score: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+
 
 class Session(BaseModel):
     id: UUID = Field(default_factory=uuid4)
@@ -41,12 +46,14 @@ class Session(BaseModel):
     escalated_to: Optional[UUID] = None
     resolution_notes: Optional[str] = None
     main_type_id: Optional[UUID] = None
+    external_conversation_id: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
-    
+
     # Relationships (optional in Pydantic)
     customer: Optional[Customer] = None
-    messages: List['Message'] = []
+    messages: List["Message"] = []
+
 
 class Message(BaseModel):
     id: UUID = Field(default_factory=uuid4)
@@ -63,6 +70,7 @@ class Message(BaseModel):
     classification: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+
 class ApiConfiguration(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     channel: ChannelType
@@ -78,6 +86,7 @@ class ApiConfiguration(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
 
+
 class Notification(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     user_id: Optional[UUID] = None
@@ -88,6 +97,7 @@ class Notification(BaseModel):
     action_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+
 class SessionMainType(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     name: str
@@ -96,6 +106,44 @@ class SessionMainType(BaseModel):
     ai_prompt: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.now)
 
+
+class Complaint(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+    reference_number: str
+    session_id: Optional[UUID] = None
+    customer_id: Optional[UUID] = None
+    channel: ChannelType
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    # Masked before it ever reaches this model -- see crud.create_complaint.
+    national_id_masked: Optional[str] = None
+    category: str
+    description: str
+    related_account_masked: Optional[str] = None
+    preferred_contact: Optional[str] = None
+    language: str = "ar"
+    status: str = "new"
+
+    # Triage fields (migration 20260822000000). Read out of the customer's own
+    # message by app/core/triage rather than asked for slot by slot.
+    # `severity` defaults to "medium" to match the column default: rows written
+    # before triage existed are complaints of unknown urgency, and unknown must
+    # not read as "low".
+    severity: str = "medium"
+    location: Optional[str] = None
+    atm_identifier: Optional[str] = None
+    # The customer's own phrase ("من ساعة", "أمس"), not a parsed instant.
+    incident_at_text: Optional[str] = None
+    ai_summary: Optional[str] = None
+    intent: Optional[str] = None
+    assigned_to: Optional[UUID] = None
+    escalated_session_id: Optional[UUID] = None
+
+    context: Dict[str, Any] = {}
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+
+
 class ChatShortcut(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     user_id: UUID
@@ -103,6 +151,7 @@ class ChatShortcut(BaseModel):
     content: str
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
+
 
 # Re-resolve forward refs
 Session.model_rebuild()

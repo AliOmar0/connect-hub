@@ -3,6 +3,8 @@ Shared test fixtures and configuration.
 """
 import sys
 import os
+import shutil
+import tempfile
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 from uuid import uuid4
@@ -11,8 +13,55 @@ from datetime import datetime, timezone
 # Add app to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Send every test's Qdrant traffic to a throwaway directory, BEFORE any app
+# module imports settings.
+#
+# Local Qdrant takes an exclusive lock on its storage folder, so a test that
+# opens the real store either fights the dev server for the lock or, worse,
+# writes into the live knowledge base. This was masked for a while: the storage
+# path used to be relative ("./qdrant_storage"), so pytest run from the repo
+# root silently got its own empty store while uvicorn used another. Anchoring
+# the path to the backend root (app/core/config.py) fixed the split-brain and
+# made the real isolation problem visible -- this is the actual fix.
+_TEST_QDRANT_DIR = os.path.join(
+    tempfile.gettempdir(), f"pib_qdrant_test_{os.getpid()}"
+)
+os.environ["QDRANT_STORAGE_PATH"] = _TEST_QDRANT_DIR
+# A remote URL would take precedence over the path and reach a real server.
+os.environ.pop("QDRANT_URL", None)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Remove the throwaway Qdrant directory after the run."""
+    shutil.rmtree(_TEST_QDRANT_DIR, ignore_errors=True)
+
+
 # Configure pytest-asyncio
 pytest_plugins = ["pytest_asyncio"]
+
+
+@pytest.fixture(autouse=True)
+def _isolated_qdrant_client():
+    """Drop the cached Qdrant client between tests.
+
+    app.core.rag caches the client in a module global, so without this the first
+    test to open one holds its lock for the whole session and every later test
+    that needs a fresh handle fails with "already accessed by another instance".
+    """
+    import app.core.rag as rag
+
+    previous = getattr(rag, "_qdrant_client", None)
+    rag._qdrant_client = None
+    try:
+        yield
+    finally:
+        client = getattr(rag, "_qdrant_client", None)
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+        rag._qdrant_client = previous
 
 
 @pytest.fixture(scope="session")

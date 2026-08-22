@@ -34,6 +34,12 @@ BUFFER_WAIT_SECONDS = float(os.getenv("BUFFER_WAIT_SECONDS", "4"))         # def
 RAPID_TYPING_WAIT_SECONDS = float(os.getenv("RAPID_TYPING_WAIT_SECONDS", "7"))  # wait a bit longer mid-burst
 RAPID_TYPING_THRESHOLD = float(os.getenv("RAPID_TYPING_THRESHOLD", "5"))   # messages within this gap = rapid typing
 
+# When the timer fires while the previous turn is still being answered, the batch
+# is re-armed rather than dropped. These bound that wait so a wedged callback
+# cannot re-arm forever.
+REQUEUE_WAIT_SECONDS = float(os.getenv("BUFFER_REQUEUE_WAIT_SECONDS", "3"))
+MAX_REQUEUE_ATTEMPTS = int(os.getenv("BUFFER_MAX_REQUEUE_ATTEMPTS", "10"))
+
 
 @dataclass
 class BufferedMessage:
@@ -56,6 +62,7 @@ class SessionBuffer:
     is_typing: bool = False      # Whether customer is actively typing
     typing_started_at: Optional[datetime] = None  # When typing was first detected
     rapid_typing_detected: bool = False  # Whether rapid typing pattern was detected
+    requeue_count: int = 0       # Consecutive re-arms while the AI was busy
 
 
 class MessageBufferService:
@@ -196,10 +203,30 @@ class MessageBufferService:
             return
 
         if buffer.is_processing:
-            logger.warning(
-                f"[Buffer] Session {session_key}: Timer expired but AI is already processing. Skipping."
+            # Do NOT drop the batch. "Skipping" here meant these messages were
+            # never answered at all: the customer typed, the previous turn was
+            # still in flight, and their new messages fell on the floor with only
+            # a warning in the log. Re-arm instead and pick them up on the next
+            # tick -- the AI callback flips is_processing back off when it ends.
+            if buffer.requeue_count >= MAX_REQUEUE_ATTEMPTS:
+                logger.error(
+                    f"[Buffer] Session {session_key}: still processing after "
+                    f"{buffer.requeue_count} re-arms; giving up on this batch."
+                )
+                return
+            buffer.requeue_count += 1
+            logger.info(
+                f"[Buffer] Session {session_key}: AI still processing, re-arming "
+                f"timer ({buffer.requeue_count}/{MAX_REQUEUE_ATTEMPTS})."
+            )
+            buffer.timer_task = asyncio.create_task(
+                self._timer_expired(session_key, REQUEUE_WAIT_SECONDS)
             )
             return
+
+        # Made it through: this batch is being handled, so the counter resets for
+        # whatever the customer sends next.
+        buffer.requeue_count = 0
 
         # Lock processing and mark typing as finished
         buffer.is_processing = True

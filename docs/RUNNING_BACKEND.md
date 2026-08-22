@@ -133,7 +133,7 @@ colored prefixes):
 ```bash
 npm run backend         # node-api + edge-tts        (free default)
 npm run backend:node    # node-api only
-npm run backend:otp     # node-api + edge-tts + otp-service
+npm run backend:otp     # node-api + edge-tts + WhatsApp backend (OTP is embedded in it)
 npm run backend:all     # everything incl. WhatsApp backend
 ```
 
@@ -166,7 +166,7 @@ already have Docker Desktop. The tradeoff: the images are larger and rebuilds ar
 slower than the npm scripts, so for fast iteration the scripts are usually nicer.
 
 ```bash
-# Core stack: redis + node-api + edge-tts (free) + otp-service + web
+# Core stack: redis + node-api + edge-tts (free) + web
 docker compose up --build
 
 # Also start Prometheus + Grafana
@@ -261,10 +261,11 @@ All values live in the root `.env` (copy from `.env.example`). Key ones:
 - **Node API**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`,
   `OPENROUTER_API_KEY`, `TTS_PROVIDER` (use `edge` for free), and Twilio keys
   only when placing real calls.
-- **OTP service** (`otp-service`): `SUPABASE_URL`, `SUPABASE_KEY`,
-  `SECURITY_WHATSAPP_PHONE_NUMBER_ID`, `SECURITY_WHATSAPP_ACCESS_TOKEN`.
-  Note these use non-`VITE_` names; add them to `.env` if you run this service.
-- **WhatsApp backend**: see `whatsapp-support-backend/.env.example`.
+- **WhatsApp backend** (includes OTP delivery -- there is no separate OTP
+  service): see `whatsapp-support-backend/.env.example`. Notably
+  `SECURITY_WHATSAPP_PHONE_NUMBER_ID` / `SECURITY_WHATSAPP_ACCESS_TOKEN`,
+  a WhatsApp number dedicated to verification codes, kept separate from the
+  customer-support number.
 
 If an optional service's credentials are missing, the related feature logs a
 warning and is skipped rather than crashing the whole stack.
