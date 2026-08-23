@@ -20,10 +20,13 @@ import hmac
 import logging
 import time
 from typing import List, Optional
+from uuid import UUID
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 from app.core.bank import (
     ALLOWED_FIELDS,
@@ -40,6 +43,8 @@ from app.core.complaints import (
 from app.core.config import settings
 from app.core.nlp.normalize import mask_identifier, normalize_msisdn
 from app.core.pii import redact_pii
+from app.api.v1.deps import verify_jwt
+from app.core.triage.session_types import COMPLAINT_SESSION_TYPE
 from app.core.voice_agent_state import voice_conversation_store
 from app.crud import crud
 from app.database import BankDbUnavailable
@@ -50,9 +55,43 @@ logger = logging.getLogger("voice_agent")
 router = APIRouter(prefix="/voice-agent")
 
 ELEVENLABS_SIGNED_URL_ENDPOINT = "https://api.elevenlabs.io/v1/convai/conversation/get-signed-url"
+ELEVENLABS_CONVERSATION_AUDIO_ENDPOINT = (
+    "https://api.elevenlabs.io/v1/convai/conversations/{conversation_id}/audio"
+)
+# Voice is a real-time channel: a knowledge lookup that takes longer than this
+# is heard as dead air, so the retrieval budget is deliberately tight.
+_KNOWLEDGE_SEARCH_TOP_K = 3
+# The agent prompt caps spoken replies at 60 words; feeding it 150-word chunks
+# (build_context_block's default) just invites it to read an essay aloud.
+_KNOWLEDGE_SEARCH_WORDS_PER_CHUNK = 80
 # ElevenLabs webhook signature timestamps outside this window are rejected as
 # stale, to limit the replay window on a leaked/logged signature.
 _WEBHOOK_SIGNATURE_TOLERANCE_SECONDS = 1800
+
+
+def _keyword_chunks(query: str, top_k: int):
+    """Keyword hits from the static dataset, shaped like vector-search results.
+
+    Mirrors the conversion app.core.rag.retrieve_with_audit does for its own
+    fallback, so callers can treat both the same way.
+    """
+    from app.core.rag import RetrievedChunk, retrieve_from_json_knowledge_base
+
+    return [
+        RetrievedChunk(
+            id=f"json_kb_{index}",
+            document_id=item.get("url", "unknown"),
+            chunk_index=0,
+            content=item.get("content", ""),
+            score=min(item.get("score", 50) / 100, 1.0),
+            metadata={
+                "title": item.get("title", ""),
+                "url": item.get("url", ""),
+                "source": "json_kb_fallback",
+            },
+        )
+        for index, item in enumerate(retrieve_from_json_knowledge_base(query, top_n=top_k))
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +176,19 @@ class FileComplaintRequest(BaseModel):
     category: str
     description: str
     preferred_contact: Optional[str] = None
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str
+    # Optional on purpose: general questions about products, fees and branches
+    # must work before the caller has been through /tools/identify. It is used
+    # only to correlate the retrieval log with a session.
+    conversation_id: Optional[str] = None
+
+
+class EscalateRequest(BaseModel):
+    conversation_id: str
+    reason: str
 
 
 # ---------------------------------------------------------------------------
@@ -321,6 +373,24 @@ async def file_complaint(body: FileComplaintRequest):
         logger.error(f"[voice-agent] failed to save complaint: {e}")
         raise HTTPException(status_code=503, detail="Could not save the complaint")
 
+    # A filed complaint IS the session type. Set directly rather than leaving it
+    # to the classifier, which for a voice call runs only at session close and
+    # can still come back with no match at all.
+    if convo.db_session_id:
+        try:
+            session = await crud.get_session_by_id(None, convo.db_session_id)
+            if session and session.main_type_id is None:
+                types = await crud.get_session_main_types(None)
+                match = next(
+                    (t for t in types if t.get("name") == COMPLAINT_SESSION_TYPE), None
+                )
+                if match:
+                    await crud.update_session_main_type(
+                        None, convo.db_session_id, UUID(match["id"])
+                    )
+        except Exception as e:
+            logger.warning(f"[voice-agent] could not set complaint session type: {e}")
+
     try:
         await crud.create_notification(
             None,
@@ -338,6 +408,133 @@ async def file_complaint(body: FileComplaintRequest):
         f"for conversation {body.conversation_id}"
     )
     return {"status": "ok", "reference_number": complaint.reference_number}
+
+
+@router.post("/tools/knowledge-search", dependencies=[Depends(require_elevenlabs_tool_secret)])
+async def knowledge_search(body: KnowledgeSearchRequest):
+    """Ground the agent's answers in the bank's own knowledge base.
+
+    Without this tool the ElevenLabs agent answers product, fee and branch
+    questions from its hosted model's own knowledge -- every document uploaded
+    through /api/v1/knowledge-base and every page the scraper ingests is
+    invisible to callers. This routes those questions through the same
+    retrieval stack the decision engine uses (app/core/decision_engine.py),
+    so the two channels answer from one corpus.
+
+    Nothing here is persisted and nothing is disclosed about an account, so no
+    OTP gate: the shared secret is the only thing standing between this and the
+    public internet, exactly as for the other tools.
+    """
+    query = (body.query or "").strip()
+    if not query:
+        return {"found": False, "context": "", "sources": []}
+
+    session_id = None
+    if body.conversation_id:
+        convo = voice_conversation_store.get(body.conversation_id)
+        if convo is not None and convo.db_session_id:
+            session_id = str(convo.db_session_id)
+
+    # Imported here, not at module scope, purely for import hygiene: app.core.rag
+    # drags in sentence-transformers/torch, and importing that after the Supabase
+    # client stack has already loaded segfaults the interpreter on Windows (the
+    # same collision app/api/v1/knowledge_base.py hits when imported on its own).
+    # By the time a call is in progress the module is long since loaded, so this
+    # costs a dict lookup.
+    from app.core.rag import build_context_block, retrieve_with_audit
+
+    started = time.monotonic()
+    # Both calls below are fully synchronous -- retrieval embeds the query with
+    # sentence-transformers and then makes a blocking Qdrant call. Awaiting them
+    # inline would stall the event loop (and every other in-flight call) for the
+    # whole embedding pass, so they run on a worker thread.
+    try:
+        chunks, _fallback = await run_in_threadpool(
+            retrieve_with_audit,
+            query,
+            session_id=session_id,
+            top_k=_KNOWLEDGE_SEARCH_TOP_K,
+        )
+    except Exception as e:
+        # retrieve_with_audit's own JSON fallback only runs when vector search
+        # returns cleanly-empty. Anything that RAISES first -- an unreachable
+        # Qdrant, a locked local storage folder, a missing embedding model --
+        # skips it entirely, and the caller would be told the bank has no
+        # answer when the dataset in fact does. Reach for the keyword index
+        # directly instead: degraded, but an answer.
+        logger.warning(f"[voice-agent] vector retrieval failed ({e}); using keyword fallback")
+        try:
+            chunks = await run_in_threadpool(
+                _keyword_chunks, query, _KNOWLEDGE_SEARCH_TOP_K
+            )
+        except Exception as fallback_error:
+            logger.error(f"[voice-agent] knowledge search failed: {fallback_error}")
+            return {"found": False, "context": "", "sources": []}
+
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+
+    if not chunks:
+        logger.info(f"[voice-agent] knowledge search: no match ({elapsed_ms} ms)")
+        # Deliberately not an error and deliberately not build_context_block's
+        # empty-case string: the agent's prompt turns `found: false` into an
+        # offer to transfer, and a canned Arabic paragraph here would just be
+        # read aloud verbatim.
+        return {"found": False, "context": "", "sources": []}
+
+    sources = []
+    for chunk in chunks:
+        source = (
+            chunk.metadata.get("source_url")
+            or chunk.metadata.get("url")
+            or chunk.metadata.get("title")
+        )
+        if source and source not in sources:
+            sources.append(source)
+
+    logger.info(
+        f"[voice-agent] knowledge search: {len(chunks)} chunk(s) in {elapsed_ms} ms"
+    )
+    return {
+        "found": True,
+        "context": build_context_block(
+            chunks, max_words_per_chunk=_KNOWLEDGE_SEARCH_WORDS_PER_CHUNK
+        ),
+        "sources": sources,
+    }
+
+
+@router.post("/tools/escalate", dependencies=[Depends(require_elevenlabs_tool_secret)])
+async def escalate(body: EscalateRequest):
+    """Hand the call to a human.
+
+    The agent prompt offers a transfer in half a dozen places; until this tool
+    existed nothing happened when it did -- the session stayed `active` and no
+    one was notified. Mirrors the two durable effects of webhook.py::_escalate
+    (status + staff notification); the WhatsApp reply it also sends has no
+    equivalent here, because the agent speaks the handover itself.
+    """
+    convo = voice_conversation_store.get(body.conversation_id)
+    if convo is None:
+        raise HTTPException(status_code=404, detail="Unknown conversation - call identify first")
+
+    await crud.update_session_status(None, convo.db_session_id, SessionStatus.escalated)
+
+    try:
+        await crud.create_notification(
+            None,
+            user_id=None,
+            title="⚠️ New Escalation Request",
+            # Redacted for the same reason a complaint description is: a caller
+            # explaining why they need a human reads out card numbers.
+            message=redact_pii((body.reason or "").strip()) or "Voice call escalated.",
+            type="escalation",
+            action_url=f"/sessions/{convo.db_session_id}",
+        )
+    except Exception as e:
+        logger.error(f"[voice-agent] failed to create escalation notification: {e}")
+
+    logger.info(f"[voice-agent] escalated conversation {body.conversation_id}")
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +564,68 @@ async def signed_url():
 
 
 # ---------------------------------------------------------------------------
+# Recording playback (dashboard -> here -> ElevenLabs). Staff-only.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/recording/{session_id}", dependencies=[Depends(verify_jwt)])
+async def call_recording(session_id: UUID):
+    """Stream a finished call's recording to the dashboard.
+
+    Pulled from ElevenLabs on demand rather than copied into Supabase Storage:
+    the audio contains everything the caller said aloud, including whatever they
+    read out before the agent could stop them, and a second permanent copy of
+    that is a liability with no upside. The trade is that playback stops working
+    once the ElevenLabs retention window elapses (404 below).
+
+    This router sits outside the global staff-JWT dependency (see main.py), so
+    the dependency is attached per-route here -- without it this would be an
+    open endpoint serving customer call audio to anyone with a session id.
+    """
+    if not settings.ELEVENLABS_API_KEY:
+        raise HTTPException(status_code=503, detail="Voice agent is not configured")
+
+    session = await crud.get_session_by_id(None, session_id)
+    if session is None or not session.external_conversation_id:
+        raise HTTPException(status_code=404, detail="No recording for this session")
+
+    url = ELEVENLABS_CONVERSATION_AUDIO_ENDPOINT.format(
+        conversation_id=session.external_conversation_id
+    )
+
+    client = httpx.AsyncClient(timeout=30.0)
+    try:
+        request = client.build_request(
+            "GET", url, headers={"xi-api-key": settings.ELEVENLABS_API_KEY}
+        )
+        response = await client.send(request, stream=True)
+    except httpx.HTTPError as e:
+        await client.aclose()
+        logger.error(f"[voice-agent] failed to fetch recording: {e}")
+        raise HTTPException(status_code=502, detail="Could not fetch the recording")
+
+    if response.status_code == 404:
+        await response.aclose()
+        await client.aclose()
+        raise HTTPException(status_code=404, detail="Recording is no longer available")
+    if response.status_code >= 400:
+        await response.aclose()
+        await client.aclose()
+        logger.error(f"[voice-agent] recording fetch returned {response.status_code}")
+        raise HTTPException(status_code=502, detail="Could not fetch the recording")
+
+    async def stream():
+        try:
+            async for piece in response.aiter_bytes():
+                yield piece
+        finally:
+            await response.aclose()
+            await client.aclose()
+
+    return StreamingResponse(stream(), media_type="audio/mpeg")
+
+
+# ---------------------------------------------------------------------------
 # Post-call webhook (server-to-server, from ElevenLabs, once the call ends)
 # ---------------------------------------------------------------------------
 
@@ -379,9 +638,20 @@ async def post_call_webhook(request: Request, elevenlabs_signature: Optional[str
 
     payload = await request.json()
     data = payload.get("data", payload)
+    event_type = payload.get("type")
     conversation_id = data.get("conversation_id")
     if not conversation_id:
         raise HTTPException(status_code=400, detail="Missing conversation_id")
+
+    # ElevenLabs delivers three different event types to this one URL, and only
+    # one of them carries a transcript. post_call_audio in particular has no
+    # `transcript` at all, so handling it here as if it did would mark the
+    # session completed (stamping ended_at) and the real transcription webhook
+    # -- which may well arrive second -- would then hit the already-processed
+    # guard below and the entire conversation would be dropped on the floor.
+    if event_type in ("post_call_audio", "call_initiation_failure"):
+        logger.info(f"[voice-agent] ignoring {event_type} for conversation {conversation_id}")
+        return {"status": "ignored"}
 
     session = await crud.get_session_by_external_conversation_id(None, conversation_id)
     if session is None:
@@ -395,6 +665,14 @@ async def post_call_webhook(request: Request, elevenlabs_signature: Optional[str
         return {"status": "already_processed"}
 
     transcript = data.get("transcript") or []
+    if not transcript and event_type != "post_call_transcription":
+        # An unrecognised event type with nothing to log. Closing the session on
+        # it would have the same transcript-eating effect as the audio webhook.
+        logger.warning(
+            f"[voice-agent] webhook type {event_type!r} carried no transcript; ignoring"
+        )
+        return {"status": "ignored"}
+
     for turn in transcript:
         role = turn.get("role")
         text = turn.get("message") or turn.get("text")
@@ -408,6 +686,15 @@ async def post_call_webhook(request: Request, elevenlabs_signature: Optional[str
             direction=direction,
             channel=ChannelType.voice,
         )
+
+    # ElevenLabs writes its own wrap-up of the call; surfacing it on the session
+    # saves staff replaying a transcript to find out what the caller wanted.
+    summary = ((data.get("analysis") or {}).get("transcript_summary") or "").strip()
+    if summary:
+        try:
+            await crud.update_session_resolution_notes(None, session.id, redact_pii(summary))
+        except Exception as e:
+            logger.warning(f"[voice-agent] could not store call summary: {e}")
 
     await crud.update_session_status(None, session.id, SessionStatus.completed)
     voice_conversation_store.clear(conversation_id)

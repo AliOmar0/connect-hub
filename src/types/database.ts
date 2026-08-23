@@ -6,6 +6,7 @@ export type SessionStatus =
   | "waiting"
   | "completed"
   | "escalated"
+  | "auto_closed"
   | "missed";
 export type MessageDirection = "inbound" | "outbound";
 
@@ -73,6 +74,8 @@ export interface Session {
   escalated_to: string | null;
   resolution_notes: string | null;
   main_type_id: string | null;
+  /** Voice only: the ElevenLabs conversation id. NULL on every other channel. */
+  external_conversation_id: string | null;
   created_at: string;
   updated_at: string;
   customer?: Customer;

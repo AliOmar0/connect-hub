@@ -19,6 +19,11 @@ from app.models.models import (
 
 logger = logging.getLogger(__name__)
 
+# Statuses a session cannot leave on its own. Both stamp ended_at/duration and
+# both drop out of the live queues; they differ only in WHY the session ended,
+# which is the whole reason `auto_closed` exists as a separate label.
+TERMINAL_STATUSES = (SessionStatus.completed, SessionStatus.auto_closed)
+
 
 # --- Bank Logic ---
 # Allowlist of every field this backend may ever read from Bank_db_oss. The
@@ -157,7 +162,9 @@ async def get_active_sessions(db: Any) -> List[Session]:
     response = (
         supabase.table("sessions")
         .select("*, customer:customers(*), messages(*)")
-        .neq("status", SessionStatus.completed.value)
+        # not_.in_ rather than a single neq: `auto_closed` is just as ended as
+        # `completed`, and a neq on one of them lets the other back in as "live".
+        .not_.in_("status", [st.value for st in TERMINAL_STATUSES])
         .order("updated_at", desc=True)
         .execute()
     )
@@ -238,8 +245,8 @@ async def create_session(
 async def update_session_status(db: Any, session_id: UUID, status: SessionStatus) -> Session:
     update_data = {"status": status.value}
 
-    if status == SessionStatus.completed:
-        # Calculate duration when completed
+    if status in TERMINAL_STATUSES:
+        # Calculate duration when the session ends
         session = await get_session_by_id(db, session_id)
         if session:
             ended_at = datetime.utcnow()
@@ -285,6 +292,20 @@ async def update_session_main_type(db: Any, session_id: UUID, type_id: Optional[
     if response.data:
         return Session(**response.data[0])
     raise Exception("Failed to update session type")
+
+
+async def update_session_resolution_notes(db: Any, session_id: UUID, notes: str) -> Session:
+    """Store a short wrap-up on the session (used for the voice channel's
+    post-call summary, which ElevenLabs generates once the call ends)."""
+    response = (
+        supabase.table("sessions")
+        .update({"resolution_notes": notes})
+        .eq("id", str(session_id))
+        .execute()
+    )
+    if response.data:
+        return Session(**response.data[0])
+    raise Exception("Failed to update session resolution notes")
 
 
 async def create_message(
@@ -589,6 +610,36 @@ async def get_complaint_by_id(db: Any, complaint_id: UUID) -> Optional[Complaint
     return Complaint(**rows[0]) if rows else None
 
 
+async def update_complaint_status(
+    db: Any, complaint_id: UUID, status: str
+) -> Optional[Complaint]:
+    """Move a complaint to another status. Returns None if the row is gone.
+
+    The status is checked against _COMPLAINT_STATUSES here rather than left to
+    the CHECK constraint: a bad value should be a 400 from the caller, not a
+    500 surfacing a Postgres error message to the dashboard.
+
+    `updated_at` is not set here -- the update_complaints_updated_at trigger
+    (migration 20260820000000) already stamps it on every UPDATE.
+    """
+    if status not in _COMPLAINT_STATUSES:
+        raise ValueError(f"status must be one of {list(_COMPLAINT_STATUSES)}")
+
+    try:
+        response = (
+            supabase.table("complaints")
+            .update({"status": status})
+            .eq("id", str(complaint_id))
+            .execute()
+        )
+    except Exception as e:
+        logger.error(f"Failed to update complaint {complaint_id}: {e}")
+        raise
+
+    rows = response.data or []
+    return Complaint(**rows[0]) if rows else None
+
+
 # --- End Complaints ---
 
 
@@ -623,24 +674,41 @@ async def get_last_session_by_customer(db: Any, customer_id: UUID) -> Optional[S
     return None
 
 
-async def close_inactive_sessions(db: Any, minutes: int = 10, on_close: Optional[Any] = None):
+async def close_inactive_sessions(
+    db: Any,
+    minutes: int = 10,
+    on_close: Optional[Any] = None,
+    statuses: Sequence[SessionStatus] = (SessionStatus.active, SessionStatus.waiting),
+    terminal_status: SessionStatus = SessionStatus.completed,
+    require_outbound_last: bool = True,
+):
+    """End sessions that have gone quiet, and say which kind of quiet it was.
+
+    This used to sweep active/waiting/escalated together on one 10-minute
+    threshold and stamp them all `completed`. That conflated two different
+    facts: a customer who stopped replying to the bot, and an escalation no
+    human ever picked up. The caller now chooses all three axes --
+
+    `statuses`               which sessions are in scope,
+    `terminal_status`        what they become,
+    `require_outbound_last`  whether the last message must be ours.
+
+    -- so app/main.py can run the ordinary 10-minute sweep and the 2-hour
+    escalation sweep through the same code. `require_outbound_last=False` is
+    what makes the escalation sweep work at all: an escalated session usually
+    ends on the CUSTOMER's message (they asked for a human and are waiting), so
+    the outbound check would keep it open forever.
+    """
     from datetime import datetime, timedelta, timezone
 
-    # 1. Get all candidates (Active/Waiting/Escalated) that haven't been updated recently
+    # 1. Get all candidates in scope that haven't been updated recently.
     # We check 'updated_at' first as a rough filter to avoid fetching all sessions
     threshold = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
 
     response = (
         supabase.table("sessions")
-        .select("id, status, updated_at")
-        .in_(
-            "status",
-            [
-                SessionStatus.active.value,
-                SessionStatus.waiting.value,
-                SessionStatus.escalated.value,
-            ],
-        )
+        .select("id, status, started_at, updated_at")
+        .in_("status", [st.value for st in statuses])
         .lt("updated_at", threshold)
         .execute()
     )
@@ -665,8 +733,12 @@ async def close_inactive_sessions(db: Any, minutes: int = 10, on_close: Optional
         should_close = False
         if msg_response.data:
             last_msg = msg_response.data[0]
-            # Key Condition: Last message from Bot/Agent (Outbound)
-            if last_msg["direction"] == MessageDirection.outbound.value:
+            # Key Condition: Last message from Bot/Agent (Outbound) -- unless the
+            # caller waived it, in which case only the age of the last message
+            # matters no matter who sent it.
+            if not require_outbound_last or (
+                last_msg["direction"] == MessageDirection.outbound.value
+            ):
                 # Double check time on message to be safe regardless of session updated_at trigger
                 # Parse sent_at. Format from supabase is typically ISO 8601 string
                 try:
@@ -696,9 +768,32 @@ async def close_inactive_sessions(db: Any, minutes: int = 10, on_close: Optional
             # between the read and this write, the status will no longer match,
             # the row won't be updated, and `update_res.data` comes back empty —
             # closing this time-of-check/time-of-use race without needing an RPC.
+            #
+            # ended_at/duration_seconds are stamped HERE rather than by going
+            # through update_session_status: that helper cannot express the
+            # conditional write above, and without these two fields every
+            # auto-closed session had a blank Duration in the dashboard.
+            close_data = {"status": terminal_status.value}
+            ended_at = datetime.now(timezone.utc)
+            close_data["ended_at"] = ended_at.isoformat()
+            started_at_raw = item.get("started_at")
+            if started_at_raw:
+                try:
+                    started_at = datetime.fromisoformat(
+                        started_at_raw.replace("Z", "+00:00")
+                    )
+                    close_data["duration_seconds"] = int(
+                        (ended_at - started_at).total_seconds()
+                    )
+                except Exception as e:
+                    # A missing duration is cosmetic; never let it block the close.
+                    logger.warning(
+                        f"Could not compute duration for session {session_id}: {e}"
+                    )
+
             update_res = (
                 supabase.table("sessions")
-                .update({"status": SessionStatus.completed.value})
+                .update(close_data)
                 .eq("id", session_id)
                 .eq("status", item["status"])
                 .execute()
@@ -707,7 +802,8 @@ async def close_inactive_sessions(db: Any, minutes: int = 10, on_close: Optional
             if update_res.data:
                 closed_count += 1
                 logger.info(
-                    f"Auto-closing session {session_id} (inactive > {minutes} mins after outbound msg)."
+                    f"Auto-closing session {session_id} as {terminal_status.value} "
+                    f"(inactive > {minutes} mins)."
                 )
 
                 # Execute callback (e.g. for classification)
@@ -724,10 +820,20 @@ async def close_inactive_sessions(db: Any, minutes: int = 10, on_close: Optional
 
                 # Notify agents of auto-closure
                 try:
+                    auto_closed = terminal_status is SessionStatus.auto_closed
                     await create_notification(
                         db,
-                        title="Session Completed (Auto)",
-                        message=f"Session {session_id} closed due to inactivity.",
+                        title=(
+                            "Escalation Timed Out"
+                            if auto_closed
+                            else "Session Completed (Auto)"
+                        ),
+                        message=(
+                            f"Escalated session {session_id} was closed after "
+                            f"{minutes} minutes with no agent response."
+                            if auto_closed
+                            else f"Session {session_id} closed due to inactivity."
+                        ),
                         user_id=None,  # Broadcast
                         type="info",
                         action_url=f"/sessions/{session_id}",

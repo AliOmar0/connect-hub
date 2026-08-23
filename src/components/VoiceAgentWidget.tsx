@@ -1,9 +1,16 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConversationProvider, useConversation } from "@elevenlabs/react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
 import { BACKEND_URL, apiFetch } from "@/lib/config";
+import {
+  VOICE_LIVE_EVENT,
+  voiceLiveChannelName,
+  type VoiceLiveTurn,
+} from "@/lib/voice-live";
 
 /**
  * Mints a short-lived signed URL from our backend (which holds the
@@ -29,10 +36,50 @@ function VoiceAgentCallControl() {
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [turns, setTurns] = useState<VoiceLiveTurn[]>([]);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+
+  const closeChannel = useCallback(() => {
+    if (channelRef.current) {
+      supabase.removeChannel(channelRef.current);
+      channelRef.current = null;
+    }
+  }, []);
 
   const conversation = useConversation({
     onError: (message) => setError(message),
+    onConnect: ({ conversationId }) => {
+      setTurns([]);
+      // The dashboard has nothing to watch until the post-call webhook fires, so
+      // the caller's own browser relays each turn as it happens. See
+      // src/lib/voice-live.ts for why these are broadcast and never persisted.
+      if (!conversationId) return;
+      closeChannel();
+      channelRef.current = supabase
+        .channel(voiceLiveChannelName(conversationId))
+        .subscribe();
+    },
+    onMessage: ({ role, message }) => {
+      if (!message) return;
+      const turn: VoiceLiveTurn = {
+        // `role` is the supported field; the payload's `source` is deprecated.
+        source: role === "user" ? "user" : "ai",
+        message,
+        at: new Date().toISOString(),
+      };
+      setTurns((previous) => [...previous, turn]);
+      // Best-effort: a dropped turn costs the staff view one line, and must
+      // never take down the call the customer is actually on.
+      channelRef.current
+        ?.send({ type: "broadcast", event: VOICE_LIVE_EVENT, payload: turn })
+        ?.catch?.(() => undefined);
+    },
+    onDisconnect: () => {
+      closeChannel();
+    },
   });
+
+  useEffect(() => closeChannel, [closeChannel]);
 
   const handleStart = useCallback(async () => {
     setError(null);
@@ -79,6 +126,31 @@ function VoiceAgentCallControl() {
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
+      )}
+
+      {turns.length > 0 && (
+        <div
+          className="w-full max-w-md max-h-56 overflow-y-auto rounded-lg border border-border bg-muted/30 px-4 py-3 space-y-2"
+          aria-live="polite"
+        >
+          {turns.map((turn, index) => (
+            <p
+              key={`${turn.at}-${index}`}
+              className={
+                turn.source === "user"
+                  ? "text-xs text-foreground"
+                  : "text-xs text-muted-foreground"
+              }
+            >
+              <span className="font-medium me-1.5">
+                {turn.source === "user"
+                  ? t("supportPage.transcript.you")
+                  : t("supportPage.transcript.agent")}
+              </span>
+              {turn.message}
+            </p>
+          ))}
+        </div>
       )}
     </div>
   );

@@ -138,46 +138,6 @@ def build_complaint_contact_prompt() -> str:
     return "كيف تفضل أن نتواصل معك بخصوص الشكوى؟\n1. واتساب\n2. اتصال هاتفي\n3. بريد إلكتروني"
 
 
-# Shown to the customer, so these are the Arabic labels -- not the enum values
-# stored in the database.
-_SEVERITY_LABELS = {
-    "critical": "عاجلة جداً",
-    "high": "عاجلة",
-    "medium": "عادية",
-    "low": "عادية",
-}
-
-
-def build_complaint_confirm_prompt(
-    category: str,
-    description: str,
-    contact: str,
-    full_name: Optional[str] = None,
-    national_id: Optional[str] = None,
-    location: Optional[str] = None,
-    severity: str = "medium",
-) -> str:
-    """The last thing the customer sees before anything is written.
-
-    Every field that will be stored appears here, including the ones triage
-    filled in from their own message -- confirming a record you were not shown
-    is not consent.
-    """
-    label = CATEGORY_LABELS.get(category, category)
-    lines = [
-        "هذا ملخص شكواك قبل تسجيلها:",
-        f"الاسم: {full_name}" if full_name else None,
-        f"رقم الهوية: {mask_identifier(national_id)}" if national_id else None,
-        f"الموضوع: {label}",
-        f"الموقع: {location}" if location else None,
-        f"الوصف: {description}",
-        f"الأولوية: {_SEVERITY_LABELS.get(severity, 'عادية')}",
-        f"وسيلة التواصل: {contact}",
-        'أرسل "نعم" للتأكيد والتسجيل، أو "إلغاء" للتراجع.',
-    ]
-    return "\n".join(line for line in lines if line is not None)
-
-
 def build_complaint_saved_reply(reference_number: str) -> str:
     """The ONLY place a real reference number reaches the customer.
 

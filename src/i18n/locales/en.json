@@ -304,6 +304,7 @@
       "waiting": "Waiting",
       "completed": "Completed",
       "escalated": "Escalated",
+      "auto_closed": "Auto-closed",
       "missed": "Missed"
     },
     "channels": {
@@ -346,6 +347,7 @@
       "started": "Started",
       "unassigned": "Unassigned",
       "aiAgent": "AI Agent",
+      "untyped": "Untyped",
       "aiVoiceAgent": "AI Voice Agent",
       "unknown": "Unknown",
       "empty": "No sessions found"
@@ -396,6 +398,19 @@
       "typeUpdateFailed": "Failed to update session type",
       "statusUpdated": "Session marked as {{status}}",
       "statusUpdateFailed": "Failed to update session status"
+    },
+    "recording": {
+      "title": "Call recording",
+      "play": "Load recording",
+      "unavailable": "Recording is no longer available",
+      "loadFailed": "Could not load the recording"
+    },
+    "live": {
+      "title": "Live transcript",
+      "disclaimer": "Live · not saved",
+      "waiting": "Waiting for the call to start…",
+      "caller": "Caller:",
+      "agent": "Agent:"
     }
   },
   "nav": {
@@ -505,6 +520,10 @@
       "connecting": "Connecting…",
       "connected": "Connected",
       "error": "Connection error"
+    },
+    "transcript": {
+      "you": "You:",
+      "agent": "Assistant:"
     }
   },
   "employees": {
@@ -728,6 +747,10 @@
     "statusInProgress": "In progress",
     "statusResolved": "Resolved",
     "statusClosed": "Closed",
+    "changeStatus": "Complaint status",
+    "markResolved": "Mark resolved",
+    "statusUpdated": "Complaint status updated",
+    "statusUpdateFailed": "Could not update complaint status",
     "categories": {
       "service": "Service and treatment",
       "cards": "Cards and ATMs",

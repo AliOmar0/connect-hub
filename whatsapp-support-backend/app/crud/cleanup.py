@@ -28,19 +28,26 @@ logger = logging.getLogger(__name__)
 async def purge_expired_sessions(retention_days: int = None) -> int:
     """
     Permanently delete sessions (and, via FK cascade, their messages) that:
-      - are in a terminal state (completed / missed), AND
+      - are in a terminal state (completed / auto_closed / missed), AND
       - were last updated more than `retention_days` ago.
 
     Live sessions (active/waiting/escalated) are never touched here regardless
-    of age — only `close_inactive_sessions` transitions those to completed
-    first; retention deletion only applies once a session has actually ended.
+    of age — only `close_inactive_sessions` transitions those to a terminal
+    state first; retention deletion only applies once a session has actually
+    ended. `auto_closed` belongs in that list for the same reason `completed`
+    does: it is ended. Leaving it out would keep timed-out escalations on disk
+    forever.
 
     Returns the number of sessions deleted.
     """
     days = retention_days if retention_days is not None else settings.DATA_RETENTION_DAYS
     threshold = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
-    terminal_statuses = [SessionStatus.completed.value, SessionStatus.missed.value]
+    terminal_statuses = [
+        SessionStatus.completed.value,
+        SessionStatus.auto_closed.value,
+        SessionStatus.missed.value,
+    ]
 
     try:
         response = (

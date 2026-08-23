@@ -35,6 +35,10 @@ class SessionResponse(BaseModel):
     duration_seconds: Optional[int] = None
     satisfaction_score: Optional[int] = None
     main_type_id: Optional[UUID] = None
+    # Voice only: the ElevenLabs conversation id. The dashboard needs it to pull
+    # the recording and to key the live-transcript channel; NULL on every other
+    # channel.
+    external_conversation_id: Optional[str] = None
 
     class Config:
         from_attributes = True

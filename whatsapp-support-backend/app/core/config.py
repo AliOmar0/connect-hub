@@ -135,6 +135,20 @@ class Settings(BaseSettings):
     # mid-sentence. The deadline is refreshed on every answered slot.
     COMPLAINT_SESSION_TTL_SECONDS: int = 900
 
+    # How long an escalated session may sit untouched before the cleanup loop
+    # ends it as `auto_closed`. Two hours, not the ten minutes used for ordinary
+    # idle sessions: an escalation is waiting on a human being, and a staff
+    # member stepping away for lunch must not lose the conversation. It still
+    # has to end eventually -- an escalation left open forever is a queue entry
+    # nobody will ever action.
+    ESCALATION_TIMEOUT_MINUTES: int = 120
+
+    # How long after a session closes we still accept a 1-5 rating reply from
+    # the customer (app/core/csat_state.py). Long enough for someone who put
+    # their phone down to come back, short enough that the number still refers
+    # to the conversation they had.
+    CSAT_WINDOW_SECONDS: int = 1800
+
     # JWT Authentication (shared with Node.js backend - uses same Supabase JWT secret)
     SUPABASE_JWT_SECRET: str = Field(
         ..., validation_alias=AliasChoices("SUPABASE_JWT_SECRET", "JWT_SECRET")

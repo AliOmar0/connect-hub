@@ -86,6 +86,7 @@ interface BackendSession {
   duration_seconds: number | null;
   satisfaction_score: number | null;
   main_type_id: string | null;
+  external_conversation_id: string | null;
 }
 
 type FullSession = Session & {
@@ -984,6 +985,9 @@ export default function SessionsPage() {
                   </SelectItem>
                   <SelectItem value="escalated">
                     {t("sessions.status.escalated")}
+                  </SelectItem>
+                  <SelectItem value="auto_closed">
+                    {t("sessions.status.auto_closed")}
                   </SelectItem>
                   <SelectItem value="missed">
                     {t("sessions.status.missed")}

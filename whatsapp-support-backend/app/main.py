@@ -106,21 +106,45 @@ def _validate_startup() -> None:
 async def session_cleanup_task():
     """Periodic task to close inactive WhatsApp sessions.
 
-    When a session is closed due to inactivity the customer receives a
-    polite satisfaction-check message, then the session is auto-classified.
-    Both actions are handled by `send_session_closing_message` which calls
+    Two sweeps, because "gone quiet" means two different things:
+
+      * A bot conversation the customer stopped replying to -- 10 minutes,
+        ends as `completed`.
+      * An escalation no human ever answered -- ESCALATION_TIMEOUT_MINUTES
+        (2 hours), ends as `auto_closed`. Longer, because someone is supposed
+        to be picking this up and a staff member stepping away must not lose
+        the conversation; and a different terminal status, because nobody
+        resolved it.
+
+    When a session is closed the customer receives a polite closing message
+    asking them to rate the service, then the session is auto-classified. Both
+    actions are handled by `send_session_closing_message`, which calls
     `auto_classify_session` internally via its `finally` block.
     """
     from app.api.v1.webhook import send_session_closing_message
     from app.core.complaints import complaint_store
+    from app.core.csat_state import csat_store
     from app.core.verification_state import identity_pending_store, verification_store
     from app.core.voice_agent_state import voice_conversation_store
+    from app.models.enums import SessionStatus
 
     while True:
         try:
-            # Auto-close sessions inactive for 10 minutes (SESSION_TTL_SECONDS=600).
+            # Ordinary idle bot conversations.
             await crud.close_inactive_sessions(
                 None, minutes=10, on_close=send_session_closing_message
+            )
+            # Escalations nobody picked up. require_outbound_last=False because
+            # these usually end on the CUSTOMER asking for a human -- the
+            # outbound check that protects the sweep above would keep every one
+            # of them open indefinitely.
+            await crud.close_inactive_sessions(
+                None,
+                minutes=settings.ESCALATION_TIMEOUT_MINUTES,
+                statuses=(SessionStatus.escalated,),
+                terminal_status=SessionStatus.auto_closed,
+                require_outbound_last=False,
+                on_close=send_session_closing_message,
             )
             await crud.delete_old_notifications(None, hours=24)
             # Evict verification state whose OTP has expired.
@@ -131,6 +155,8 @@ async def session_cleanup_task():
             voice_conversation_store.purge_expired()
             # Evict abandoned complaint intake forms.
             complaint_store.purge_expired()
+            # Evict rating windows for sessions the customer never rated.
+            csat_store.purge_expired()
         except Exception as e:
             logger.exception(f"Error in session cleanup task: {e}")
         await asyncio.sleep(

@@ -304,6 +304,7 @@
       "waiting": "في الانتظار",
       "completed": "مكتملة",
       "escalated": "مُصعّدة",
+      "auto_closed": "أُغلقت تلقائياً",
       "missed": "فائتة"
     },
     "channels": {
@@ -346,6 +347,7 @@
       "started": "البدء",
       "unassigned": "غير مُسندة",
       "aiAgent": "المساعد الذكي (AI)",
+      "untyped": "غير مصنّفة",
       "aiVoiceAgent": "المجيب الصوتي الذكي (AI)",
       "unknown": "غير معروف",
       "empty": "لا توجد جلسات"
@@ -396,6 +398,19 @@
       "typeUpdateFailed": "فشل تحديث نوع الجلسة",
       "statusUpdated": "تم تعليم الجلسة كـ {{status}}",
       "statusUpdateFailed": "فشل تحديث حالة الجلسة"
+    },
+    "recording": {
+      "title": "تسجيل المكالمة",
+      "play": "تحميل التسجيل",
+      "unavailable": "التسجيل لم يعد متاحاً",
+      "loadFailed": "تعذر تحميل التسجيل"
+    },
+    "live": {
+      "title": "النص المباشر",
+      "disclaimer": "مباشر · غير محفوظ",
+      "waiting": "في انتظار بدء المكالمة…",
+      "caller": "المتصل:",
+      "agent": "المساعد:"
     }
   },
   "nav": {
@@ -505,6 +520,10 @@
       "connecting": "جارٍ الاتصال…",
       "connected": "متصل",
       "error": "خطأ في الاتصال"
+    },
+    "transcript": {
+      "you": "أنت:",
+      "agent": "المساعدة:"
     }
   },
   "employees": {
@@ -725,9 +744,13 @@
     "loadErrorTitle": "تعذر تحميل الشكاوى",
     "backendMissing": "خدمة الشكاوى غير متاحة. تأكد من تشغيل الخادم الخلفي.",
     "statusNew": "جديدة",
-    "statusInProgress": "قيد المعالجة",
-    "statusResolved": "تم حلها",
+    "statusInProgress": "في الانتظار",
+    "statusResolved": "تم",
     "statusClosed": "مغلقة",
+    "changeStatus": "حالة الشكوى",
+    "markResolved": "تم الحل",
+    "statusUpdated": "تم تحديث حالة الشكوى",
+    "statusUpdateFailed": "تعذر تحديث حالة الشكوى",
     "categories": {
       "service": "الخدمة والمعاملة",
       "cards": "البطاقات والصراف الآلي",

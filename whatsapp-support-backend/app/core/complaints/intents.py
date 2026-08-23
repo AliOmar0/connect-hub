@@ -65,10 +65,6 @@ _RAW_FOLLOWUP_MARKERS = (
 
 _COMPLAINT_KEYWORDS = _canon_all(_RAW_COMPLAINT_KEYWORDS)
 _FOLLOWUP_MARKERS = _canon_all(_RAW_FOLLOWUP_MARKERS)
-_CONFIRM_KEYWORDS = _canon_all(
-    ("نعم", "اكيد", "تمام", "موافق", "أرسل", "ارسل", "ok", "yes", "confirm", "send")
-)
-
 # Only the optional location slot honours these. A customer who genuinely
 # cannot remember which ATM ate their card must not be stuck in the form --
 # staff can still work the complaint without a location. Deliberately NOT
@@ -145,11 +141,6 @@ def match_category(text: str) -> Optional[str]:
 
 def is_valid_description(text: str) -> bool:
     return len((text or "").strip()) >= MIN_DESCRIPTION_LENGTH
-
-
-def mentions_confirm(text: str) -> bool:
-    canon = _canon(text)
-    return bool(canon) and any(k in canon for k in _CONFIRM_KEYWORDS)
 
 
 def mentions_skip(text: str) -> bool:

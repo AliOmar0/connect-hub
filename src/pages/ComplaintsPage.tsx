@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   MessageSquareWarning,
   CircleDot,
@@ -16,6 +16,7 @@ import {
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -46,6 +47,8 @@ import { BACKEND_URL, apiFetch } from "@/lib/config";
 import { supabase } from "@/integrations/supabase/client";
 import { maskText } from "@/lib/mask";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 
 // /api/v1/complaints is mounted behind verify_jwt, so every call carries the
 // current Supabase access token. Same helper shape as QueuePage/KnowledgePage.
@@ -71,6 +74,20 @@ const STATUS_FILTERS = [
   "resolved",
   "closed",
 ] as const;
+
+// The same four values without the UI-only "all": what a staff member may move
+// a complaint TO. Mirrors _STATUSES in app/api/v1/complaints.py, which rejects
+// anything else with a 400.
+const EDITABLE_STATUSES: readonly ComplaintStatus[] = [
+  "new",
+  "in_progress",
+  "resolved",
+  "closed",
+];
+
+// Who may change a complaint's status. Matches require_admin_access
+// (ADMIN_ROLES in app/api/v1/deps.py) -- anyone else sees the badge only.
+const STATUS_EDIT_ROLES = ["admin", "supervisor", "manager"];
 
 interface Complaint {
   id: string;
@@ -223,6 +240,9 @@ function ComplaintDetailDialog({
   onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const { userRole } = useAuth();
+  const queryClient = useQueryClient();
+  const canEditStatus = !!userRole && STATUS_EDIT_ROLES.includes(userRole);
 
   const { data: complaint, isLoading } = useQuery({
     queryKey: ["complaint-detail", complaintId],
@@ -236,6 +256,33 @@ function ComplaintDetailDialog({
       return res.json();
     },
     retry: false,
+  });
+
+  // Goes through FastAPI, not supabase-js: the RLS UPDATE policy on
+  // `complaints` covers admin/supervisor only, and managers work the queue too.
+  const updateStatus = useMutation({
+    mutationFn: async (status: ComplaintStatus) => {
+      const res = await apiFetch(
+        `${BACKEND_URL}/api/v1/complaints/${complaintId}`,
+        {
+          method: "PATCH",
+          headers: {
+            ...(await authHeaders()),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ status }),
+        },
+      );
+      if (!res.ok) throw new Error(`Update failed (${res.status})`);
+      return (await res.json()) as Complaint;
+    },
+    onSuccess: (updated) => {
+      // The detail pane and the list behind it both hold this row.
+      queryClient.setQueryData(["complaint-detail", complaintId], updated);
+      queryClient.invalidateQueries({ queryKey: ["complaints"] });
+      toast.success(t("complaints.statusUpdated"));
+    },
+    onError: () => toast.error(t("complaints.statusUpdateFailed")),
   });
 
   const rows: Array<{ label: string; value: React.ReactNode }> = complaint
@@ -317,6 +364,53 @@ function ComplaintDetailDialog({
               <StatusBadge status={complaint.status} />
               <SeverityBadge severity={complaint.severity} />
             </div>
+
+            {canEditStatus ? (
+              <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-muted/30 p-3">
+                <div className="min-w-[12rem] flex-1">
+                  <label
+                    className="text-xs text-muted-foreground"
+                    htmlFor="complaint-status"
+                  >
+                    {t("complaints.changeStatus")}
+                  </label>
+                  <Select
+                    value={complaint.status}
+                    disabled={updateStatus.isPending}
+                    onValueChange={(v) =>
+                      updateStatus.mutate(v as ComplaintStatus)
+                    }
+                  >
+                    <SelectTrigger id="complaint-status" className="mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {EDITABLE_STATUSES.map((value) => (
+                        <SelectItem key={value} value={value}>
+                          {t(statusConfig[value].labelKey)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* The transition staff make most often, one click instead of
+                    two. Hidden once it would be a no-op. */}
+                {complaint.status !== "resolved" ? (
+                  <Button
+                    onClick={() => updateStatus.mutate("resolved")}
+                    disabled={updateStatus.isPending}
+                  >
+                    {updateStatus.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="h-4 w-4" />
+                    )}
+                    {t("complaints.markResolved")}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
 
             <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               {rows.map((row) => (

@@ -453,6 +453,7 @@ export type Database = {
           updated_at: string | null;
           wait_time_seconds: number | null;
           main_type_id: string | null;
+          external_conversation_id: string | null;
         };
         Insert: {
           channel: Database["public"]["Enums"]["channel_type"];
@@ -470,6 +471,7 @@ export type Database = {
           updated_at?: string | null;
           wait_time_seconds?: number | null;
           main_type_id?: string | null;
+          external_conversation_id?: string | null;
         };
         Update: {
           channel?: Database["public"]["Enums"]["channel_type"];
@@ -487,6 +489,7 @@ export type Database = {
           updated_at?: string | null;
           wait_time_seconds?: number | null;
           main_type_id?: string | null;
+          external_conversation_id?: string | null;
         };
         Relationships: [
           {
@@ -583,6 +586,7 @@ export type Database = {
         | "waiting"
         | "completed"
         | "escalated"
+        | "auto_closed"
         | "missed";
     };
     CompositeTypes: {
@@ -717,7 +721,14 @@ export const Constants = {
       app_role: ["admin", "supervisor", "agent", "viewer"],
       channel_type: ["whatsapp", "messenger", "sms", "voice", "email"],
       message_direction: ["inbound", "outbound"],
-      session_status: ["active", "waiting", "completed", "escalated", "missed"],
+      session_status: [
+        "active",
+        "waiting",
+        "completed",
+        "escalated",
+        "auto_closed",
+        "missed",
+      ],
     },
   },
 } as const;

@@ -47,6 +47,16 @@ import { ErrorState } from "@/components/ui/error-state";
 import { resolveStatusCue, type MessageAuthor } from "@/lib/status-cue";
 import ChatShortcuts from "./ChatShortcuts";
 import { ChatVoicePlayer } from "./ChatVoicePlayer";
+import CallRecordingPlayer from "./CallRecordingPlayer";
+import LiveVoiceTranscript from "@/components/sessions/LiveVoiceTranscript";
+
+// A voice call only has a recording once it is over, and only has a live
+// transcript while it is not. These are the statuses that mean "over".
+const ENDED_STATUSES: ReadonlySet<string> = new Set([
+  "completed",
+  "auto_closed",
+  "missed",
+]);
 
 // /api/v1/sessions/* routes are protected by verify_jwt on the backend, so
 // every call needs the current Supabase access token attached (same pattern
@@ -408,6 +418,22 @@ export default function ChatView({
           </Button>
         </div>
       </div>
+
+      {/* Voice call: live transcript while it runs, recording once it ends.
+          Both are keyed off external_conversation_id, which the backend only
+          sets for the ElevenLabs channel. */}
+      {session.channel === "voice" &&
+        session.external_conversation_id &&
+        !ENDED_STATUSES.has(session.status) && (
+          <LiveVoiceTranscript
+            conversationId={session.external_conversation_id}
+          />
+        )}
+      {session.channel === "voice" &&
+        session.external_conversation_id &&
+        ENDED_STATUSES.has(session.status) && (
+          <CallRecordingPlayer sessionId={session.id} />
+        )}
 
       {/* Messages Area */}
       <ScrollArea

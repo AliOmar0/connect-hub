@@ -21,7 +21,6 @@ from app.core.complaints.intents import (
     match_category,
     match_complaint_intent,
     mentions_complaint_followup,
-    mentions_confirm,
     mentions_skip,
 )
 from app.core.complaints.responses import (
@@ -29,7 +28,6 @@ from app.core.complaints.responses import (
     build_complaint_cancelled_reply,
     build_complaint_category_prompt,
     build_complaint_category_retry,
-    build_complaint_confirm_prompt,
     build_complaint_contact_prompt,
     build_complaint_description_prompt,
     build_complaint_description_retry,
@@ -61,7 +59,6 @@ __all__ = [
     "build_complaint_cancelled_reply",
     "build_complaint_category_prompt",
     "build_complaint_category_retry",
-    "build_complaint_confirm_prompt",
     "build_complaint_contact_prompt",
     "build_complaint_description_prompt",
     "build_complaint_description_retry",
@@ -80,6 +77,5 @@ __all__ = [
     "match_category",
     "match_complaint_intent",
     "mentions_complaint_followup",
-    "mentions_confirm",
     "mentions_skip",
 ]

@@ -52,7 +52,6 @@ from app.core.complaints import (
     build_complaint_cancelled_reply,
     build_complaint_category_prompt,
     build_complaint_category_retry,
-    build_complaint_confirm_prompt,
     build_complaint_contact_prompt,
     build_complaint_description_prompt,
     build_complaint_description_retry,
@@ -71,7 +70,6 @@ from app.core.complaints import (
     match_complaint_intent,
     mentions_complaint_followup,
     mentions_skip,
-    mentions_confirm,
 )
 from app.core.config import settings
 from app.core.llm import LLMUnavailable, llm_service
@@ -79,6 +77,10 @@ from app.core.message_buffer import message_buffer
 from app.core.notifications import NotificationService
 from app.core.pii import redact_pii
 from app.core.stt import stt_service
+from app.core.triage.session_types import (
+    COMPLAINT_SESSION_TYPE,
+    session_type_for_intent,
+)
 from app.core.triage import (
     Severity,
     lexicon_severity,
@@ -86,6 +88,7 @@ from app.core.triage import (
     triage,
 )
 from app.core.verification_state import identity_pending_store, verification_store
+from app.core.csat_state import csat_store, parse_rating
 from app.core.whatsapp import WhatsAppClient
 from app.crud import crud
 from app.database import BankDbUnavailable
@@ -291,6 +294,12 @@ async def process_voice_message(
                     f"Skipping AI response for voice message in session {db_session_id}. "
                     f"Status: {session.status if session else 'Unknown'}"
                 )
+                # process_ai_response is where classification normally happens,
+                # so an escalated or agent-assigned voice session used to reach
+                # the dashboard with no Type at all. The transcript is right
+                # here; use it.
+                if session and session.main_type_id is None:
+                    await auto_classify_session(db_session_id, transcription)
         else:
             # ── FAILURE PATH ─────────────────────────────────────────────────
             # Transcription failed (no Deepgram key, network error, empty result, etc.)
@@ -330,6 +339,10 @@ async def process_voice_message(
 
     except Exception as e:
         logger.error(f"Error in background voice processing: {e}", exc_info=True)
+
+
+# Sent when a customer answers the closing question with a 1-5 rating.
+RATING_THANKS_TEXT = "شكراً لتقييمك! رأيك يساعدنا على تحسين خدمتنا. ⭐"
 
 
 async def send_session_closing_message(session_id: UUID):
@@ -376,9 +389,16 @@ async def send_session_closing_message(session_id: UUID):
             return
 
         # 4. Build & send closing message
+        #
+        # This used to ask a yes/no question that nothing parsed, on a
+        # session that was already closed -- so the answer became the
+        # opening line of an unrelated new conversation and
+        # sessions.satisfaction_score stayed NULL for every session ever
+        # recorded. Asking for a number gives that column something it can
+        # store, and csat_state remembers which session it belongs to.
         closing_text = (
             "شكراً لتواصلك مع البنك الإسلامي الفلسطيني 🌟\n\n"
-            "هل تم حل مشكلتك بشكل كامل؟\n"
+            "كيف تقيّم خدمتنا؟ أرسل رقماً من 1 (سيئ) إلى 5 (ممتاز).\n"
             "نسعد دائماً بخدمتك، وفي حال احتجت أي مساعدة إضافية لا تتردد في التواصل معنا مجدداً. 🤝"
         )
 
@@ -387,6 +407,10 @@ async def send_session_closing_message(session_id: UUID):
             access_token=api_config.access_token_encrypted,
         )
         await client.send_text_message(customer_phone, closing_text)
+
+        # Only after the question actually went out: a window opened for a
+        # question the customer never saw would swallow their next message.
+        csat_store.start(customer_phone, session_id)
 
         # 5. Save the closing message to DB so agents / dashboard can see it
         await crud.create_message(
@@ -537,6 +561,10 @@ async def process_image_message(
             logger.info(
                 f"Skipping AI response for image message in session {db_session_id}. Status: {session.status if session else 'Unknown'}"
             )
+            # Same gap as the voice path: vision_service classifies as a side
+            # effect of answering, so a session nobody answers stays untyped.
+            if session and session.main_type_id is None:
+                await auto_classify_session(db_session_id, caption or content)
 
     except Exception as e:
         logger.error(f"Error in background image processing: {e}")
@@ -546,6 +574,7 @@ async def auto_classify_session(
     db_session_id: UUID,
     user_message: Optional[str] = None,
     triage_summary: Optional[str] = None,
+    fallback_intent: Optional[str] = None,
 ):
     """Background task to classify session type based on history.
 
@@ -554,6 +583,11 @@ async def auto_classify_session(
     alongside the raw text: "الصراف بلع بطاقتي" plus "شكوى بخصوص احتجاز بطاقة في
     صراف آلي" is a far easier thing to map onto a session type than the bare
     message, especially in dialect.
+
+    ``fallback_intent`` is the triage IntentLabel for the same message. If the
+    model returns nothing usable the intent decides the type instead of leaving
+    the session unclassified -- see app/core/triage/session_types.py for why an
+    LLM-only classifier left the dashboard's Type column mostly empty.
     """
     try:
         # 1. Fetch types
@@ -594,6 +628,25 @@ async def auto_classify_session(
         if classified_type_id:
             logger.info(f"Auto-classified session {db_session_id} as {classified_type_id}")
             await crud.update_session_main_type(None, db_session_id, UUID(classified_type_id))
+            return
+
+        # The model gave us nothing usable. Rather than leave the session
+        # unclassified forever, fall back to what triage already worked out
+        # deterministically from the same message.
+        fallback_name = session_type_for_intent(fallback_intent)
+        if fallback_name:
+            match = next((t for t in types if t.get("name") == fallback_name), None)
+            if match:
+                logger.info(
+                    f"Auto-classification fell back to {fallback_name!r} for "
+                    f"session {db_session_id} (intent {fallback_intent})"
+                )
+                await crud.update_session_main_type(None, db_session_id, UUID(match["id"]))
+                return
+            logger.warning(
+                f"Fallback session type {fallback_name!r} is not seeded; "
+                f"leaving session {db_session_id} unclassified"
+            )
         else:
             logger.info(f"Auto-classification returned no match (None) for session {db_session_id}")
     except Exception as e:
@@ -650,6 +703,9 @@ async def process_ai_response(
         # path never runs triage -- reading an unset local there would be a
         # NameError on a live customer message.
         triage_summary: Optional[str] = None
+        # Same reasoning, same branch: the classifier fallback below reads this
+        # on paths that never reached triage.
+        triage_intent: Optional[str] = None
 
         otp_pending = verification_store.get(sid)
         # A session is never in both states at once: identity resolves into an
@@ -751,15 +807,149 @@ async def process_ai_response(
                 return build_complaint_identity_prompt()
             if pending.slot == SLOT_CONTACT:
                 return build_complaint_contact_prompt()
-            return build_complaint_confirm_prompt(
-                pending.category or "other",
-                pending.description or "",
-                pending.preferred_contact or "",
-                pending.full_name,
-                pending.national_id,
-                pending.location,
-                pending.severity,
+            # SLOT_CONFIRM is no longer a question. It marks "every slot is
+            # answered", and _advance_or_submit files the complaint instead of
+            # asking the customer to read the record back to us. Reaching here
+            # means a caller advanced the form without going through that helper.
+            raise AssertionError(
+                f"No prompt for slot {pending.slot!r}; use _advance_or_submit"
             )
+
+        async def _submit_complaint(pending) -> None:
+            """File the complaint and tell the customer its reference number.
+
+            This used to be the SLOT_CONFIRM branch, reached only after the
+            customer read back a summary of their own complaint and replied
+            "نعم". The summary was a round trip that lost complaints: people
+            answered it with a new sentence, or not at all, and the form then
+            expired with everything already collected. The last answered slot
+            now files the record directly.
+
+            Nothing is written unseen even so -- every field here is either
+            something the customer typed a moment ago or something triage read
+            out of their own message, and build_complaint_saved_reply tells
+            them it was filed.
+            """
+            # Clear the state BEFORE the write, so a failure cannot strand the
+            # customer in a form that has no unanswered question left.
+            category = pending.category or "other"
+            description = pending.description or ""
+            preferred_contact = pending.preferred_contact
+            full_name = pending.full_name
+            national_id = pending.national_id
+            severity = pending.severity or "medium"
+            location = pending.location
+            atm_identifier = pending.atm_identifier
+            incident_at_text = pending.incident_at_text
+            ai_summary = pending.ai_summary
+            intent = pending.intent
+            complaint_store.clear(sid)
+
+            customer = await crud.get_customer_by_phone(None, customer_phone)
+            try:
+                complaint = await crud.create_complaint(
+                    None,
+                    channel=ChannelType.whatsapp,
+                    category=category,
+                    description=description,
+                    session_id=db_session_id,
+                    customer_id=customer.id if customer else None,
+                    # The name the customer just typed wins over whatever
+                    # is on the session's customer record -- it is what
+                    # they confirmed the complaint would be filed under.
+                    customer_name=full_name or (customer.name if customer else None) or None,
+                    customer_phone=customer_phone,
+                    national_id=national_id,
+                    preferred_contact=preferred_contact,
+                    severity=severity,
+                    location=location,
+                    atm_identifier=atm_identifier,
+                    incident_at_text=incident_at_text,
+                    ai_summary=ai_summary,
+                    intent=intent,
+                    # HIGH is also handed to a human below, so the record
+                    # and the escalated conversation point at each other.
+                    escalated_session_id=(
+                        db_session_id if severity in ("critical", "high") else None
+                    ),
+                    context={"category_label": CATEGORY_LABELS.get(category, category)},
+                )
+            except Exception as e:
+                logger.error(f"Failed to save complaint for session {sid}: {e}")
+                await _escalate(
+                    build_complaint_failed_reply(),
+                    f"Complaint intake failed to save for {customer_phone}.",
+                )
+                return
+
+            await _reply_and_store(build_complaint_saved_reply(complaint.reference_number))
+
+            # A filed complaint IS the session type -- no classifier needed, and
+            # no waiting for one that may never return a match. Only when the
+            # session is still unclassified, so a human's manual choice wins.
+            try:
+                session_now = await crud.get_session_by_id(None, db_session_id)
+                if session_now and session_now.main_type_id is None:
+                    types = await crud.get_session_main_types(None)
+                    match = next(
+                        (t for t in types if t.get("name") == COMPLAINT_SESSION_TYPE), None
+                    )
+                    if match:
+                        await crud.update_session_main_type(
+                            None, db_session_id, UUID(match["id"])
+                        )
+            except Exception as e:
+                # Dashboard metadata: never let it cost the customer their reply.
+                logger.warning(f"Could not set complaint session type: {e}")
+
+            try:
+                await crud.create_notification(
+                    None,
+                    user_id=None,
+                    title=(
+                        "🔴 Urgent Complaint Filed"
+                        if severity in ("critical", "high")
+                        else "📝 New Complaint Filed"
+                    ),
+                    message=(
+                        f"[{severity.upper()}] Complaint {complaint.reference_number} "
+                        f"from {customer_phone}: {ai_summary or description[:80]}"
+                    ),
+                    type="escalation",
+                    action_url=f"/complaints/{complaint.id}",
+                )
+            except Exception as e:
+                logger.error(f"Failed to create complaint notification: {e}")
+
+            if severity == "high":
+                # A reference number does not get their card back out of the
+                # machine. The record is filed AND a human takes over --
+                # after the save, so the customer has their number either
+                # way. MEDIUM stops at the reference number: a tracked
+                # complaint is the right answer to ordinary dissatisfaction,
+                # and escalating all of them would drown the queue.
+                await _escalate(
+                    build_complaint_escalated_reply(),
+                    f"[HIGH] Complaint {complaint.reference_number} from "
+                    f"{customer_phone} needs follow-up: {ai_summary or description[:80]}",
+                    urgent=True,
+                )
+            return
+
+        async def _advance_or_submit(pending) -> None:
+            """Move to the next open slot, or file the complaint if there is none.
+
+            The single place that decides "the form is done". SLOT_CONFIRM
+            survives in SLOT_ORDER as that terminal marker -- advance() falls
+            through to it when every other slot is filled -- it just no longer
+            has a question attached.
+            """
+            complaint_store.advance(sid)
+            if pending.slot == SLOT_CONFIRM:
+                await _submit_complaint(pending)
+                return
+            await _reply_and_store(_prompt_for_current_slot(pending))
+
 
         def _complaint_opening_reply(pending, result, result_text: str = "") -> str:
             """First message of an intake, matched to how much we already know.
@@ -910,8 +1100,7 @@ async def process_ai_response(
                     await _reply_and_store(build_complaint_category_retry())
                     return
                 complaint_pending.category = category
-                complaint_store.advance(sid)
-                await _reply_and_store(_prompt_for_current_slot(complaint_pending))
+                await _advance_or_submit(complaint_pending)
                 return
 
             if slot == SLOT_DESCRIPTION:
@@ -928,8 +1117,7 @@ async def process_ai_response(
                 # Redacted on the way in, not on the way out: the customer was
                 # asked not to send card numbers, and some will anyway.
                 complaint_pending.description = redact_pii(user_message.strip())
-                complaint_store.advance(sid)
-                await _reply_and_store(_prompt_for_current_slot(complaint_pending))
+                await _advance_or_submit(complaint_pending)
                 return
 
             if slot == SLOT_LOCATION:
@@ -942,8 +1130,7 @@ async def process_ai_response(
                 if mentions_skip(answer):
                     # Not knowing where it happened must not trap them in the
                     # form -- staff can still work the complaint without it.
-                    complaint_store.advance(sid)
-                    await _reply_and_store(_prompt_for_current_slot(complaint_pending))
+                    await _advance_or_submit(complaint_pending)
                     return
                 if len(answer) < 2:
                     if complaint_store.record_retry(sid) >= MAX_SLOT_RETRIES:
@@ -956,8 +1143,7 @@ async def process_ai_response(
                     await _reply_and_store(build_complaint_location_retry())
                     return
                 complaint_pending.location = redact_pii(answer)[:200]
-                complaint_store.advance(sid)
-                await _reply_and_store(_prompt_for_current_slot(complaint_pending))
+                await _advance_or_submit(complaint_pending)
                 return
 
             if slot == SLOT_IDENTITY:
@@ -977,8 +1163,7 @@ async def process_ai_response(
                     await _reply_and_store(build_complaint_identity_retry())
                     return
                 complaint_pending.full_name, complaint_pending.national_id = claim
-                complaint_store.advance(sid)
-                await _reply_and_store(_prompt_for_current_slot(complaint_pending))
+                await _advance_or_submit(complaint_pending)
                 return
 
             if slot == SLOT_CONTACT:
@@ -991,107 +1176,7 @@ async def process_ai_response(
                     "2": "اتصال هاتفي",
                     "3": "بريد إلكتروني",
                 }.get(contact, contact)
-                complaint_store.advance(sid)
-                await _reply_and_store(_prompt_for_current_slot(complaint_pending))
-                return
-
-            if slot == SLOT_CONFIRM:
-                if not mentions_confirm(user_message):
-                    if complaint_store.record_retry(sid) >= MAX_SLOT_RETRIES:
-                        complaint_store.clear(sid)
-                        await _escalate(
-                            build_complaint_abandoned_reply(),
-                            f"Customer {customer_phone} could not complete complaint intake.",
-                        )
-                        return
-                    await _reply_and_store(_prompt_for_current_slot(complaint_pending))
-                    return
-
-                # Confirmed. Clear the state BEFORE the write, so a failure
-                # cannot strand the customer in a form they already confirmed.
-                category = complaint_pending.category or "other"
-                description = complaint_pending.description or ""
-                preferred_contact = complaint_pending.preferred_contact
-                full_name = complaint_pending.full_name
-                national_id = complaint_pending.national_id
-                severity = complaint_pending.severity or "medium"
-                location = complaint_pending.location
-                atm_identifier = complaint_pending.atm_identifier
-                incident_at_text = complaint_pending.incident_at_text
-                ai_summary = complaint_pending.ai_summary
-                intent = complaint_pending.intent
-                complaint_store.clear(sid)
-
-                customer = await crud.get_customer_by_phone(None, customer_phone)
-                try:
-                    complaint = await crud.create_complaint(
-                        None,
-                        channel=ChannelType.whatsapp,
-                        category=category,
-                        description=description,
-                        session_id=db_session_id,
-                        customer_id=customer.id if customer else None,
-                        # The name the customer just typed wins over whatever
-                        # is on the session's customer record -- it is what
-                        # they confirmed the complaint would be filed under.
-                        customer_name=full_name or (customer.name if customer else None) or None,
-                        customer_phone=customer_phone,
-                        national_id=national_id,
-                        preferred_contact=preferred_contact,
-                        severity=severity,
-                        location=location,
-                        atm_identifier=atm_identifier,
-                        incident_at_text=incident_at_text,
-                        ai_summary=ai_summary,
-                        intent=intent,
-                        # HIGH is also handed to a human below, so the record
-                        # and the escalated conversation point at each other.
-                        escalated_session_id=(
-                            db_session_id if severity in ("critical", "high") else None
-                        ),
-                        context={"category_label": CATEGORY_LABELS.get(category, category)},
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to save complaint for session {sid}: {e}")
-                    await _escalate(
-                        build_complaint_failed_reply(),
-                        f"Complaint intake failed to save for {customer_phone}.",
-                    )
-                    return
-
-                await _reply_and_store(build_complaint_saved_reply(complaint.reference_number))
-                try:
-                    await crud.create_notification(
-                        None,
-                        user_id=None,
-                        title=(
-                            "🔴 Urgent Complaint Filed"
-                            if severity in ("critical", "high")
-                            else "📝 New Complaint Filed"
-                        ),
-                        message=(
-                            f"[{severity.upper()}] Complaint {complaint.reference_number} "
-                            f"from {customer_phone}: {ai_summary or description[:80]}"
-                        ),
-                        type="escalation",
-                        action_url=f"/complaints/{complaint.id}",
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to create complaint notification: {e}")
-
-                if severity == "high":
-                    # A reference number does not get their card back out of the
-                    # machine. The record is filed AND a human takes over --
-                    # after the save, so the customer has their number either
-                    # way. MEDIUM stops at the reference number: a tracked
-                    # complaint is the right answer to ordinary dissatisfaction,
-                    # and escalating all of them would drown the queue.
-                    await _escalate(
-                        build_complaint_escalated_reply(),
-                        f"[HIGH] Complaint {complaint.reference_number} from "
-                        f"{customer_phone} needs follow-up: {ai_summary or description[:80]}",
-                        urgent=True,
-                    )
+                await _advance_or_submit(complaint_pending)
                 return
 
         else:
@@ -1201,6 +1286,9 @@ async def process_ai_response(
 
             severity = triage_result.severity
             triage_summary = triage_result.summary or None
+            # Kept in scope for auto_classify_session below: when the model
+            # cannot pick a session type, this is what it falls back to.
+            triage_intent = triage_result.intent.value
 
             # messages.classification is an existing column that nothing has ever
             # written to. Filling it makes the transcript filterable by what the
@@ -1235,7 +1323,7 @@ async def process_ai_response(
                 # HIGH and MEDIUM both open a record. They diverge only after it
                 # is saved: HIGH also hands the conversation to a human, because
                 # a reference number alone does not get the customer's card back
-                # out of the machine. That branch lives in SLOT_CONFIRM.
+                # out of the machine. That branch lives in _submit_complaint.
                 pending = complaint_store.start_prefilled(
                     sid,
                     category=triage_result.complaint_category,
@@ -1257,6 +1345,13 @@ async def process_ai_response(
                         starting_slot=pending.slot,
                     )},
                 )
+                if pending.slot == SLOT_CONFIRM:
+                    # Triage filled every slot on its own, so there is nothing
+                    # left to ask. Rare -- is_filled() demands a national ID and
+                    # triage never reads one -- but a prompt for SLOT_CONFIRM no
+                    # longer exists, so this must not fall through to one.
+                    await _submit_complaint(pending)
+                    return
                 await _reply_and_store(
                     _complaint_opening_reply(pending, triage_result, user_message)
                 )
@@ -1336,7 +1431,10 @@ async def process_ai_response(
         # 2.5 Classify session (Understanding Required)
         if session.main_type_id is None:
             await auto_classify_session(
-                db_session_id, user_message, triage_summary=triage_summary
+                db_session_id,
+                user_message,
+                triage_summary=triage_summary,
+                fallback_intent=triage_intent,
             )
 
         # 3. Handle Escalation or Send Response
@@ -1355,7 +1453,9 @@ async def process_ai_response(
             # Classification at Escalation
             session = await crud.get_session_by_id(None, db_session_id)
             if session and session.main_type_id is None:
-                await auto_classify_session(db_session_id, user_message)
+                await auto_classify_session(
+                    db_session_id, user_message, fallback_intent=triage_intent
+                )
 
             # Create Database Notifications
             try:
@@ -1573,6 +1673,47 @@ async def extract_webhook(
 
             if not sender_phone or (msg_type == "text" and not text_body):
                 return {"status": "ignored", "reason": "incomplete data"}
+
+            # 0. Satisfaction rating for the session that just closed.
+            #
+            # Deliberately BEFORE customer/session resolution: by the time this
+            # reply arrives the rated session is already terminal, so falling
+            # through would open a brand-new session and file the rating as its
+            # first message -- which is exactly why satisfaction_score was never
+            # once written before this existed.
+            pending_rating = csat_store.get(sender_phone)
+            if pending_rating is not None:
+                rating = parse_rating(text_body) if msg_type == "text" else None
+                # Whether or not it parsed, the window closes here: a customer
+                # who came back with a real question must not have their next
+                # message eaten by a rating prompt they already moved past.
+                csat_store.clear(sender_phone)
+                if rating is not None:
+                    try:
+                        await crud.update_session_satisfaction(
+                            None, pending_rating.session_id, rating
+                        )
+                        logger.info(
+                            f"Recorded satisfaction {rating}/5 for session "
+                            f"{pending_rating.session_id}"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to store satisfaction rating: {e}")
+
+                    try:
+                        api_config = await crud.get_api_config(db, ChannelType.whatsapp)
+                        if api_config and api_config.access_token_encrypted:
+                            await WhatsAppClient(
+                                phone_number_id=api_config.phone_number_id,
+                                access_token=api_config.access_token_encrypted,
+                            ).send_text_message(sender_phone, RATING_THANKS_TEXT)
+                    except Exception as e:
+                        logger.warning(f"Could not acknowledge rating: {e}")
+
+                    # No session is created: the rating is about the old
+                    # conversation, not the start of a new one.
+                    return {"status": "ok", "reason": "satisfaction recorded"}
+                # Not a rating -- fall through and treat it as a normal message.
 
             # 1. Find Customer
             customer = await crud.get_customer_by_phone(db, sender_phone)

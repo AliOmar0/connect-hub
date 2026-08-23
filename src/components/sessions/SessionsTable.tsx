@@ -31,6 +31,7 @@ import {
   Hourglass,
   CheckCircle2,
   AlertTriangle,
+  TimerOff,
   XCircle,
   Bot,
 } from "lucide-react";
@@ -71,6 +72,10 @@ const statusStyles: Record<string, { bg: string; text: string }> = {
   waiting: { bg: "bg-status-warning/10", text: "text-status-warning" },
   completed: { bg: "bg-status-info/10", text: "text-status-info" },
   escalated: { bg: "bg-status-error/10", text: "text-status-error" },
+  // Deliberately NOT completed's info blue: an escalation that timed out was
+  // never resolved, and the whole point of the separate status is that it
+  // should not look like one that was.
+  auto_closed: { bg: "bg-status-neutral/10", text: "text-status-neutral" },
   missed: { bg: "bg-status-neutral/10", text: "text-status-neutral" },
 };
 
@@ -81,6 +86,7 @@ const statusIcons: Record<string, React.ElementType> = {
   waiting: Hourglass,
   completed: CheckCircle2,
   escalated: AlertTriangle,
+  auto_closed: TimerOff,
   missed: XCircle,
 };
 
@@ -318,7 +324,14 @@ export default function SessionsTable({
                         );
                       })()
                     ) : (
-                      <span className="text-xs text-muted-foreground">-</span>
+                      // Distinct from the "-" a failed type lookup gives: this
+                      // session simply has no type yet.
+                      <Badge
+                        variant="outline"
+                        className="border-dashed text-xs text-muted-foreground"
+                      >
+                        {t("sessions.table.untyped")}
+                      </Badge>
                     )}
                   </TableCell>
                   <TableCell>

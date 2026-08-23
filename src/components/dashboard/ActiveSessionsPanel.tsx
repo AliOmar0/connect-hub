@@ -54,6 +54,13 @@ const statusConfig: Record<
     className: "bg-muted text-muted-foreground border-muted/20",
     dot: "bg-muted-foreground",
   },
+  // An escalation the cleanup loop ended after ESCALATION_TIMEOUT_MINUTES.
+  // Muted, like the other states where nothing is happening any more.
+  auto_closed: {
+    label: "Auto-closed",
+    className: "bg-muted text-muted-foreground border-muted/20",
+    dot: "bg-muted-foreground",
+  },
 };
 
 const channelMeta: Record<string, { icon: string; label: string }> = {
