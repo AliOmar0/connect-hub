@@ -32,6 +32,7 @@ import ThemeToggle from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Notification } from "@/types/database";
+import { notifyError } from "@/lib/feedback";
 import pibLogo from "@/assets/pib-logo.png";
 
 /**
@@ -75,13 +76,16 @@ export default function AppShellHeader() {
     queryKey: ["header-notifications", user?.id],
     queryFn: async () => {
       if (!user?.id) return { count: 0, items: [] as Notification[] };
-      const { data, count } = await supabase
+      const { data, count, error } = await supabase
         .from("notifications")
         .select("*", { count: "exact" })
         .or(`user_id.eq.${user.id},user_id.is.null`)
         .eq("is_read", false)
         .order("created_at", { ascending: false })
         .limit(5);
+      // Surfacing the error keeps react-query in an error state instead of
+      // caching a bogus "0 unread" badge over a failed fetch.
+      if (error) throw error;
       return { count: count || 0, items: (data || []) as Notification[] };
     },
     enabled: isAuthenticated,
@@ -113,6 +117,10 @@ export default function AppShellHeader() {
         { event: "*", schema: "public", table: "notifications" },
         () => {
           queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+          queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          queryClient.invalidateQueries({
+            queryKey: ["notifications-unread-count"],
+          });
         },
       )
       .subscribe();
@@ -123,18 +131,23 @@ export default function AppShellHeader() {
   }, [user?.id, queryClient]);
 
   const handleNotificationClick = async (notif: Notification) => {
-    try {
-      await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", notif.id);
-    } catch {
-      // ignore
-    } finally {
-      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      navigate(notif.action_url || "/notifications");
+    // Selecting the id back is what makes an RLS-filtered no-op detectable:
+    // without it PostgREST answers 2xx with zero rows affected and the badge
+    // silently never clears.
+    const { data, error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("id", notif.id)
+      .select("id");
+
+    if (error || !data || data.length === 0) {
+      notifyError(t("notifications.markReadFailed"));
     }
+
+    queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications-unread-count"] });
+    navigate(notif.action_url || "/notifications");
   };
 
   const accountName = profile

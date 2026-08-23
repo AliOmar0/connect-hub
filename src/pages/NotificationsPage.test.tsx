@@ -34,15 +34,20 @@ vi.mock("@/components/layout/DashboardLayout", () => ({
 type Result = { data?: unknown; error: unknown };
 
 let selectResult: Result = { data: [], error: null };
-let updateResult: Result = { error: null };
-let deleteResult: Result = { error: null };
+// The page selects affected rows back from every write, so a successful write
+// resolves with the rows it touched -- an empty `data` is the RLS-filtered
+// no-op the page now treats as a failure.
+let updateResult: Result = { data: [{ id: "n-unread" }], error: null };
+let deleteResult: Result = { data: [{ id: "n-read" }], error: null };
 
 function makeBuilder() {
   let mode: "select" | "update" | "delete" = "select";
   const builder: Record<string, unknown> = {};
   const chain = () => builder;
   builder.select = vi.fn(() => {
-    mode = "select";
+    // `.select()` is both the read entrypoint and the RETURNING clause of a
+    // write. `mode` already defaults to "select", so leaving it untouched here
+    // is what keeps a trailing `.select()` from clobbering update/delete.
     return builder;
   });
   builder.update = vi.fn(() => {
@@ -112,8 +117,8 @@ const readNotification = {
 beforeEach(() => {
   vi.clearAllMocks();
   selectResult = { data: [], error: null };
-  updateResult = { error: null };
-  deleteResult = { error: null };
+  updateResult = { data: [{ id: "n-unread" }], error: null };
+  deleteResult = { data: [{ id: "n-read" }], error: null };
 });
 
 describe("NotificationsPage", () => {
@@ -153,7 +158,7 @@ describe("NotificationsPage", () => {
   // and announces the change to assistive technology.
   it("announces the read-state change to assistive technology", async () => {
     selectResult = { data: [unreadNotification], error: null };
-    updateResult = { error: null };
+    updateResult = { data: [{ id: "n-unread" }], error: null };
     render(<NotificationsPage />);
 
     const markReadButton = await screen.findByRole("button", {
@@ -189,7 +194,7 @@ describe("NotificationsPage", () => {
   // recovery action and retain the notification's unread state.
   it("retains the unread state and offers retry when marking read fails", async () => {
     selectResult = { data: [unreadNotification], error: null };
-    updateResult = { error: new Error("mark read failed") };
+    updateResult = { data: null, error: new Error("mark read failed") };
     render(<NotificationsPage />);
 
     const markReadButton = await screen.findByRole("button", {
@@ -215,6 +220,57 @@ describe("NotificationsPage", () => {
     expect(
       screen.queryByText("notifications.markedReadAnnouncement"),
     ).not.toBeInTheDocument();
+  });
+
+  // Regression: RLS filters a forbidden row out of an UPDATE instead of failing
+  // it, so PostgREST answers 2xx with zero rows affected. That used to read as
+  // success -- the notification stayed unread with no error shown.
+  it("treats a zero-row update as a failure rather than a silent success", async () => {
+    selectResult = { data: [unreadNotification], error: null };
+    updateResult = { data: [], error: null };
+    render(<NotificationsPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "notifications.markAsRead" }),
+    );
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "notifications.markReadFailed",
+        expect.objectContaining({
+          action: expect.objectContaining({ label: "feedback.retry" }),
+        }),
+      );
+    });
+    expect(
+      screen.queryByText("notifications.markedReadAnnouncement"),
+    ).not.toBeInTheDocument();
+  });
+
+  // Same defect on the delete path: the success toast used to fire for a row
+  // that was never removed.
+  it("does not report success when a delete affects zero rows", async () => {
+    const confirmSpy = vi
+      .spyOn(window, "confirm")
+      .mockImplementation(() => true);
+    selectResult = { data: [readNotification], error: null };
+    deleteResult = { data: [], error: null };
+    render(<NotificationsPage />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "notifications.delete" }),
+    );
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "notifications.deleteFailed",
+        expect.objectContaining({
+          action: expect.objectContaining({ label: "feedback.retry" }),
+        }),
+      );
+    });
+    expect(toast.success).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
   });
 
   it("has no axe-detectable accessibility violations when loaded", async () => {

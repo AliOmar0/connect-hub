@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -124,6 +124,23 @@ function ReadStateBadge({ isRead }: { isRead: boolean }) {
   );
 }
 
+/**
+ * RLS does not fail an UPDATE/DELETE that targets a row the policy forbids — it
+ * filters the row out of the statement, so PostgREST answers 2xx with zero rows
+ * affected. Without an explicit `.select()` the client cannot tell that apart
+ * from a real write, which is how a "mark as read" silently does nothing and a
+ * delete reports success on a row that is still there. Every mutation below
+ * therefore selects the affected ids back and treats an empty result as the
+ * failure it is (Requirement 20.7).
+ */
+function assertAffected(rows: unknown[] | null, action: string, id: string) {
+  if (!rows || rows.length === 0) {
+    throw new Error(
+      `Notification ${id} was not ${action}: no rows affected (row missing or not permitted).`,
+    );
+  }
+}
+
 export default function NotificationsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -166,21 +183,49 @@ export default function NotificationsPage() {
     enabled: !!user?.id,
   });
 
-  const markAsReadMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase
+  // Unread count is deliberately its own query rather than being derived from
+  // `notifications`: that list is server-filtered, so deriving from it reported
+  // zero unread whenever the "Read" filter was active — hiding "Mark all read"
+  // and mislabelling the filter option.
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ["notifications-unread-count", user?.id],
+    queryFn: async (): Promise<number> => {
+      if (!user?.id) return 0;
+      const { count, error } = await supabase
         .from("notifications")
-        .update({ is_read: true })
-        .eq("id", id);
+        .select("id", { count: "exact", head: true })
+        .or(`user_id.eq.${user.id},user_id.is.null`)
+        .eq("is_read", false);
 
       if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: !!user?.id,
+  });
+
+  // Every list surface that reads the notifications table, refreshed together.
+  const invalidateNotifications = () => {
+    queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    queryClient.invalidateQueries({ queryKey: ["notifications-unread-count"] });
+    queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+  };
+
+  const markAsReadMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { data, error } = await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", id)
+        .select("id");
+
+      if (error) throw error;
+      assertAffected(data, "marked as read", id);
     },
     onSuccess: () => {
       // Announce the read-state change to assistive technology (Requirement
       // 20.4). Re-invalidate so the presentation reflects the new state.
       setReadStateAnnouncement(t("notifications.markedReadAnnouncement"));
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+      invalidateNotifications();
     },
     onError: (_error, id) => {
       // Present a recoverable error and retain the unread state — the DB
@@ -202,14 +247,16 @@ export default function NotificationsPage() {
         .from("notifications")
         .update({ is_read: true })
         .or(`user_id.eq.${user.id},user_id.is.null`)
-        .eq("is_read", false);
+        .eq("is_read", false)
+        .select("id");
 
+      // A zero-row result is legitimate here (nothing was unread), so only a
+      // transport/policy error is a failure.
       if (error) throw error;
     },
     onSuccess: () => {
       setReadStateAnnouncement(t("notifications.allMarkedReadAnnouncement"));
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+      invalidateNotifications();
       notifySuccess(t("notifications.allMarkedRead"));
     },
     onError: () => {
@@ -224,16 +271,17 @@ export default function NotificationsPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("notifications")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .select("id");
 
       if (error) throw error;
+      assertAffected(data, "deleted", id);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
-      queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
+      invalidateNotifications();
       notifySuccess(t("notifications.deleted"));
     },
     onError: (_error, id) => {
@@ -253,12 +301,13 @@ export default function NotificationsPage() {
         .from("notifications")
         .delete()
         .eq("is_read", true)
-        .or(`user_id.eq.${user.id},user_id.is.null`);
+        .or(`user_id.eq.${user.id},user_id.is.null`)
+        .select("id");
 
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["notifications"] });
+      invalidateNotifications();
       notifySuccess(t("notifications.allReadDeleted"));
     },
     onError: () => {
@@ -282,6 +331,10 @@ export default function NotificationsPage() {
         { event: "*", schema: "public", table: "notifications" },
         () => {
           queryClient.invalidateQueries({ queryKey: ["notifications"] });
+          queryClient.invalidateQueries({
+            queryKey: ["notifications-unread-count"],
+          });
+          queryClient.invalidateQueries({ queryKey: ["header-notifications"] });
         },
       )
       .subscribe();
@@ -290,11 +343,6 @@ export default function NotificationsPage() {
       supabase.removeChannel(channel);
     };
   }, [user?.id, queryClient]);
-
-  const unreadCount = useMemo(
-    () => notifications.filter((n) => !n.is_read).length,
-    [notifications],
-  );
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.is_read) {
