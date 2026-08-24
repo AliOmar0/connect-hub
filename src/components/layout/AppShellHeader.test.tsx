@@ -138,8 +138,10 @@ describe("AppShellHeader", () => {
       (useAuth as ReturnType<typeof vi.fn>).mockReturnValue(authenticatedState);
       renderHeader();
 
+      // Search is a command-palette trigger rather than a text input: the old
+      // Input had no value/onChange/onSubmit and never searched anything.
       expect(
-        screen.getByPlaceholderText(/search conversations/i),
+        screen.getByRole("button", { name: /search or jump to a page/i }),
       ).toBeInTheDocument();
       expect(screen.getByLabelText("Notifications")).toBeInTheDocument();
       expect(screen.getByLabelText(/switch to/i)).toBeInTheDocument();
@@ -158,7 +160,7 @@ describe("AppShellHeader", () => {
       expect(screen.queryByLabelText(/switch to/i)).not.toBeInTheDocument();
       expect(screen.queryByLabelText(/account/i)).not.toBeInTheDocument();
       expect(
-        screen.queryByPlaceholderText(/search conversations/i),
+        screen.queryByRole("button", { name: /search or jump to a page/i }),
       ).not.toBeInTheDocument();
     });
 

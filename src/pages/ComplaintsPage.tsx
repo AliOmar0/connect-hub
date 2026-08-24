@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,11 +12,17 @@ import {
   AlertTriangle,
   Info,
   Minus,
+  Search,
+  ArrowUpDown,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
+import type { LucideIcon } from "lucide-react";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -74,6 +80,22 @@ const STATUS_FILTERS = [
   "resolved",
   "closed",
 ] as const;
+// Mirrors _CHANNELS in app/api/v1/complaints.py.
+const CHANNEL_FILTERS = [
+  "all",
+  "whatsapp",
+  "messenger",
+  "sms",
+  "voice",
+  "email",
+] as const;
+// Mirrors _SORTS. "severity" is worst-first within the page; "newest" is the
+// ordering that holds across pages.
+const SORTS = ["severity", "newest"] as const;
+
+// Rows per request. Comfortably under the endpoint's 200-row cap, and small
+// enough that a page is scannable rather than a wall.
+const PAGE_SIZE = 50;
 
 // The same four values without the UI-only "all": what a staff member may move
 // a complaint TO. Mirrors _STATUSES in app/api/v1/complaints.py, which rejects
@@ -121,27 +143,21 @@ interface Complaint {
 // so meaning is never carried by color alone.
 const statusConfig: Record<
   ComplaintStatus,
-  { className: string; Icon: typeof CircleDot; labelKey: string }
+  { tone: StatusTone; Icon: LucideIcon; labelKey: string }
 > = {
-  new: {
-    className: "border-status-error/30 bg-status-error/10 text-status-error",
-    Icon: CircleDot,
-    labelKey: "complaints.statusNew",
-  },
+  new: { tone: "error", Icon: CircleDot, labelKey: "complaints.statusNew" },
   in_progress: {
-    className:
-      "border-status-warning/30 bg-status-warning/10 text-status-warning",
+    tone: "warning",
     Icon: Loader2,
     labelKey: "complaints.statusInProgress",
   },
   resolved: {
-    className:
-      "border-status-success/30 bg-status-success/10 text-status-success",
+    tone: "success",
     Icon: CheckCircle2,
     labelKey: "complaints.statusResolved",
   },
   closed: {
-    className: "border-border bg-muted text-muted-foreground",
+    tone: "neutral",
     Icon: Archive,
     labelKey: "complaints.statusClosed",
   },
@@ -151,29 +167,24 @@ const statusConfig: Record<
 // is never communicated by color alone.
 const severityConfig: Record<
   ComplaintSeverity,
-  { className: string; Icon: typeof CircleDot; labelKey: string }
+  { tone: StatusTone; Icon: LucideIcon; labelKey: string }
 > = {
   critical: {
-    className: "border-status-error/40 bg-status-error/15 text-status-error",
+    tone: "error",
     Icon: ShieldAlert,
     labelKey: "complaints.severityCritical",
   },
   high: {
-    className: "border-status-error/30 bg-status-error/10 text-status-error",
+    tone: "error",
     Icon: AlertTriangle,
     labelKey: "complaints.severityHigh",
   },
   medium: {
-    className:
-      "border-status-warning/30 bg-status-warning/10 text-status-warning",
+    tone: "warning",
     Icon: Info,
     labelKey: "complaints.severityMedium",
   },
-  low: {
-    className: "border-border bg-muted text-muted-foreground",
-    Icon: Minus,
-    labelKey: "complaints.severityLow",
-  },
+  low: { tone: "neutral", Icon: Minus, labelKey: "complaints.severityLow" },
 };
 
 function SeverityBadge({ severity }: { severity?: ComplaintSeverity }) {
@@ -184,16 +195,16 @@ function SeverityBadge({ severity }: { severity?: ComplaintSeverity }) {
   if (!config) {
     return <Badge variant="outline">{severity ?? "—"}</Badge>;
   }
-  const { className, Icon, labelKey } = config;
   return (
-    <Badge variant="outline" className={cn("gap-1.5", className)}>
-      <Icon className="h-3 w-3" aria-hidden="true" />
-      {t(labelKey)}
-    </Badge>
+    <StatusBadge
+      tone={config.tone}
+      icon={config.Icon}
+      label={t(config.labelKey)}
+    />
   );
 }
 
-function StatusBadge({ status }: { status: ComplaintStatus }) {
+function ComplaintStatusBadge({ status }: { status: ComplaintStatus }) {
   const { t } = useTranslation();
   // An unrecognised status must not blank the cell: the backend's CHECK
   // constraint can gain a value before this map does.
@@ -201,12 +212,12 @@ function StatusBadge({ status }: { status: ComplaintStatus }) {
   if (!config) {
     return <Badge variant="outline">{status}</Badge>;
   }
-  const { className, Icon, labelKey } = config;
   return (
-    <Badge variant="outline" className={cn("gap-1.5", className)}>
-      <Icon className="h-3 w-3" aria-hidden="true" />
-      {t(labelKey)}
-    </Badge>
+    <StatusBadge
+      tone={config.tone}
+      icon={config.Icon}
+      label={t(config.labelKey)}
+    />
   );
 }
 
@@ -361,7 +372,7 @@ function ComplaintDetailDialog({
         ) : complaint ? (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-3">
-              <StatusBadge status={complaint.status} />
+              <ComplaintStatusBadge status={complaint.status} />
               <SeverityBadge severity={complaint.severity} />
             </div>
 
@@ -460,6 +471,11 @@ export default function ComplaintsPage() {
     complaintId: string;
   }>();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { userRole } = useAuth();
+  // Same gate as the detail dialog: only roles the backend's
+  // require_admin_access accepts get the row action.
+  const canEditStatus = !!userRole && STATUS_EDIT_ROLES.includes(userRole);
   const [detailId, setDetailId] = useState<string | null>(
     routeComplaintId ?? null,
   );
@@ -467,34 +483,111 @@ export default function ComplaintsPage() {
     useState<(typeof STATUS_FILTERS)[number]>("all");
   const [severityFilter, setSeverityFilter] =
     useState<(typeof SEVERITY_FILTERS)[number]>("all");
+  const [channelFilter, setChannelFilter] =
+    useState<(typeof CHANNEL_FILTERS)[number]>("all");
+  const [sort, setSort] = useState<(typeof SORTS)[number]>("severity");
+  // What the user has typed, and the value actually sent to the server. They
+  // are separate so a search runs a beat after typing stops rather than firing
+  // a request per keystroke.
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
 
-  const {
-    data: complaints = [],
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
-    // Filtering server-side, not in the browser: the endpoint already caps the
-    // page at 200 rows, so filtering after the fetch would silently hide
-    // matches that fell outside that page. The filters are part of the key so
-    // each combination is cached separately.
-    queryKey: ["complaints", statusFilter, severityFilter],
-    queryFn: async (): Promise<Complaint[]> => {
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearch(searchInput.trim()), 300);
+    return () => window.clearTimeout(id);
+  }, [searchInput]);
+
+  // Any change to what is being asked for puts the reader back on page one:
+  // staying on page 4 of a result set that now has two pages shows nothing.
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, severityFilter, channelFilter, search, sort]);
+
+  const { data, isLoading, isError, refetch } = useQuery({
+    // Filtering server-side, not in the browser: the endpoint caps the page at
+    // 200 rows, so filtering after the fetch would silently hide matches that
+    // fell outside that page. Everything that narrows or orders the result is
+    // part of the key, so each combination is cached separately.
+    queryKey: [
+      "complaints",
+      statusFilter,
+      severityFilter,
+      channelFilter,
+      search,
+      sort,
+      page,
+    ],
+    queryFn: async (): Promise<{ rows: Complaint[]; total: number | null }> => {
       const params = new URLSearchParams();
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (severityFilter !== "all") params.set("severity", severityFilter);
-      const qs = params.toString();
+      if (channelFilter !== "all") params.set("channel", channelFilter);
+      if (search) params.set("search", search);
+      params.set("sort", sort);
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(page * PAGE_SIZE));
+
       const res = await apiFetch(
-        `${BACKEND_URL}/api/v1/complaints${qs ? `?${qs}` : ""}`,
+        `${BACKEND_URL}/api/v1/complaints?${params.toString()}`,
         { headers: await authHeaders() },
       );
       if (!res.ok) throw new Error("Complaints backend unavailable");
-      return res.json();
+
+      // Absent when the count could not be taken, or when the response came
+      // through a proxy that dropped it -- the pager then hides the total
+      // rather than claiming zero.
+      const header = res.headers.get("X-Total-Count");
+      const parsed = header === null ? NaN : Number(header);
+      return {
+        rows: await res.json(),
+        total: Number.isFinite(parsed) ? parsed : null,
+      };
     },
     retry: false,
+    // Keeps the previous page on screen while the next one loads, so paging
+    // does not flash the table back through its skeleton.
+    placeholderData: (previous) => previous,
   });
 
-  const isFiltered = statusFilter !== "all" || severityFilter !== "all";
+  // Row-level resolve. The only way to move a complaint on used to be opening
+  // the detail dialog, so the most common action on the page took two steps
+  // and a context switch.
+  const resolveComplaint = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiFetch(`${BACKEND_URL}/api/v1/complaints/${id}`, {
+        method: "PATCH",
+        headers: {
+          ...(await authHeaders()),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status: "resolved" }),
+      });
+      if (!res.ok) throw new Error(`Update failed (${res.status})`);
+      return (await res.json()) as Complaint;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["complaints"] });
+      toast.success(t("complaints.statusUpdated"));
+    },
+    onError: () => toast.error(t("complaints.statusUpdateFailed")),
+  });
+
+  const complaints = data?.rows ?? [];
+  const total = data?.total ?? null;
+
+  const isFiltered =
+    statusFilter !== "all" ||
+    severityFilter !== "all" ||
+    channelFilter !== "all" ||
+    search !== "";
+
+  const firstRow = page * PAGE_SIZE + 1;
+  const lastRow = page * PAGE_SIZE + complaints.length;
+  // Without a total, "there is a next page" is inferred from having received a
+  // full page -- the last page then costs one extra empty request.
+  const hasNextPage =
+    total === null ? complaints.length === PAGE_SIZE : lastRow < total;
 
   const status: ViewStatus = isLoading
     ? "loading"
@@ -507,12 +600,10 @@ export default function ComplaintsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("complaints.title")}
-          </h1>
-          <p className="text-muted-foreground">{t("complaints.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("complaints.title")}
+          description={t("complaints.subtitle")}
+        />
 
         <Card>
           <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -523,7 +614,24 @@ export default function ComplaintsPage() {
               {t("complaints.listTitle")}
             </h2>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Text search. Without it, finding one reference number meant
+                  reading the table -- and only the first 200 rows of it. */}
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  aria-hidden="true"
+                />
+                <Input
+                  type="search"
+                  className="w-[260px] ps-9"
+                  placeholder={t("complaints.searchPlaceholder")}
+                  aria-label={t("complaints.searchLabel")}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                />
+              </div>
+
               <Select
                 value={severityFilter}
                 onValueChange={(v) =>
@@ -571,6 +679,54 @@ export default function ComplaintsPage() {
                   ))}
                 </SelectContent>
               </Select>
+
+              <Select
+                value={channelFilter}
+                onValueChange={(v) =>
+                  setChannelFilter(v as (typeof CHANNEL_FILTERS)[number])
+                }
+              >
+                <SelectTrigger
+                  className="w-[170px]"
+                  aria-label={t("complaints.filterChannel")}
+                >
+                  <SelectValue placeholder={t("complaints.filterChannel")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHANNEL_FILTERS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {value === "all"
+                        ? t("complaints.filterAllChannels")
+                        : t(`sessions.channels.${value}`, {
+                            defaultValue: value,
+                          })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select
+                value={sort}
+                onValueChange={(v) => setSort(v as (typeof SORTS)[number])}
+              >
+                <SelectTrigger
+                  className="w-[190px]"
+                  aria-label={t("complaints.sortLabel")}
+                >
+                  <ArrowUpDown
+                    className="me-2 h-4 w-4 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SORTS.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {t(`complaints.sort.${value}`)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </CardHeader>
           <CardContent>
@@ -596,16 +752,22 @@ export default function ComplaintsPage() {
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
+                    {/* Severity and status sit next to each other. They were at
+                        opposite ends of the row, so judging "how bad is this,
+                        and is anyone on it?" meant crossing five columns. */}
                     <TableRow>
                       <TableHead>{t("complaints.severity")}</TableHead>
+                      <TableHead>{t("complaints.status")}</TableHead>
                       <TableHead>{t("complaints.reference")}</TableHead>
                       <TableHead>{t("complaints.category")}</TableHead>
                       <TableHead>{t("complaints.customer")}</TableHead>
                       <TableHead>{t("complaints.channel")}</TableHead>
                       <TableHead>{t("complaints.created")}</TableHead>
-                      <TableHead className="text-end">
-                        {t("complaints.status")}
-                      </TableHead>
+                      {canEditStatus && (
+                        <TableHead className="text-end">
+                          {t("complaints.actions")}
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -617,6 +779,9 @@ export default function ComplaintsPage() {
                       >
                         <TableCell>
                           <SeverityBadge severity={complaint.severity} />
+                        </TableCell>
+                        <TableCell>
+                          <ComplaintStatusBadge status={complaint.status} />
                         </TableCell>
                         <TableCell>
                           <BidiText
@@ -640,14 +805,77 @@ export default function ComplaintsPage() {
                         <TableCell>
                           {formatDate(complaint.created_at, i18n.language)}
                         </TableCell>
-                        <TableCell className="text-end">
-                          <StatusBadge status={complaint.status} />
-                        </TableCell>
+                        {canEditStatus && (
+                          <TableCell className="text-end">
+                            {/* Always rendered, never hover-gated. Disabled
+                                rather than hidden once resolved, so the column
+                                does not gain and lose controls as you scan. */}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="min-h-[44px]"
+                              disabled={
+                                resolveComplaint.isPending ||
+                                complaint.status === "resolved" ||
+                                complaint.status === "closed"
+                              }
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                resolveComplaint.mutate(complaint.id);
+                              }}
+                            >
+                              {t("complaints.resolve")}
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </div>
+
+              {/* The endpoint's page cap used to truncate the table with no
+                  sign that it had: row 201 simply did not exist. */}
+              <nav
+                className="flex flex-wrap items-center justify-between gap-3 pt-4"
+                aria-label={t("complaints.pagination.label")}
+              >
+                <p
+                  className="text-body-sm text-muted-foreground"
+                  aria-live="polite"
+                >
+                  {total === null
+                    ? t("complaints.pagination.range", {
+                        first: firstRow,
+                        last: lastRow,
+                      })
+                    : t("complaints.pagination.rangeOfTotal", {
+                        first: firstRow,
+                        last: lastRow,
+                        total,
+                      })}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-h-[44px]"
+                    disabled={page === 0}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  >
+                    {t("complaints.pagination.previous")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="min-h-[44px]"
+                    disabled={!hasNextPage}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    {t("complaints.pagination.next")}
+                  </Button>
+                </div>
+              </nav>
             </AsyncBoundary>
           </CardContent>
         </Card>

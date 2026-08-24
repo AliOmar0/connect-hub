@@ -110,30 +110,6 @@ def build_complaint_location_retry() -> str:
     )
 
 
-def build_complaint_identity_prompt() -> str:
-    """Asked right after the problem is understood, before contact preference.
-
-    Same free-text shape as app.core.bank.responses.build_identity_request_reply
-    (name + national ID together, one message) -- parsed by the same
-    extract_identity_claim, so the customer sees one format across both flows
-    instead of two.
-    """
-    return (
-        "شكراً لتوضيح المشكلة. لتسجيل الشكوى باسمك، يرجى إرسال اسمك الكامل ورقم الهوية الوطنية "
-        "معاً في رسالة واحدة، مثال:\n"
-        "محمد أحمد علي 123456789\n"
-        'أو قول "إلغاء" للتراجع.'
-    )
-
-
-def build_complaint_identity_retry() -> str:
-    return (
-        "لم أتمكن من التعرف على الاسم ورقم الهوية في رسالتك. يرجى إرسالهما معاً بهذا الشكل:\n"
-        "محمد أحمد علي 123456789\n"
-        'أو قول "إلغاء" للتراجع.'
-    )
-
-
 def build_complaint_contact_prompt() -> str:
     return "كيف تفضل أن نتواصل معك بخصوص الشكوى؟\n1. واتساب\n2. اتصال هاتفي\n3. بريد إلكتروني"
 

@@ -48,6 +48,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import type { LucideIcon } from "lucide-react";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { useTranslation } from "react-i18next";
 import { BidiText } from "@/components/ui/bidi-text";
 
@@ -67,21 +69,25 @@ const channelIcons: Record<ChannelType, React.ElementType> = {
   email: Mail,
 };
 
-const statusStyles: Record<string, { bg: string; text: string }> = {
-  active: { bg: "bg-status-success/10", text: "text-status-success" },
-  waiting: { bg: "bg-status-warning/10", text: "text-status-warning" },
-  completed: { bg: "bg-status-info/10", text: "text-status-info" },
-  escalated: { bg: "bg-status-error/10", text: "text-status-error" },
+// Session status maps onto the five documented tones. The domain icons below
+// are kept and passed to StatusBadge via its `icon` prop, so this table keeps
+// its more specific shapes (an hourglass for waiting, a stopped timer for an
+// auto-close) while still going through the one shared component.
+const statusTones: Record<string, StatusTone> = {
+  active: "success",
+  waiting: "warning",
+  completed: "info",
+  escalated: "error",
   // Deliberately NOT completed's info blue: an escalation that timed out was
   // never resolved, and the whole point of the separate status is that it
   // should not look like one that was.
-  auto_closed: { bg: "bg-status-neutral/10", text: "text-status-neutral" },
-  missed: { bg: "bg-status-neutral/10", text: "text-status-neutral" },
+  auto_closed: "neutral",
+  missed: "neutral",
 };
 
 // Non-color cue for session status (Requirement 3.5): each status pairs its
 // color with a lucide icon (shape) in addition to the translated text label.
-const statusIcons: Record<string, React.ElementType> = {
+const statusIcons: Record<string, LucideIcon> = {
   active: CircleDot,
   waiting: Hourglass,
   completed: CheckCircle2,
@@ -197,9 +203,6 @@ export default function SessionsTable({
                   session,
                 );
               }
-              const style =
-                statusStyles[session.status] || statusStyles.waiting;
-
               return (
                 <TableRow
                   key={session.id}
@@ -270,7 +273,7 @@ export default function SessionsTable({
                     {session.employee?.profile ? (
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6">
-                          <AvatarFallback className="text-[10px] bg-accent">
+                          <AvatarFallback className="text-caption bg-accent">
                             {session.employee.profile.first_name?.charAt(0)}
                             {session.employee.profile.last_name?.charAt(0)}
                           </AvatarFallback>
@@ -287,7 +290,7 @@ export default function SessionsTable({
                     ) : (
                       <div className="flex items-center gap-2">
                         <Avatar className="h-6 w-6 border border-primary/30 bg-primary/10">
-                          <AvatarFallback className="text-[10px] text-primary font-bold flex items-center justify-center">
+                          <AvatarFallback className="text-caption text-primary font-bold flex items-center justify-center">
                             <Bot className="h-3.5 w-3.5" />
                           </AvatarFallback>
                         </Avatar>
@@ -312,7 +315,7 @@ export default function SessionsTable({
                               {matchedType.name}
                             </Badge>
                             {matchedType.parent_category && (
-                              <span className="text-[10px] text-muted-foreground pl-1">
+                              <span className="text-caption text-muted-foreground pl-1">
                                 {matchedType.parent_category}
                               </span>
                             )}
@@ -339,19 +342,14 @@ export default function SessionsTable({
                       const StatusIcon =
                         statusIcons[session.status] ?? CircleDot;
                       return (
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            style.bg,
-                            style.text,
-                            "border-transparent gap-1",
-                          )}
-                        >
-                          <StatusIcon className="h-3 w-3" aria-hidden="true" />
-                          {t(`sessions.status.${session.status}`, {
+                        <StatusBadge
+                          size="sm"
+                          tone={statusTones[session.status] ?? "warning"}
+                          icon={StatusIcon}
+                          label={t(`sessions.status.${session.status}`, {
                             defaultValue: session.status,
                           })}
-                        </Badge>
+                        />
                       );
                     })()}
                   </TableCell>

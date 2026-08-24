@@ -13,11 +13,17 @@ How the assistant answers "what's my balance?" — and why it is built this way.
 
 ## The schema this targets
 
-Verified against the live bank project over PostgREST:
+Verified against the live bank project over PostgREST. **"Columns used" is
+not "columns that exist"** -- this table only lists what these scripts touch;
+`scripts/sql/bankdboss.sql` (a full catalog export) has the real, larger
+column list. Treating this table as exhaustive is exactly what produced the
+stale "no date_of_birth column" claim once carried in
+`scripts/sql/bank_db_oss_identity_lookup.sql`'s header -- don't repeat that
+mistake for some other column.
 
 | Table                            | Columns used                                                                                                                                |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `customers`                      | `id`, `phone`, `full_name`, `national_id`, `is_active`                                                                                      |
+| `customers`                      | `id`, `phone`, `full_name`, `national_id`, `date_of_birth`, `is_active`                                                                     |
 | `accounts`                       | `id`, `account_number`, `balance`, `available_balance`, `customer_id`, `status`, `account_type_id`, `currency_id`, `opened_at`, `closed_at` |
 | `currencies`                     | `id` (+ an ISO-code column, resolved in the RPC)                                                                                            |
 | `account_types`                  | `id` (+ a label column, resolved in the RPC)                                                                                                |
@@ -84,11 +90,12 @@ customer: "482915"
 
 Run **both** SQL scripts before enabling the feature:
 
-| Script                                        | Project                      | Purpose                                            |
-| --------------------------------------------- | ---------------------------- | -------------------------------------------------- |
-| `scripts/sql/bank_otps_hardening.sql`         | **ops** (`SUPABASE_URL`)     | RLS on `bank_otps`; add `attempts` / `consumed_at` |
-| `scripts/sql/bank_db_oss_readonly.sql`        | **bank** (`BANK_DB_OSS_URL`) | revoke DML, RLS, read-only RPC                     |
-| `scripts/sql/bank_db_oss_account_details.sql` | **bank** (`BANK_DB_OSS_URL`) | profile / transactions / cards / loans RPCs        |
+| Script                                           | Project                      | Purpose                                                                                                                                                                                                                                       |
+| ------------------------------------------------ | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/sql/bank_otps_hardening.sql`            | **ops** (`SUPABASE_URL`)     | RLS on `bank_otps`; add `attempts` / `consumed_at`                                                                                                                                                                                            |
+| `scripts/sql/bank_db_oss_readonly.sql`           | **bank** (`BANK_DB_OSS_URL`) | revoke DML, RLS, read-only RPC                                                                                                                                                                                                                |
+| `scripts/sql/bank_db_oss_account_details.sql`    | **bank** (`BANK_DB_OSS_URL`) | profile / transactions / cards / loans RPCs                                                                                                                                                                                                   |
+| `scripts/sql/bank_db_oss_identity_lookup_v3.sql` | **bank** (`BANK_DB_OSS_URL`) | (national_id, date_of_birth) -> phone-on-file RPC. Also DROPs the two superseded name-based lookups it replaces. Required by both WhatsApp's identity-first flow and the voice agent's `verify_identity` -- see `docs/VOICE_AGENT_PROMPT.md`. |
 
 Then set `BANK_DB_OSS_URL` / `BANK_DB_OSS_KEY`, `OTP_SERVICE_BASE_URL`, and
 `OTP_SERVICE_SHARED_SECRET`. The server refuses to boot if `BANK_LOOKUP_ENABLED`

@@ -16,7 +16,8 @@ import { useBreakpoint } from "@/hooks/use-breakpoint";
 // Quantified inputs:
 //   - the active reference breakpoint (375 / 768 / 1024 / 1440), which decides
 //     whether primary navigation is a persistent sidebar (a `navigation`
-//     landmark) or a collapsible menu (a toggle, no persistent landmark), and
+//     landmark -- full width from 1024px, an icon rail at 768px) or a
+//     collapsible menu (a toggle, no persistent landmark), and
 //   - arbitrary page content, which may include zero or more complementary
 //     regions (`<aside>` → `complementary` role).
 //
@@ -25,8 +26,8 @@ import { useBreakpoint } from "@/hooks/use-breakpoint";
 // and every complementary region must use the `complementary` role.
 
 // Drive the shell's navigation variant from a controllable breakpoint. The
-// component decides `isDesktop = breakpoint >= 1024` and renders the sidebar or
-// menu variant accordingly.
+// component keeps a persistent sidebar from 768px up (a rail on tablet, full
+// width on laptop) and falls back to the Sheet menu below that.
 vi.mock("@/hooks/use-breakpoint", async () => {
   const actual = await vi.importActual("@/hooks/use-breakpoint");
   return { ...actual, useBreakpoint: vi.fn() };
@@ -53,7 +54,8 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 const mockUseBreakpoint = useBreakpoint as ReturnType<typeof vi.fn>;
 
-const LAPTOP = 1024;
+// Lowest width that keeps a persistent sidebar: the tablet rail starts here.
+const SIDEBAR_FROM = 768;
 
 // The four reference breakpoints are the full domain of `useBreakpoint`.
 const breakpointArb = fc.constantFrom(375, 768, 1024, 1440);
@@ -106,13 +108,13 @@ describe("DashboardLayout – landmark structure (property-based, Req 5.5)", () 
           expect(mains).toHaveLength(1);
           expect(mains[0]).toHaveAttribute("id", "main-content");
 
-          // 2. Navigation is exposed using the `navigation` role. At and above
-          //    the laptop breakpoint the shell renders a persistent sidebar, so
+          // 2. Navigation is exposed using the `navigation` role. From the
+          //    tablet breakpoint up the shell renders a persistent sidebar, so
           //    exactly one navigation landmark (with an accessible name) is
           //    present. Below it, navigation collapses behind a menu toggle and
           //    no persistent navigation landmark is exposed.
           const navs = screen.queryAllByRole("navigation");
-          if (breakpoint >= LAPTOP) {
+          if (breakpoint >= SIDEBAR_FROM) {
             expect(navs).toHaveLength(1);
             expect(navs[0].getAttribute("aria-label")?.trim()).toBeTruthy();
           } else {

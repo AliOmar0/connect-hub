@@ -55,7 +55,7 @@ export default function LiveVoiceTranscript({
       <div className="flex items-center gap-2 px-4 py-2 border-b border-border">
         <Radio className="h-3.5 w-3.5 text-destructive animate-pulse" />
         <span className="text-xs font-medium">{t("sessions.live.title")}</span>
-        <span className="text-[10px] text-muted-foreground ms-auto">
+        <span className="text-caption text-muted-foreground ms-auto">
           {t("sessions.live.disclaimer")}
         </span>
       </div>

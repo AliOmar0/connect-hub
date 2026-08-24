@@ -90,11 +90,17 @@ beforeEach(() => {
       const complaint = currentComplaints[0];
       return Promise.resolve({
         ok: !!complaint,
+        headers: new Headers(),
         json: () => Promise.resolve(complaint),
       } as Response);
     }
+    // The listing carries its total match count in a header, which the pager
+    // reads to say which slice of the whole it is showing.
     return Promise.resolve({
       ok: listSucceeds,
+      headers: new Headers({
+        "X-Total-Count": String(currentComplaints.length),
+      }),
       json: () => Promise.resolve(currentComplaints),
     } as Response);
   }) as unknown as typeof fetch;
@@ -198,7 +204,13 @@ describe("ComplaintsPage", () => {
       (u) => !/\/complaints\/[^/]+$/.test(u),
     );
     expect(listCalls.length).toBeGreaterThan(0);
-    // Unfiltered by default: no query string on the first load.
+    // Unfiltered by default -- paging and ordering are always sent, but no
+    // narrowing filter is.
     expect(listCalls[0]).not.toContain("severity=");
+    expect(listCalls[0]).not.toContain("status=");
+    expect(listCalls[0]).not.toContain("channel=");
+    expect(listCalls[0]).not.toContain("search=");
+    expect(listCalls[0]).toContain("limit=50");
+    expect(listCalls[0]).toContain("offset=0");
   });
 });

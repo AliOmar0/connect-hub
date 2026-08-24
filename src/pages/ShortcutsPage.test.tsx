@@ -189,7 +189,7 @@ describe("ShortcutsPage", () => {
     });
 
     expect(screen.getByLabelText(/shortcut title/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/response content/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/reply text/i)).toBeInTheDocument();
   });
 
   it("disables the Save button when title or content is empty", async () => {
@@ -222,7 +222,7 @@ describe("ShortcutsPage", () => {
     fireEvent.change(screen.getByLabelText(/shortcut title/i), {
       target: { value: "My Shortcut" },
     });
-    fireEvent.change(screen.getByLabelText(/response content/i), {
+    fireEvent.change(screen.getByLabelText(/reply text/i), {
       target: { value: "My response text" },
     });
 
@@ -262,7 +262,9 @@ describe("ShortcutsPage", () => {
     });
 
     // Click the edit button for the first shortcut
-    const editBtn = screen.getAllByTitle(/edit shortcut/i)[0];
+    const editBtn = screen.getAllByRole("button", {
+      name: /edit shortcut/i,
+    })[0];
     fireEvent.click(editBtn);
 
     await waitFor(() => {
@@ -287,7 +289,9 @@ describe("ShortcutsPage", () => {
       expect(screen.getByText("Greeting")).toBeInTheDocument();
     });
 
-    const deleteBtn = screen.getAllByTitle(/delete shortcut/i)[0];
+    const deleteBtn = screen.getAllByRole("button", {
+      name: /delete shortcut/i,
+    })[0];
     fireEvent.click(deleteBtn);
 
     await waitFor(() => {
@@ -311,7 +315,9 @@ describe("ShortcutsPage", () => {
       expect(screen.getByText("Greeting")).toBeInTheDocument();
     });
 
-    fireEvent.click(screen.getAllByTitle(/delete shortcut/i)[0]);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /delete shortcut/i })[0],
+    );
 
     await waitFor(() => {
       expect(screen.getByRole("alertdialog")).toBeInTheDocument();

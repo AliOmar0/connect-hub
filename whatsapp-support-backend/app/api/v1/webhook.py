@@ -34,6 +34,7 @@ from app.core.bank import (
     match_account_intent,
     mentions_cancel,
     mentions_unavailable_field,
+    normalize_identity_input,
     process_otp_verification,
     required_crud_fields,
     resolve_customer_phone_by_identity,
@@ -46,7 +47,6 @@ from app.core.complaints import (
     SLOT_CONFIRM,
     SLOT_CONTACT,
     SLOT_DESCRIPTION,
-    SLOT_IDENTITY,
     SLOT_LOCATION,
     build_complaint_abandoned_reply,
     build_complaint_cancelled_reply,
@@ -58,8 +58,6 @@ from app.core.complaints import (
     build_complaint_escalated_reply,
     build_complaint_failed_reply,
     build_complaint_followup_reply,
-    build_complaint_identity_prompt,
-    build_complaint_identity_retry,
     build_complaint_location_prompt,
     build_complaint_location_retry,
     build_complaint_saved_reply,
@@ -72,23 +70,23 @@ from app.core.complaints import (
     mentions_skip,
 )
 from app.core.config import settings
+from app.core.csat_state import csat_store, parse_rating
 from app.core.llm import LLMUnavailable, llm_service
 from app.core.message_buffer import message_buffer
 from app.core.notifications import NotificationService
 from app.core.pii import redact_pii
 from app.core.stt import stt_service
-from app.core.triage.session_types import (
-    COMPLAINT_SESSION_TYPE,
-    session_type_for_intent,
-)
 from app.core.triage import (
     Severity,
     lexicon_severity,
     mentions_card_capture,
     triage,
 )
+from app.core.triage.session_types import (
+    COMPLAINT_SESSION_TYPE,
+    session_type_for_intent,
+)
 from app.core.verification_state import identity_pending_store, verification_store
-from app.core.csat_state import csat_store, parse_rating
 from app.core.whatsapp import WhatsAppClient
 from app.crud import crud
 from app.database import BankDbUnavailable
@@ -181,19 +179,38 @@ async def _start_verification(
     db_session_id: UUID,
     customer_phone: str,
     fields: tuple,
-) -> str:
-    """Send an OTP and record the pending verification. Returns the reply text.
+    *,
+    national_id: str = "",
+    intent: str = "ACCOUNT_INFO",
+) -> tuple:
+    """Send an OTP and record the pending verification. Returns (outcome, reply_text).
 
     Delegates to the channel-agnostic app/core/bank/verification_flow.py so the
     voice agent (app/api/v1/voice_agent.py) doesn't reimplement this. Never
     returns or stores the code -- see app/core/otp_client.py.
+
+    `intent` decides what the OTP unlocks: "ACCOUNT_INFO" discloses the
+    requested fields, "COMPLAINT" files the complaint the customer already
+    described. `national_id` rides along so the complaint record can name who
+    filed it without asking a second time.
+
+    The outcome is returned alongside the text (not just the text) because a
+    COMPLAINT-intent caller needs to know whether verification_store actually
+    got a pending entry: on anything but "sent" it did not, and complaint_store
+    would otherwise sit parked at SLOT_CONFIRM with no reachable handler.
     """
-    outcome = await start_verification(str(db_session_id), customer_phone, fields)
+    outcome = await start_verification(
+        str(db_session_id),
+        customer_phone,
+        fields,
+        national_id=national_id,
+        intent=intent,
+    )
     if outcome == "rate_limited":
-        return build_otp_rate_limited_reply()
+        return outcome, build_otp_rate_limited_reply()
     if outcome != "sent":
-        return build_otp_send_failed_reply()
-    return build_otp_prompt_reply()
+        return outcome, build_otp_send_failed_reply()
+    return outcome, build_otp_prompt_reply()
 
 
 async def _deliver_account_data(customer_phone: str, field_values: tuple) -> tuple:
@@ -748,9 +765,7 @@ async def process_ai_response(
                     # `urgent` is fraud/theft in progress. The title is what a
                     # staff member sees in the toast, and a queue where every
                     # row says "New Escalation Request" cannot be triaged.
-                    title=(
-                        "🚨 Critical Incident" if urgent else "⚠️ New Escalation Request"
-                    ),
+                    title=("🚨 Critical Incident" if urgent else "⚠️ New Escalation Request"),
                     message=notification_message,
                     type="escalation",
                     action_url=f"/sessions/{db_session_id}",
@@ -803,20 +818,24 @@ async def process_ai_response(
                 return build_complaint_description_prompt()
             if pending.slot == SLOT_LOCATION:
                 return build_complaint_location_prompt(pending.category or "other")
-            if pending.slot == SLOT_IDENTITY:
-                return build_complaint_identity_prompt()
             if pending.slot == SLOT_CONTACT:
                 return build_complaint_contact_prompt()
             # SLOT_CONFIRM is no longer a question. It marks "every slot is
             # answered", and _advance_or_submit files the complaint instead of
             # asking the customer to read the record back to us. Reaching here
             # means a caller advanced the form without going through that helper.
-            raise AssertionError(
-                f"No prompt for slot {pending.slot!r}; use _advance_or_submit"
-            )
+            raise AssertionError(f"No prompt for slot {pending.slot!r}; use _advance_or_submit")
 
-        async def _submit_complaint(pending) -> None:
+        async def _submit_complaint(pending, *, full_name: str, national_id: str) -> None:
             """File the complaint and tell the customer its reference number.
+
+            Only ever called after the customer has cleared the same
+            national-ID + date-of-birth + OTP gate an account question goes
+            through -- see _advance_or_submit, which starts that verification
+            instead of calling this directly. `full_name` is Bank_db_oss's
+            owner_name for the verified phone and `national_id` is the value
+            that actually matched there, so the record identifies who filed it
+            using the bank's own data rather than anything typed into chat.
 
             This used to be the SLOT_CONFIRM branch, reached only after the
             customer read back a summary of their own complaint and replied
@@ -835,8 +854,6 @@ async def process_ai_response(
             category = pending.category or "other"
             description = pending.description or ""
             preferred_contact = pending.preferred_contact
-            full_name = pending.full_name
-            national_id = pending.national_id
             severity = pending.severity or "medium"
             location = pending.location
             atm_identifier = pending.atm_identifier
@@ -854,9 +871,9 @@ async def process_ai_response(
                     description=description,
                     session_id=db_session_id,
                     customer_id=customer.id if customer else None,
-                    # The name the customer just typed wins over whatever
-                    # is on the session's customer record -- it is what
-                    # they confirmed the complaint would be filed under.
+                    # Bank_db_oss's owner_name for the verified phone wins over
+                    # whatever is on the session's customer record: it is the
+                    # only name here that something other than chat vouched for.
                     customer_name=full_name or (customer.name if customer else None) or None,
                     customer_phone=customer_phone,
                     national_id=national_id,
@@ -895,9 +912,7 @@ async def process_ai_response(
                         (t for t in types if t.get("name") == COMPLAINT_SESSION_TYPE), None
                     )
                     if match:
-                        await crud.update_session_main_type(
-                            None, db_session_id, UUID(match["id"])
-                        )
+                        await crud.update_session_main_type(None, db_session_id, UUID(match["id"]))
             except Exception as e:
                 # Dashboard metadata: never let it cost the customer their reply.
                 logger.warning(f"Could not set complaint session type: {e}")
@@ -936,20 +951,48 @@ async def process_ai_response(
                 )
             return
 
+        async def _abandon_complaint_verification(reason: str) -> None:
+            """Give up on a complaint stuck behind identity/OTP verification
+            and hand the conversation to a human, instead of leaving
+            complaint_store parked at SLOT_CONFIRM -- a slot with no answer
+            handler in the complaint_pending dispatch below, since it was
+            never a question to begin with (see _prompt_for_current_slot).
+            Without this, a cancelled or exhausted verification would strand
+            the customer's next message with no matching branch and no reply.
+            """
+            complaint_store.clear(sid)
+            await _escalate(
+                build_complaint_abandoned_reply(),
+                f"Complaint intake for {customer_phone} could not be verified: {reason}.",
+            )
+
         async def _advance_or_submit(pending) -> None:
-            """Move to the next open slot, or file the complaint if there is none.
+            """Move to the next open slot, or start verification if there is none.
 
             The single place that decides "the form is done". SLOT_CONFIRM
             survives in SLOT_ORDER as that terminal marker -- advance() falls
             through to it when every other slot is filled -- it just no longer
             has a question attached.
+
+            Reaching it no longer writes the complaint. It starts the same
+            identity + OTP verification an account question uses, tagged
+            intent="COMPLAINT"; the record is written in the otp_pending branch
+            once the code checks out. The complaint_store entry is deliberately
+            left ALIVE across that: the dispatch below is an elif chain with
+            otp_pending first, so the half-filled form simply isn't reached
+            while verification is in flight, and everything the customer
+            already said is still there when it completes.
+
+            Collecting first and verifying last is the deliberate order -- a
+            customer with a problem gets to describe it before being asked to
+            prove who they are.
             """
             complaint_store.advance(sid)
             if pending.slot == SLOT_CONFIRM:
-                await _submit_complaint(pending)
+                identity_pending_store.start(sid, fields=(), intent="COMPLAINT")
+                await _reply_and_store(build_identity_request_reply())
                 return
             await _reply_and_store(_prompt_for_current_slot(pending))
-
 
         def _complaint_opening_reply(pending, result, result_text: str = "") -> str:
             """First message of an intake, matched to how much we already know.
@@ -975,7 +1018,6 @@ async def process_ai_response(
             follow_up = {
                 SLOT_DESCRIPTION: build_complaint_description_prompt(),
                 SLOT_LOCATION: build_complaint_location_prompt(pending.category or "other"),
-                SLOT_IDENTITY: build_complaint_identity_prompt(),
                 SLOT_CONTACT: build_complaint_contact_prompt(),
             }.get(pending.slot)
             return f"{opening}\n\n{follow_up}" if follow_up else opening
@@ -985,8 +1027,12 @@ async def process_ai_response(
             # nested under "did they send digits", so a bare "إلغاء" fell through
             # to the LLM and left the verification state alive.
             if mentions_cancel(user_message):
+                cancelled_intent = otp_pending.intent
                 verification_store.clear(sid)
-                await _reply_and_store(build_otp_cancelled_reply())
+                if cancelled_intent == "COMPLAINT":
+                    await _abandon_complaint_verification("customer cancelled during OTP")
+                else:
+                    await _reply_and_store(build_otp_cancelled_reply())
                 return
 
             code = extract_otp_code(user_message, settings.OTP_CODE_LENGTH)
@@ -998,6 +1044,42 @@ async def process_ai_response(
                     # phone Bank_db_oss resolved from the customer's stated
                     # identity (see the identity_pending branch below), which
                     # may differ from the WhatsApp number they're chatting from.
+                    if otp_pending.intent == "COMPLAINT":
+                        # The complaint form is still sitting in complaint_store
+                        # exactly as the customer left it -- _advance_or_submit
+                        # started this verification instead of writing, and the
+                        # elif chain below kept the form untouched meanwhile.
+                        pending = complaint_store.get(sid)
+                        if pending is None:
+                            # The form's TTL outlived by the OTP's. Nothing left
+                            # to file, and re-asking every question is worse than
+                            # handing over.
+                            await _escalate(
+                                build_complaint_abandoned_reply(),
+                                f"Complaint intake for {customer_phone} expired "
+                                f"during identity verification.",
+                            )
+                            return
+                        # The account holder's name as the BANK has it. This is
+                        # the only name on the record: nothing the customer
+                        # typed is trusted for it.
+                        owner_name = ""
+                        try:
+                            account = await crud.get_bank_account_fields(
+                                otp_pending.phone, ["owner_name"]
+                            )
+                            owner_name = str((account or {}).get("owner_name") or "")
+                        except Exception as e:
+                            # A missing name must not cost the customer a
+                            # complaint they already described in full.
+                            logger.warning(f"Could not read owner_name for complaint: {e}")
+                        await _submit_complaint(
+                            pending,
+                            full_name=owner_name,
+                            national_id=otp_pending.national_id,
+                        )
+                        return
+
                     customer_text, persisted_text = await _deliver_account_data(
                         otp_pending.phone, otp_pending.fields
                     )
@@ -1010,7 +1092,10 @@ async def process_ai_response(
                     return
 
                 if outcome == "exhausted":
-                    await _reply_and_store(build_otp_exhausted_reply())
+                    if otp_pending.intent == "COMPLAINT":
+                        await _abandon_complaint_verification("OTP attempts exhausted")
+                    else:
+                        await _reply_and_store(build_otp_exhausted_reply())
                 else:
                     await _reply_and_store(build_otp_wrong_reply(remaining))
                 return
@@ -1019,14 +1104,20 @@ async def process_ai_response(
 
         elif identity_pending:
             # Identity-first verification: the customer asked an account
-            # question and must state (full name, national ID) BEFORE any OTP
-            # is sent -- see app/core/bank/verification_flow.py and
-            # scripts/sql/bank_db_oss_identity_lookup.sql. The OTP then goes to
-            # whatever phone Bank_db_oss has on file for that identity, not
+            # question (or finished describing a complaint) and must state
+            # (national ID, date of birth) BEFORE any OTP is sent -- see
+            # app/core/bank/verification_flow.py and
+            # scripts/sql/bank_db_oss_identity_lookup_v3.sql. The OTP then goes
+            # to whatever phone Bank_db_oss has on file for that identity, not
             # necessarily customer_phone.
+            complaint_intent = identity_pending.intent == "COMPLAINT"
+
             if mentions_cancel(user_message):
                 identity_pending_store.clear(sid)
-                await _reply_and_store(build_otp_cancelled_reply())
+                if complaint_intent:
+                    await _abandon_complaint_verification("customer cancelled during identity check")
+                else:
+                    await _reply_and_store(build_otp_cancelled_reply())
                 return
 
             claim = extract_identity_claim(user_message)
@@ -1039,36 +1130,71 @@ async def process_ai_response(
                 await _reply_and_store(build_identity_malformed_reply())
                 return
 
-            full_name, national_id = claim
+            national_id_raw, date_of_birth_raw = claim
+            cleaned, problem, _digits = normalize_identity_input(national_id_raw, date_of_birth_raw)
+            if problem is not None:
+                # extract_identity_claim found the SHAPE of both values but one
+                # of them is not usable (not 9 digits, or not a real/plausible
+                # date). Same treatment as a malformed claim: re-prompt, and do
+                # NOT spend an attempt on it.
+                await _reply_and_store(build_identity_malformed_reply())
+                return
+
+            national_id, date_of_birth = cleaned
             try:
-                phone_on_file = await resolve_customer_phone_by_identity(full_name, national_id)
+                phone_on_file = await resolve_customer_phone_by_identity(national_id, date_of_birth)
             except BankDbUnavailable as e:
                 logger.error(f"Bank identity lookup unavailable: {e}")
                 identity_pending_store.clear(sid)
-                await _reply_and_store(build_account_unavailable_reply())
+                if complaint_intent:
+                    await _abandon_complaint_verification("bank lookup unavailable")
+                else:
+                    await _reply_and_store(build_account_unavailable_reply())
                 return
             except Exception as e:
                 logger.error(f"Bank identity lookup failed: {e}")
                 identity_pending_store.clear(sid)
-                await _reply_and_store(build_account_unavailable_reply())
+                if complaint_intent:
+                    await _abandon_complaint_verification("bank lookup failed")
+                else:
+                    await _reply_and_store(build_account_unavailable_reply())
                 return
 
             if phone_on_file is None:
                 # Deliberately generic reply either way (see
                 # build_identity_not_found_reply) -- do not let this branch
-                # become an oracle for which half of the claim was wrong.
+                # become an oracle for whether it was the national ID or the
+                # date of birth that was wrong.
                 attempts = identity_pending_store.record_failure(sid)
                 remaining = settings.IDENTITY_MAX_ATTEMPTS - attempts
                 if remaining <= 0:
                     identity_pending_store.clear(sid)
-                    await _reply_and_store(build_identity_exhausted_reply())
+                    if complaint_intent:
+                        await _abandon_complaint_verification("identity attempts exhausted")
+                    else:
+                        await _reply_and_store(build_identity_exhausted_reply())
                 else:
                     await _reply_and_store(build_identity_not_found_reply(remaining))
                 return
 
             fields = tuple(AccountField(v) for v in identity_pending.fields)
+            intent = identity_pending.intent
             identity_pending_store.clear(sid)
-            reply = await _start_verification(db_session_id, phone_on_file, fields)
+            otp_outcome, reply = await _start_verification(
+                db_session_id,
+                phone_on_file,
+                fields,
+                national_id=national_id,
+                intent=intent,
+            )
+            if otp_outcome != "sent" and intent == "COMPLAINT":
+                # No verification_store entry was actually created (see
+                # _start_verification's docstring) -- the complaint would
+                # otherwise sit parked at SLOT_CONFIRM with no reachable
+                # handler, so give up cleanly rather than reply with a "try
+                # again" that leads nowhere.
+                await _abandon_complaint_verification(f"OTP send failed ({otp_outcome})")
+                return
             await _reply_and_store(reply)
             return
 
@@ -1143,26 +1269,6 @@ async def process_ai_response(
                     await _reply_and_store(build_complaint_location_retry())
                     return
                 complaint_pending.location = redact_pii(answer)[:200]
-                await _advance_or_submit(complaint_pending)
-                return
-
-            if slot == SLOT_IDENTITY:
-                # Same (name, national ID) free-text parser the account
-                # verification flow uses -- see extract_identity_claim's
-                # docstring for why a malformed reply re-prompts instead of
-                # counting as a failed attempt.
-                claim = extract_identity_claim(user_message)
-                if claim is None:
-                    if complaint_store.record_retry(sid) >= MAX_SLOT_RETRIES:
-                        complaint_store.clear(sid)
-                        await _escalate(
-                            build_complaint_abandoned_reply(),
-                            f"Customer {customer_phone} could not complete complaint intake.",
-                        )
-                        return
-                    await _reply_and_store(build_complaint_identity_retry())
-                    return
-                complaint_pending.full_name, complaint_pending.national_id = claim
                 await _advance_or_submit(complaint_pending)
                 return
 
@@ -1308,9 +1414,7 @@ async def process_ai_response(
                 # answer a five-slot questionnaire is the wrong response.
                 logger.warning(
                     f"Critical incident reported on session {db_session_id}",
-                    extra={"data": dict(
-                        triage_result.log_data(), session_id=str(db_session_id)
-                    )},
+                    extra={"data": dict(triage_result.log_data(), session_id=str(db_session_id))},
                 )
                 await _escalate(
                     build_critical_incident_reply(),
@@ -1328,7 +1432,6 @@ async def process_ai_response(
                     sid,
                     category=triage_result.complaint_category,
                     description=triage_result.description,
-                    full_name=triage_result.full_name,
                     location=triage_result.location,
                     atm_identifier=triage_result.atm_identifier,
                     incident_at_text=triage_result.incident_at_text,
@@ -1337,20 +1440,24 @@ async def process_ai_response(
                     ai_summary=triage_result.summary,
                 )
                 logger.info(
-                    f"Complaint intake opened for session {db_session_id} "
-                    f"at slot {pending.slot}",
-                    extra={"data": dict(
-                        triage_result.log_data(),
-                        session_id=str(db_session_id),
-                        starting_slot=pending.slot,
-                    )},
+                    f"Complaint intake opened for session {db_session_id} at slot {pending.slot}",
+                    extra={
+                        "data": dict(
+                            triage_result.log_data(),
+                            session_id=str(db_session_id),
+                            starting_slot=pending.slot,
+                        )
+                    },
                 )
                 if pending.slot == SLOT_CONFIRM:
                     # Triage filled every slot on its own, so there is nothing
-                    # left to ask. Rare -- is_filled() demands a national ID and
-                    # triage never reads one -- but a prompt for SLOT_CONFIRM no
-                    # longer exists, so this must not fall through to one.
-                    await _submit_complaint(pending)
+                    # left to ask. Rare -- SLOT_CONTACT needs a stated contact
+                    # preference and triage never reads one -- but a prompt for
+                    # SLOT_CONFIRM does not exist, so this must not fall
+                    # through to one. Verification still applies: the complaint
+                    # is written in the otp_pending branch, not here.
+                    identity_pending_store.start(sid, fields=(), intent="COMPLAINT")
+                    await _reply_and_store(build_identity_request_reply())
                     return
                 await _reply_and_store(
                     _complaint_opening_reply(pending, triage_result, user_message)
@@ -1494,10 +1601,12 @@ async def process_ai_response(
         logger.error(
             f"Error in background AI response: {e}",
             exc_info=True,
-            extra={"data": {
-                "event": "ai_response_failed",
-                "session_id": str(db_session_id),
-            }},
+            extra={
+                "data": {
+                    "event": "ai_response_failed",
+                    "session_id": str(db_session_id),
+                }
+            },
         )
         # The customer was left in total silence by this branch: no reply, no
         # escalation, nothing. Anything can have failed by now (a DB write, the

@@ -132,7 +132,7 @@ describe("KnowledgePage", () => {
   it("renders a document row and triggers re-index", () => {
     setup({ documents: [sampleDoc] });
     expect(screen.getByText("branches.pdf")).toBeInTheDocument();
-    fireEvent.click(screen.getByTitle("kb.reindex"));
+    fireEvent.click(screen.getByRole("button", { name: "kb.reindex" }));
     expect(reindexMutate).toHaveBeenCalledWith("d-1");
   });
 

@@ -12,8 +12,11 @@ import {
   AlertTriangle,
   Loader2,
   Eye,
+  Globe,
+  ListTree,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +36,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import ScraperPanel from "@/components/knowledge/ScraperPanel";
 import SessionTypesPanel from "@/components/knowledge/SessionTypesPanel";
@@ -274,177 +278,207 @@ export default function KnowledgePage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">
-              {t("kb.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("kb.subtitle")}</p>
-          </div>
-          <div>
-            <input
-              ref={fileInputRef}
-              id="kb-file-input"
-              type="file"
-              accept=".pdf,.txt,.md,.docx,.json,.csv"
-              className="hidden"
-              aria-label={t("kb.upload")}
-              onChange={onFileChange}
-            />
-            <Button
-              onClick={onPickFile}
-              disabled={isUploading}
-              aria-busy={isUploading}
-              className="min-h-[44px]"
-            >
-              {isUploading ? (
-                <Loader2
-                  className="h-4 w-4 me-2 animate-spin"
-                  aria-hidden="true"
-                />
-              ) : (
-                <Upload className="h-4 w-4 me-2" aria-hidden="true" />
-              )}
-              {isUploading ? t("kb.uploading") : t("kb.upload")}
-            </Button>
-          </div>
-        </div>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">{t("kb.documents")}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <AsyncBoundary
-              status={collectionStatus}
-              skeleton={<DocumentTableSkeleton />}
-              onRetry={() => refetch?.()}
-              emptyTitle={t("kb.empty")}
-              emptyDescription={t("kb.emptyDescription")}
-              emptyIcon={<FileText />}
-              emptyAction={
-                <Button onClick={onPickFile} className="min-h-[44px]">
+        <PageHeader
+          title={t("kb.title")}
+          description={t("kb.subtitle")}
+          actions={
+            <>
+              <input
+                ref={fileInputRef}
+                id="kb-file-input"
+                type="file"
+                accept=".pdf,.txt,.md,.docx,.json,.csv"
+                className="hidden"
+                aria-label={t("kb.upload")}
+                onChange={onFileChange}
+              />
+              <Button
+                onClick={onPickFile}
+                disabled={isUploading}
+                aria-busy={isUploading}
+                className="min-h-[44px]"
+              >
+                {isUploading ? (
+                  <Loader2
+                    className="h-4 w-4 me-2 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
                   <Upload className="h-4 w-4 me-2" aria-hidden="true" />
-                  {t("kb.upload")}
-                </Button>
-              }
-              errorTitle={t("kb.loadErrorTitle")}
-              errorDescription={t("kb.backendMissing")}
-              retryLabel={t("feedback.retry")}
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("kb.name")}</TableHead>
-                    <TableHead>{t("kb.status")}</TableHead>
-                    <TableHead>{t("kb.version")}</TableHead>
-                    <TableHead>{t("kb.updated")}</TableHead>
-                    <TableHead className="text-end">
-                      {t("kb.actions")}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {documents.map((doc) => {
-                    const status = statusConfig[doc.status];
-                    const StatusIcon = status.Icon;
-                    const isScraped = doc.source === "scraper";
-                    return (
-                      <TableRow
-                        key={doc.id}
-                        className="cursor-pointer"
-                        onClick={() => setDetailDocId(doc.id)}
-                      >
-                        <TableCell className="font-medium">
-                          <span className="flex items-start gap-2">
-                            <FileText
-                              className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
-                              aria-hidden="true"
-                            />
-                            <span className="flex flex-col gap-0.5">
-                              {doc.name}
-                              {/* Page_Description + source link, shown only for
-                                  scraper-sourced documents (Requirement 9.6). */}
-                              {isScraped && doc.description && (
-                                <span className="text-xs text-muted-foreground">
-                                  {doc.description}
-                                </span>
-                              )}
-                              {isScraped && doc.source_url && (
-                                <a
-                                  href={doc.source_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs text-primary underline-offset-2 hover:underline"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  {doc.source_url}
-                                </a>
-                              )}
-                            </span>
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={cn("gap-1", status.className)}
-                          >
-                            <StatusIcon
-                              className="h-3 w-3"
-                              aria-hidden="true"
-                            />
-                            {t(status.labelKey)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>v{doc.version}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {new Date(doc.updated_at).toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="min-h-[44px] min-w-[44px]"
-                              title={t("kb.reindex")}
-                              aria-label={t("kb.reindex")}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                reindexMutation.mutate(doc.id);
-                              }}
-                            >
-                              <RefreshCw
-                                className="h-4 w-4"
-                                aria-hidden="true"
-                              />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="min-h-[44px] min-w-[44px]"
-                              title={t("kb.versionHistory")}
-                              aria-label={t("kb.versionHistory")}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setHistoryDoc(doc);
-                              }}
-                            >
-                              <History className="h-4 w-4" aria-hidden="true" />
-                            </Button>
-                          </div>
-                        </TableCell>
+                )}
+                {isUploading ? t("kb.uploading") : t("kb.upload")}
+              </Button>
+            </>
+          }
+        />
+
+        {/* Three unrelated subsystems -- the document library, the website
+            scraper and the session-type editor -- used to be stacked on one
+            scrolling page, so reaching the third meant scrolling past the
+            other two. They are separate jobs, so they get separate tabs. */}
+        <Tabs defaultValue="documents" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="documents" className="gap-2">
+              <FileText className="h-4 w-4" aria-hidden="true" />
+              {t("kb.tabs.documents")}
+            </TabsTrigger>
+            <TabsTrigger value="scraper" className="gap-2">
+              <Globe className="h-4 w-4" aria-hidden="true" />
+              {t("kb.tabs.scraper")}
+            </TabsTrigger>
+            <TabsTrigger value="sessionTypes" className="gap-2">
+              <ListTree className="h-4 w-4" aria-hidden="true" />
+              {t("kb.tabs.sessionTypes")}
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="documents">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">{t("kb.documents")}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <AsyncBoundary
+                  status={collectionStatus}
+                  skeleton={<DocumentTableSkeleton />}
+                  onRetry={() => refetch?.()}
+                  emptyTitle={t("kb.empty")}
+                  emptyDescription={t("kb.emptyDescription")}
+                  emptyIcon={<FileText />}
+                  emptyAction={
+                    <Button onClick={onPickFile} className="min-h-[44px]">
+                      <Upload className="h-4 w-4 me-2" aria-hidden="true" />
+                      {t("kb.upload")}
+                    </Button>
+                  }
+                  errorTitle={t("kb.loadErrorTitle")}
+                  errorDescription={t("kb.backendMissing")}
+                  retryLabel={t("feedback.retry")}
+                >
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t("kb.name")}</TableHead>
+                        <TableHead>{t("kb.status")}</TableHead>
+                        <TableHead>{t("kb.version")}</TableHead>
+                        <TableHead>{t("kb.updated")}</TableHead>
+                        <TableHead className="text-end">
+                          {t("kb.actions")}
+                        </TableHead>
                       </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </AsyncBoundary>
-          </CardContent>
-        </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {documents.map((doc) => {
+                        const status = statusConfig[doc.status];
+                        const StatusIcon = status.Icon;
+                        const isScraped = doc.source === "scraper";
+                        return (
+                          <TableRow
+                            key={doc.id}
+                            className="cursor-pointer"
+                            onClick={() => setDetailDocId(doc.id)}
+                          >
+                            <TableCell className="font-medium">
+                              <span className="flex items-start gap-2">
+                                <FileText
+                                  className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"
+                                  aria-hidden="true"
+                                />
+                                <span className="flex flex-col gap-0.5">
+                                  {doc.name}
+                                  {/* Page_Description + source link, shown only for
+                                  scraper-sourced documents (Requirement 9.6). */}
+                                  {isScraped && doc.description && (
+                                    <span className="text-xs text-muted-foreground">
+                                      {doc.description}
+                                    </span>
+                                  )}
+                                  {isScraped && doc.source_url && (
+                                    <a
+                                      href={doc.source_url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-xs text-primary underline-offset-2 hover:underline"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      {doc.source_url}
+                                    </a>
+                                  )}
+                                </span>
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={cn("gap-1", status.className)}
+                              >
+                                <StatusIcon
+                                  className="h-3 w-3"
+                                  aria-hidden="true"
+                                />
+                                {t(status.labelKey)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>v{doc.version}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {new Date(doc.updated_at).toLocaleString()}
+                            </TableCell>
+                            <TableCell>
+                              {/* Text labels, not bare glyphs. A circular-arrow
+                              and a clock-arrow next to each other are not
+                              self-evident, and the meaning was reachable only
+                              by hovering for a tooltip. */}
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="min-h-[44px]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    reindexMutation.mutate(doc.id);
+                                  }}
+                                >
+                                  <RefreshCw
+                                    className="h-4 w-4 me-2"
+                                    aria-hidden="true"
+                                  />
+                                  {t("kb.reindex")}
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="min-h-[44px]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setHistoryDoc(doc);
+                                  }}
+                                >
+                                  <History
+                                    className="h-4 w-4 me-2"
+                                    aria-hidden="true"
+                                  />
+                                  {t("kb.versionHistory")}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </AsyncBoundary>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <ScraperPanel />
+          <TabsContent value="scraper">
+            <ScraperPanel />
+          </TabsContent>
 
-        <SessionTypesPanel />
+          <TabsContent value="sessionTypes">
+            <SessionTypesPanel />
+          </TabsContent>
+        </Tabs>
       </div>
 
       <VersionHistoryDialog

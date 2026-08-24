@@ -92,7 +92,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
         </div>
       ))}
       {payload.length > 1 && (
-        <p className="text-[10px] text-muted-foreground mt-2 pt-2 border-t border-border">
+        <p className="text-caption text-muted-foreground mt-2 pt-2 border-t border-border">
           Total: {total.toLocaleString()}
         </p>
       )}
@@ -228,7 +228,7 @@ export default function ConversationsChart({ data }: ConversationsChartProps) {
                 variant={dateRange === range.value ? "default" : "ghost"}
                 size="sm"
                 className={cn(
-                  "h-6 px-2.5 text-[11px] font-medium rounded-full",
+                  "h-6 px-2.5 text-caption font-medium rounded-full",
                   dateRange === range.value
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:text-foreground",
@@ -274,14 +274,14 @@ export default function ConversationsChart({ data }: ConversationsChartProps) {
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <Badge
               variant="outline"
-              className="text-[10px] gap-1 font-normal py-0.5"
+              className="text-caption gap-1 font-normal py-0.5"
             >
               <MessageSquare className="h-2.5 w-2.5" />
               {totals.messages.toLocaleString()} messages
             </Badge>
             <Badge
               variant="outline"
-              className="text-[10px] gap-1 font-normal py-0.5"
+              className="text-caption gap-1 font-normal py-0.5"
             >
               <Phone className="h-2.5 w-2.5" />
               {totals.calls.toLocaleString()} calls
@@ -289,7 +289,7 @@ export default function ConversationsChart({ data }: ConversationsChartProps) {
             {peakDay && peakDay.messages + peakDay.calls > 0 && (
               <Badge
                 variant="outline"
-                className="text-[10px] gap-1 font-normal py-0.5"
+                className="text-caption gap-1 font-normal py-0.5"
               >
                 Peak: {peakDay.name} ({peakDay.fullDate})
               </Badge>
@@ -311,7 +311,7 @@ export default function ConversationsChart({ data }: ConversationsChartProps) {
             <Button
               variant="ghost"
               size="sm"
-              className="h-5 px-2 text-[10px] text-muted-foreground"
+              className="h-5 px-2 text-caption text-muted-foreground"
               onClick={() => setSelectedDay(null)}
             >
               Clear
@@ -493,7 +493,7 @@ export default function ConversationsChart({ data }: ConversationsChartProps) {
         )}
 
         {hasData && !selectedDay && (
-          <p className="text-center text-[10px] text-muted-foreground mt-2">
+          <p className="text-center text-caption text-muted-foreground mt-2">
             Hover for details · Click a day to inspect · Toggle legend to
             show/hide series
           </p>

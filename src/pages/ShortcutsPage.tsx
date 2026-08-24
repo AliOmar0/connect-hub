@@ -1,122 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Zap, Plus, Trash2, Edit2 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
-// ─── Keyboard shortcut catalog (exported for catalog tests) ───────────────────
-// These are NOT rendered on this page anymore; kept as exports so existing
-// catalog unit-tests (ShortcutsPage.catalog.test.ts) continue to pass.
-
-export interface ShortcutDef {
-  id: string;
-  group: string;
-  descriptionKey: string;
-  availability: "available" | "planned";
-  keys?: string | { mac: string; other: string };
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const SHORTCUT_DEFS: ShortcutDef[] = [
-  // General
-  {
-    id: "focus-next",
-    group: "general",
-    descriptionKey: "shortcutsPage.items.focusNext",
-    availability: "available",
-    keys: "Tab",
-  },
-  {
-    id: "focus-previous",
-    group: "general",
-    descriptionKey: "shortcutsPage.items.focusPrevious",
-    availability: "available",
-    keys: "Shift + Tab",
-  },
-  {
-    id: "activate",
-    group: "general",
-    descriptionKey: "shortcutsPage.items.activate",
-    availability: "available",
-    keys: "Enter",
-  },
-  {
-    id: "dismiss",
-    group: "general",
-    descriptionKey: "shortcutsPage.items.dismiss",
-    availability: "available",
-    keys: "Esc",
-  },
-  // Navigation
-  {
-    id: "toggle-sidebar",
-    group: "navigation",
-    descriptionKey: "shortcutsPage.items.toggleSidebar",
-    availability: "available",
-    keys: { mac: "⌘ B", other: "Ctrl + B" },
-  },
-  // Chat - available
-  {
-    id: "chat-send-message",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatSendMessage",
-    availability: "available",
-    keys: "Enter",
-  },
-  {
-    id: "chat-open-quick-replies",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatOpenQuickReplies",
-    availability: "available",
-    keys: "\\",
-  },
-  {
-    id: "chat-picker-navigate",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatPickerNavigate",
-    availability: "available",
-    keys: "↑ / ↓",
-  },
-  {
-    id: "chat-picker-insert",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatPickerInsert",
-    availability: "available",
-    keys: "Enter",
-  },
-  {
-    id: "chat-picker-close",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatPickerClose",
-    availability: "available",
-    keys: "Esc",
-  },
-  // Chat - planned
-  {
-    id: "chat-reply-to-message",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatReplyToMessage",
-    availability: "planned",
-  },
-  {
-    id: "chat-resolve-conversation",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatResolveConversation",
-    availability: "planned",
-  },
-  {
-    id: "chat-switch-conversation",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatSwitchConversation",
-    availability: "planned",
-  },
-  {
-    id: "chat-quick-reply-navigate",
-    group: "chat",
-    descriptionKey: "shortcutsPage.items.chatQuickReplyNavigate",
-    availability: "planned",
-  },
-];
-
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -139,12 +27,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { Skeleton } from "@/components/ui/skeleton";
 import { supabase } from "@/integrations/supabase/client";
 import { ChatShortcut } from "@/types/database";
 import { useAuth } from "@/hooks/useAuth";
+import type { ViewStatus } from "@/types/presentation";
 import { toast } from "sonner";
 
 export default function ShortcutsPage() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -157,7 +49,12 @@ export default function ShortcutsPage() {
   const [deleteTarget, setDeleteTarget] = useState<ChatShortcut | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: shortcuts, isLoading } = useQuery({
+  const {
+    data: shortcuts,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["chat-shortcuts", user?.id],
     queryFn: async () => {
       if (!user?.id) return [];
@@ -166,7 +63,10 @@ export default function ShortcutsPage() {
         .select("*")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
-      if (error) return [];
+      // Rethrow rather than returning []. Swallowing the failure made the
+      // error state structurally impossible: a backend outage rendered as
+      // "No shortcuts yet" with a "create your first one" prompt.
+      if (error) throw new Error(error.message);
       return data as ChatShortcut[];
     },
     enabled: !!user?.id,
@@ -180,9 +80,12 @@ export default function ShortcutsPage() {
       titleVal: string;
       contentVal: string;
     }) => {
-      if (!user?.id) throw new Error("Not authenticated");
+      if (!user?.id)
+        throw new Error(
+          t("shortcutsPage.quickReplies.errors.notAuthenticated"),
+        );
       if (!titleVal.trim() || !contentVal.trim())
-        throw new Error("Title and content are required");
+        throw new Error(t("shortcutsPage.quickReplies.errors.required"));
 
       if (editingShortcut) {
         const { error } = await supabase
@@ -202,7 +105,9 @@ export default function ShortcutsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chat-shortcuts"] });
       toast.success(
-        editingShortcut ? "Shortcut updated" : "Shortcut added successfully",
+        editingShortcut
+          ? t("shortcutsPage.quickReplies.toasts.updated")
+          : t("shortcutsPage.quickReplies.toasts.added"),
       );
       setIsAddEditOpen(false);
       resetForm();
@@ -222,7 +127,7 @@ export default function ShortcutsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["chat-shortcuts"] });
-      toast.success("Shortcut deleted");
+      toast.success(t("shortcutsPage.quickReplies.toasts.deleted"));
       setDeleteTarget(null);
     },
     onError: (error: Error) => {
@@ -251,24 +156,27 @@ export default function ShortcutsPage() {
         s.content.toLowerCase().includes(searchQuery.toLowerCase()),
     ) ?? [];
 
+  const listStatus: ViewStatus = isError
+    ? "error"
+    : isLoading
+      ? "loading"
+      : filteredShortcuts.length === 0
+        ? "empty"
+        : "loaded";
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
         {/* Page header */}
         <div className="flex items-start justify-between gap-4">
-          <div>
-            <h1 className="flex items-center gap-2 text-2xl font-semibold text-foreground">
-              <Zap className="h-6 w-6 text-primary" aria-hidden="true" />
-              Quick Reply Shortcuts
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Personal shortcuts you can insert into chat messages. Type{" "}
-              <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs font-mono border border-border">
-                \
-              </kbd>{" "}
-              in the message box or click the ⚡ button to use them.
-            </p>
-          </div>
+          {/* The heading no longer carries an inline icon: PageHeader fixes one
+              treatment for every page, and this was the only h1 in the app with
+              one. The description is now translated -- and the decorative emoji
+              it used to contain is gone (Requirement 2.4). */}
+          <PageHeader
+            title={t("shortcutsPage.quickReplies.title")}
+            description={t("shortcutsPage.quickReplies.subtitle")}
+          />
           <Button
             id="add-chat-shortcut-btn"
             size="sm"
@@ -278,103 +186,127 @@ export default function ShortcutsPage() {
               setIsAddEditOpen(true);
             }}
           >
-            <Plus className="h-4 w-4" />
-            Add Shortcut
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            {t("shortcutsPage.quickReplies.add")}
           </Button>
         </div>
 
-        {/* Search */}
+        {/* Search, with the count beside it so the list says how much of
+            itself is showing once a search narrows it. */}
         {(shortcuts?.length ?? 0) > 0 && (
-          <Input
-            placeholder="Search shortcuts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="max-w-xs h-9 text-sm"
-            id="chat-shortcuts-search"
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              placeholder={t("shortcutsPage.quickReplies.searchPlaceholder")}
+              aria-label={t("shortcutsPage.quickReplies.searchLabel")}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-9 max-w-xs text-sm"
+              id="chat-shortcuts-search"
+            />
+            <span className="text-overline uppercase text-muted-foreground">
+              {t("shortcutsPage.quickReplies.count", {
+                count: filteredShortcuts.length,
+              })}
+            </span>
+          </div>
         )}
 
-        {/* Shortcuts grid */}
-        {isLoading ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[...Array(4)].map((_, i) => (
-              <div
-                key={i}
-                className="h-24 rounded-lg bg-muted/50 animate-pulse"
-              />
-            ))}
-          </div>
-        ) : filteredShortcuts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-muted/20 py-16 text-center">
-            <Zap className="h-12 w-12 mx-auto text-muted-foreground/20 mb-4" />
-            <p className="text-sm font-medium text-muted-foreground">
-              {searchQuery
-                ? "No shortcuts match your search."
-                : "No shortcuts yet."}
-            </p>
-            <p className="text-xs text-muted-foreground/70 mt-1 mb-4">
-              {!searchQuery &&
-                "Create shortcuts to speed up your responses in chat sessions."}
-            </p>
-            {!searchQuery && (
+        {/* Shortcuts grid. Loading / empty / error all run through the shared
+            AsyncBoundary, so a backend outage reads as a failure with a retry
+            rather than as an empty collection. */}
+        <AsyncBoundary
+          status={listStatus}
+          skeleton={
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {[...Array(4)].map((_, i) => (
+                <Skeleton key={i} className="h-24 rounded-lg" />
+              ))}
+            </div>
+          }
+          onRetry={() => refetch()}
+          emptyIcon={<Zap />}
+          emptyTitle={
+            searchQuery
+              ? t("shortcutsPage.quickReplies.noMatchTitle")
+              : t("shortcutsPage.quickReplies.emptyTitle")
+          }
+          emptyDescription={
+            searchQuery
+              ? t("shortcutsPage.quickReplies.noMatchDescription")
+              : t("shortcutsPage.quickReplies.emptyDescription")
+          }
+          emptyAction={
+            searchQuery ? undefined : (
               <Button
                 variant="outline"
-                size="sm"
-                className="gap-2"
+                className="gap-2 min-h-[44px]"
                 onClick={() => {
                   resetForm();
                   setIsAddEditOpen(true);
                 }}
               >
-                <Plus className="h-3.5 w-3.5" />
-                Add your first shortcut
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                {t("shortcutsPage.quickReplies.emptyAction")}
               </Button>
-            )}
-          </div>
-        ) : (
+            )
+          }
+          errorTitle={t("shortcutsPage.quickReplies.errorTitle")}
+          errorDescription={t("shortcutsPage.quickReplies.errorDescription")}
+          retryLabel={t("feedback.retry")}
+        >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {filteredShortcuts.map((shortcut) => (
               <div
                 key={shortcut.id}
-                className="group relative flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm hover:border-primary/30 hover:shadow-md transition-all"
+                className="relative flex flex-col gap-2 rounded-lg border border-border bg-card p-4 shadow-sm hover:border-primary/30 hover:shadow-md transition-all"
               >
-                {/* Hover action buttons */}
-                <div className="absolute top-2.5 right-2.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {/* Always rendered, never hover-gated: the buttons used to be
+                    `opacity-0` until the card was hovered, which left them
+                    unreachable by touch and invisible to a keyboard user
+                    tabbing through them. Logical inset so they mirror in RTL. */}
+                <div className="absolute top-2 end-2 flex gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-primary"
+                    className="h-11 w-11 text-muted-foreground hover:text-primary"
                     onClick={() => handleOpenEdit(shortcut)}
-                    title="Edit shortcut"
+                    aria-label={t("shortcutsPage.quickReplies.editAction", {
+                      title: shortcut.title,
+                    })}
                     id={`edit-shortcut-${shortcut.id}`}
                   >
-                    <Edit2 className="h-3.5 w-3.5" />
+                    <Edit2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    className="h-11 w-11 text-muted-foreground hover:text-destructive"
                     onClick={() => setDeleteTarget(shortcut)}
-                    title="Delete shortcut"
+                    aria-label={t("shortcutsPage.quickReplies.deleteAction", {
+                      title: shortcut.title,
+                    })}
                     id={`delete-shortcut-${shortcut.id}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
 
-                <div className="flex items-start gap-2 pr-16">
-                  <Zap className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                <div className="flex items-start gap-2 pe-24">
+                  <Zap
+                    className="h-4 w-4 text-primary shrink-0 mt-0.5"
+                    aria-hidden="true"
+                  />
                   <p className="text-sm font-semibold leading-none truncate">
                     {shortcut.title}
                   </p>
                 </div>
-                <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap pl-6">
+                <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap ps-6">
                   {shortcut.content}
                 </p>
               </div>
             ))}
           </div>
-        )}
+        </AsyncBoundary>
       </div>
 
       {/* ── Add / Edit Dialog ── */}
@@ -389,43 +321,52 @@ export default function ShortcutsPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-primary" />
-              {editingShortcut ? "Edit Shortcut" : "New Chat Shortcut"}
+              {editingShortcut
+                ? t("shortcutsPage.quickReplies.dialog.editTitle")
+                : t("shortcutsPage.quickReplies.dialog.newTitle")}
             </DialogTitle>
             <DialogDescription>
               {editingShortcut
-                ? "Update the title or response text for this shortcut."
-                : "Create a shortcut to quickly insert common responses into your messages."}
+                ? t("shortcutsPage.quickReplies.dialog.editDescription")
+                : t("shortcutsPage.quickReplies.dialog.newDescription")}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="page-shortcut-title">Shortcut Title</Label>
+              <Label htmlFor="page-shortcut-title">
+                {t("shortcutsPage.quickReplies.dialog.titleLabel")}
+              </Label>
               <Input
                 id="page-shortcut-title"
-                placeholder="e.g. Greeting, Farewell, Refund Info"
+                placeholder={t(
+                  "shortcutsPage.quickReplies.dialog.titlePlaceholder",
+                )}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") e.preventDefault();
                 }}
               />
-              <p className="text-[11px] text-muted-foreground">
-                Used to search and identify this shortcut.
+              <p className="text-caption text-muted-foreground">
+                {t("shortcutsPage.quickReplies.dialog.titleHelp")}
               </p>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="page-shortcut-content">Response Content</Label>
+              <Label htmlFor="page-shortcut-content">
+                {t("shortcutsPage.quickReplies.dialog.contentLabel")}
+              </Label>
               <Textarea
                 id="page-shortcut-content"
-                placeholder="Type the message to be inserted into the chat..."
+                placeholder={t(
+                  "shortcutsPage.quickReplies.dialog.contentPlaceholder",
+                )}
                 className="min-h-[120px] resize-none"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">
-                This text will be inserted into the chat input when you select
-                this shortcut.
+              <p className="text-caption text-muted-foreground">
+                {t("shortcutsPage.quickReplies.dialog.contentHelp")}
               </p>
             </div>
           </div>
@@ -439,7 +380,7 @@ export default function ShortcutsPage() {
               }}
               disabled={saveMutation.isPending}
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={() =>
@@ -451,10 +392,10 @@ export default function ShortcutsPage() {
               className="min-w-[110px]"
             >
               {saveMutation.isPending
-                ? "Saving..."
+                ? t("shortcutsPage.quickReplies.dialog.saving")
                 : editingShortcut
-                  ? "Save Changes"
-                  : "Add Shortcut"}
+                  ? t("shortcutsPage.quickReplies.dialog.saveChanges")
+                  : t("shortcutsPage.quickReplies.add")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -469,18 +410,18 @@ export default function ShortcutsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Shortcut</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t("shortcutsPage.quickReplies.delete.title")}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete{" "}
-              <span className="font-semibold text-foreground">
-                &quot;{deleteTarget?.title}&quot;
-              </span>
-              ? This action cannot be undone.
+              {t("shortcutsPage.quickReplies.delete.description", {
+                title: deleteTarget?.title ?? "",
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>
-              Cancel
+              {t("common.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
@@ -489,7 +430,9 @@ export default function ShortcutsPage() {
                 if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
               }}
             >
-              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteMutation.isPending
+                ? t("shortcutsPage.quickReplies.delete.deleting")
+                : t("shortcutsPage.quickReplies.delete.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -282,6 +282,27 @@
       "photoFailed": "Failed to update avatar"
     }
   },
+  "dashboard": {
+    "metrics": {
+      "activeSessions": "Active sessions",
+      "activeSessionsHint": "Right now",
+      "activeAgents": "Agents online",
+      "activeAgentsHint": "Available to take a handoff",
+      "avgResponse": "Avg. response",
+      "avgResponseHint": "Today",
+      "resolutionRate": "Resolution rate",
+      "resolutionRateHint": "This week",
+      "monthToDate": "Month to date",
+      "messages": "Messages",
+      "calls": "Calls",
+      "liveNow": "Live right now",
+      "uniqueCustomers": "Unique customers",
+      "viewAnalytics": "View analytics",
+      "liveBadge": "Live"
+    },
+    "title": "Dashboard",
+    "subtitle": "Support operations at a glance — updated live."
+  },
   "sessions": {
     "title": "Active AI Sessions",
     "subtitle": "Monitor and manage all active sessions.",
@@ -318,7 +339,8 @@
       "activeSessions": "Active Sessions",
       "escalated": "Escalated",
       "completed": "Completed (24h)",
-      "totalAgents": "Total Agents"
+      "totalAgents": "Total Agents",
+      "closedToday": "Closed today"
     },
     "overviewTitle": "Sessions Overview",
     "conversationDetails": "Conversation Details",
@@ -333,7 +355,9 @@
       "outboundCall": "Outbound Call",
       "status": "Status",
       "duration": "Duration",
-      "id": "ID"
+      "id": "ID",
+      "viewLink": "View activity timeline",
+      "backToSession": "Back to session"
     },
     "table": {
       "channel": "Channel",
@@ -367,6 +391,9 @@
       "noType": "No Type",
       "joinConversation": "Join Conversation",
       "completeSession": "Complete Session",
+      "assign": "Assign",
+      "escalate": "Escalate",
+      "moreOptions": "More options",
       "messagePlaceholder": "Type a message here... (use \\ for shortcuts)",
       "quickShortcuts": "Quick Shortcuts",
       "noMessagesTitle": "No messages yet",
@@ -411,6 +438,15 @@
       "waiting": "Waiting for the call to start…",
       "caller": "Caller:",
       "agent": "Agent:"
+    },
+    "list": {
+      "count": "{{count}} session",
+      "count_other": "{{count}} sessions",
+      "assignedTo": "Assigned to {{name}}",
+      "unassigned": "Unassigned",
+      "sortLabel": "Sort sessions",
+      "sortNewest": "Newest",
+      "sortOldest": "Oldest"
     }
   },
   "nav": {
@@ -472,9 +508,62 @@
     "callbackToast": "Callback offered to the customer.",
     "callbackFailed": "Could not offer a callback. Please try again.",
     "loadErrorTitle": "Couldn't load the queue",
-    "loadErrorDescription": "We couldn't load escalations awaiting handoff. Please try again."
+    "loadErrorDescription": "We couldn't load escalations awaiting handoff. Please try again.",
+    "summary": {
+      "breached": "SLA breached",
+      "dueSoon": "Under {{seconds}}s",
+      "withinSla": "Within SLA",
+      "refreshHint": "Refreshes every 5s"
+    }
   },
   "shortcutsPage": {
+    "quickReplies": {
+      "title": "Quick Reply Shortcuts",
+      "subtitle": "Personal shortcuts you can insert into chat messages. Type \\ in the message box, or use the shortcut button, to insert one.",
+      "add": "Add shortcut",
+      "searchPlaceholder": "Search shortcuts…",
+      "searchLabel": "Search your shortcuts",
+      "emptyTitle": "No shortcuts yet",
+      "emptyDescription": "Create shortcuts to speed up your replies in chat sessions.",
+      "emptyAction": "Add your first shortcut",
+      "noMatchTitle": "No shortcuts match your search",
+      "noMatchDescription": "Try a different word from the title or the reply text.",
+      "errorTitle": "Couldn't load your shortcuts",
+      "errorDescription": "The shortcut list is unavailable right now. Your saved shortcuts have not been changed.",
+      "editAction": "Edit shortcut \"{{title}}\"",
+      "deleteAction": "Delete shortcut \"{{title}}\"",
+      "dialog": {
+        "newTitle": "New chat shortcut",
+        "editTitle": "Edit shortcut",
+        "newDescription": "Create a shortcut to quickly insert a common reply into your messages.",
+        "editDescription": "Update the title or reply text for this shortcut.",
+        "titleLabel": "Shortcut title",
+        "titlePlaceholder": "e.g. Greeting, Farewell, Refund info",
+        "titleHelp": "Used to search for and identify this shortcut.",
+        "contentLabel": "Reply text",
+        "contentPlaceholder": "Type the message to insert into the chat…",
+        "contentHelp": "This text is inserted into the chat box when you pick the shortcut.",
+        "saving": "Saving…",
+        "saveChanges": "Save changes"
+      },
+      "delete": {
+        "title": "Delete shortcut",
+        "description": "Delete \"{{title}}\"? This cannot be undone.",
+        "confirm": "Delete",
+        "deleting": "Deleting…"
+      },
+      "toasts": {
+        "added": "Shortcut added",
+        "updated": "Shortcut updated",
+        "deleted": "Shortcut deleted"
+      },
+      "errors": {
+        "notAuthenticated": "You are not signed in.",
+        "required": "A title and reply text are both required."
+      },
+      "count": "{{count}} shortcut",
+      "count_other": "{{count}} shortcuts"
+    },
     "title": "Chat Shortcuts",
     "subtitle": "Keyboard shortcuts for composing and managing conversations.",
     "emptyTitle": "No shortcuts available",
@@ -527,6 +616,12 @@
     }
   },
   "employees": {
+    "presence": {
+      "online": "Online",
+      "busy": "Busy",
+      "away": "Away",
+      "offline": "Offline"
+    },
     "title": "Employee Management",
     "subtitle": "Manage your team, roles, and individual permissions.",
     "addEmployee": "Add Employee",
@@ -537,7 +632,10 @@
       "totalTeam": "Total Team",
       "activeNow": "Active Now",
       "avgPerformance": "Avg Performance",
-      "activeDepts": "Active Depts"
+      "activeDepts": "Active Depts",
+      "acrossDepartments": "Across {{count}} department",
+      "acrossDepartments_other": "Across {{count}} departments",
+      "ofTotal": "of {{count}} on the team"
     },
     "emptyTitle": "No employees found",
     "emptyDescription": "No team members match your search yet.",
@@ -545,7 +643,19 @@
     "errorDescription": "We couldn't load the team list. Please try again.",
     "roleLabel": "Role",
     "card": {
-      "actions": "Actions for {{name}}"
+      "actions": "Actions for {{name}}",
+      "edit": "Edit",
+      "delete": "Delete",
+      "channels": "Channels",
+      "noChannels": "No channels",
+      "languages": "Languages",
+      "noShift": "No shift assigned",
+      "performance": "Overall performance",
+      "active": "Active",
+      "inactive": "Inactive",
+      "unknownName": "Unknown",
+      "noCode": "No code",
+      "noDepartment": "No department"
     },
     "form": {
       "addTitle": "Add Employee",
@@ -602,7 +712,12 @@
       "confirm": "Delete",
       "cancel": "Cancel",
       "deleting": "Deleting..."
-    }
+    },
+    "moreActions": "More employee actions",
+    "filterDepartment": "Department",
+    "allDepartments": "All departments",
+    "filterStatus": "Status",
+    "anyStatus": "Any status"
   },
   "notifications": {
     "title": "Notifications",
@@ -635,13 +750,28 @@
     "loadErrorTitle": "Couldn't load notifications",
     "loadErrorDescription": "We couldn't load your notifications. Please try again.",
     "types": {
+      "escalation": "Escalation",
       "info": "Info",
       "success": "Success",
       "warning": "Warning",
       "error": "Error"
-    }
+    },
+    "groups": {
+      "today": "Today",
+      "yesterday": "Yesterday"
+    },
+    "moreActions": "More notification actions",
+    "housekeeping": "Housekeeping"
   },
   "kb": {
+    "documentDetail": "Document details",
+    "documentDetailDescription": "Everything recorded about this document and its indexed versions.",
+    "totalVersions": "Total versions",
+    "created": "Created",
+    "description": "Description",
+    "versions": "Versions",
+    "chunks": "chunks",
+    "documentNotFound": "This document could not be found.",
     "title": "Knowledge Base",
     "subtitle": "Manage documents the assistant uses to answer questions",
     "upload": "Upload document",
@@ -704,6 +834,11 @@
       "deleteFailed": "Failed to delete session type",
       "cancel": "Cancel",
       "save": "Save Changes"
+    },
+    "tabs": {
+      "documents": "Documents",
+      "scraper": "Website scraper",
+      "sessionTypes": "Session types"
     }
   },
   "complaints": {
@@ -758,7 +893,25 @@
       "financing": "Financing and instalments",
       "digital": "App and digital services",
       "other": "Other"
-    }
+    },
+    "searchPlaceholder": "Search reference, customer or text",
+    "searchLabel": "Search complaints",
+    "filterChannel": "Channel",
+    "filterAllChannels": "All channels",
+    "sortLabel": "Sort complaints",
+    "sort": {
+      "severity": "Sorted by severity",
+      "newest": "Sorted by newest"
+    },
+    "pagination": {
+      "label": "Complaint pages",
+      "range": "Showing {{first}}–{{last}}",
+      "rangeOfTotal": "Showing {{first}}–{{last}} of {{total}}",
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "actions": "Actions",
+    "resolve": "Resolve"
   },
   "scraper": {
     "title": "Website Scraper",
@@ -822,16 +975,21 @@
       "sessions": "Sessions",
       "messages": "Messages",
       "calls": "Calls",
-      "satisfaction": "Satisfaction"
+      "satisfaction": "Satisfaction",
+      "date": "Date"
     },
     "total": "Total",
     "empty": "No data available",
     "emptyDescription": "There is no data for the selected scope yet.",
     "loadErrorTitle": "Couldn't load analytics",
-    "loadErrorDescription": "We couldn't load this visualization. Please try again."
+    "loadErrorDescription": "We couldn't load this visualization. Please try again.",
+    "exportSuccess": "Exported {{count}} day of analytics.",
+    "exportSuccess_other": "Exported {{count}} days of analytics."
   },
   "appShell": {
     "header": {
+      "commandEmpty": "No matching destination.",
+      "commandHint": "Search or jump to a page",
       "searchPlaceholder": "Search conversations, employees...",
       "activeSessions": "Active AI Sessions",
       "notifications": "Notifications",
@@ -869,9 +1027,16 @@
       "collapse": "Collapse",
       "collapseSidebar": "Collapse Sidebar",
       "expandSidebar": "Expand Sidebar",
-      "userFallback": "User"
+      "userFallback": "User",
+      "brandName": "PIB Connect",
+      "brandEyebrow": "Operations"
     },
     "nav": {
+      "groups": {
+        "operations": "Operations",
+        "insight": "Insight",
+        "manage": "Manage"
+      },
       "dashboard": "Dashboard",
       "sessions": "Active AI Sessions",
       "queue": "Escalation Queue",

@@ -6,7 +6,9 @@ import {
 } from "@/lib/config";
 
 // Business hours: Sun–Thu 08:00–16:00 (PIB). Adjust as policy dictates.
-function isBusinessHours(d = new Date()): boolean {
+// Exported so a caller summarising a whole queue can resolve the same window
+// once instead of mounting a per-row timer just to read it.
+export function isBusinessHours(d = new Date()): boolean {
   const day = d.getDay(); // 0=Sun ... 6=Sat
   const hour = d.getHours();
   const isWorkday = day >= 0 && day <= 4; // Sun–Thu

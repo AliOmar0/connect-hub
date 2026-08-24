@@ -272,34 +272,37 @@ def build_identity_request_reply() -> str:
 
     Asked BEFORE any OTP is sent: the phone the OTP goes to is resolved from
     this identity claim, not assumed to be the number the customer is
-    chatting from -- see app/core/bank/verification_flow.py.
+    chatting from -- see app/core/bank/verification_flow.py. Sent for a
+    complaint as well as an account question, so the wording covers both.
     """
     return (
-        "للاطلاع على بيانات حسابك بأمان، يرجى إرسال اسمك الكامل ورقم الهوية الوطنية معاً "
+        "للتحقق من هويتك بأمان، يرجى إرسال رقم الهوية الوطنية وتاريخ ميلادك معاً "
         "في رسالة واحدة، مثال:\n"
-        "محمد أحمد علي 123456789\n"
+        "123456789 15/05/1990\n"
         'أو قول "إلغاء" للتراجع.'
     )
 
 
 def build_identity_malformed_reply() -> str:
-    """The reply didn't parse as (name, national ID) -- re-prompt, don't count
-    it as a failed attempt (see extract_identity_claim's docstring)."""
+    """The reply didn't parse as (national ID, date of birth) -- re-prompt,
+    don't count it as a failed attempt (see extract_identity_claim's
+    docstring). Also sent when both values were found but one is unusable --
+    a date that isn't real, or an ID that isn't 9 digits."""
     return (
-        "لم أتمكن من التعرف على الاسم ورقم الهوية في رسالتك. يرجى إرسالهما معاً بهذا الشكل:\n"
-        "محمد أحمد علي 123456789\n"
+        "لم أتمكن من التعرف على رقم الهوية وتاريخ الميلاد في رسالتك. يرجى إرسالهما بهذا الشكل:\n"
+        "123456789 15/05/1990\n"
         'أو قول "إلغاء" للتراجع.'
     )
 
 
 def build_identity_not_found_reply(remaining: int) -> str:
-    """No Bank_db_oss customer matches the stated name + national ID.
+    """No Bank_db_oss customer matches the stated national ID + date of birth.
 
-    Deliberately generic: never reveal whether the name or the ID number was
+    Deliberately generic: never reveal whether the ID number or the date was
     the mismatch, or this becomes an oracle for guessing valid national IDs.
     """
     return (
-        "لم نتمكن من العثور على حساب مطابق للاسم ورقم الهوية المُدخلين. "
+        "لم نتمكن من العثور على حساب مطابق لرقم الهوية وتاريخ الميلاد المدخلين. "
         f"يرجى التأكد منهما والمحاولة مرة أخرى. المحاولات المتبقية: {remaining}."
     )
 

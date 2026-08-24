@@ -8,9 +8,10 @@ import { useBreakpoint, widthToBreakpoint } from "@/hooks/use-breakpoint";
 
 // Feature: ui-ux-redesign, Property 10
 // Invariant: the primary-navigation presentation is determined solely by the
-// viewport width. For any width < 1024px the App_Shell presents primary
+// viewport width. For any width < 768px the App_Shell presents primary
 // navigation as a collapsible menu (a toggle button, no persistent nav
-// landmark), and for any width >= 1024px it presents a persistent sidebar
+// landmark), and for any width >= 768px it presents a persistent sidebar
+// -- an icon rail up to 1024px, full width above it --
 // (a nav landmark, no toggle button). (Requirements 7.2, 7.3)
 
 vi.mock("@/hooks/use-breakpoint", async () => {
@@ -21,7 +22,8 @@ vi.mock("@/hooks/use-breakpoint", async () => {
 const mockUseBreakpoint = useBreakpoint as ReturnType<typeof vi.fn>;
 
 // The laptop breakpoint is the boundary between the two presentations.
-const LAPTOP = 1024;
+// Lowest width that keeps a persistent sidebar: the tablet rail starts here.
+const SIDEBAR_FROM = 768;
 
 // Cover the full spectrum: mobile/tablet widths below the boundary and
 // laptop/desktop widths at or above it, including the exact boundary value.
@@ -36,7 +38,7 @@ afterEach(() => {
 });
 
 describe("PrimaryNav – variant by breakpoint (property-based, Req 7.2, 7.3)", () => {
-  it("renders a persistent sidebar at >=1024px and a collapsible menu below", () => {
+  it("renders a persistent sidebar at >=768px and a collapsible menu below", () => {
     fc.assert(
       fc.property(widthArb, (width) => {
         // The breakpoint hook maps the viewport width to a reference
@@ -50,7 +52,7 @@ describe("PrimaryNav – variant by breakpoint (property-based, Req 7.2, 7.3)", 
           const nav = screen.queryByRole("navigation");
           const toggle = screen.queryByRole("button");
 
-          if (width >= LAPTOP) {
+          if (width >= SIDEBAR_FROM) {
             // Persistent sidebar: a nav landmark is always present and there
             // is no menu toggle to expand/collapse it.
             expect(nav).not.toBeNull();

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import ApiKeyCard from "@/components/settings/ApiKeyCard";
 import { supabase } from "@/integrations/supabase/client";
 import { ChannelType, Profile } from "@/types/database";
@@ -8,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tables } from "@/integrations/supabase/types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Card,
   CardContent,
@@ -61,6 +64,9 @@ export default function SettingsPage() {
     email: null,
   });
   const [loading, setLoading] = useState(true);
+  // Non-null when the configuration service could not be reached. Distinct
+  // from "no configuration exists" -- nothing is known either way.
+  const [configsError, setConfigsError] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [profileLoading, setProfileLoading] = useState(true);
 
@@ -85,15 +91,20 @@ export default function SettingsPage() {
     userRole || "",
   );
 
+  // Three different situations used to collapse into one blank-looking card:
+  // "not configured", "not permitted to change", and "the service that holds
+  // the configuration did not answer". The old fetch logged the failure to the
+  // console and returned, leaving five empty cards -- so a backend outage was
+  // indistinguishable from an unconfigured bank. The failure is now kept and
+  // handed to each card, which says which of the three it is.
   const fetchConfigs = useCallback(async () => {
-    // Only admins can see configs, but the RLS policies might allow reading if we changed them?
-    // Based on current SQL, only admins can SELECT api_configurations.
-    // So if not admin, this might return empty or error.
+    setLoading(true);
     const { data, error } = await supabase
       .from("api_configurations")
       .select("*");
+
     if (error) {
-      console.log("Error fetching configs (likely permissions):", error);
+      setConfigsError(error.message);
       setLoading(false);
       return;
     }
@@ -109,6 +120,7 @@ export default function SettingsPage() {
       configMap[config.channel as ChannelType] = config;
     });
     setConfigs(configMap);
+    setConfigsError(null);
     setLoading(false);
   }, []);
 
@@ -373,12 +385,10 @@ export default function SettingsPage() {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-display font-bold tracking-tight">
-            {t("settings.title")}
-          </h1>
-          <p className="text-muted-foreground">{t("settings.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("settings.title")}
+          description={t("settings.subtitle")}
+        />
 
         <Tabs
           defaultValue={canManageIntegrations ? "integrations" : "general"}
@@ -422,22 +432,35 @@ export default function SettingsPage() {
                 </CardHeader>
               </Card>
 
-              {loading ? (
-                <div className="grid gap-4">
-                  {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-48 bg-muted animate-pulse rounded-xl"
-                    />
-                  ))}
-                </div>
-              ) : (
+              {/* This was the only page in the app that never imported the
+                  shared AsyncBoundary; its loading state was a bespoke pulse. */}
+              <AsyncBoundary
+                status={loading ? "loading" : "loaded"}
+                skeleton={
+                  <div className="grid gap-4">
+                    {[...Array(3)].map((_, i) => (
+                      <Skeleton key={i} className="h-48 rounded-xl" />
+                    ))}
+                  </div>
+                }
+              >
                 <div className="grid gap-4">
                   {channels.map((channel) => (
                     <div key={channel} className="space-y-4">
                       <ApiKeyCard
                         channel={channel}
                         config={configs[channel]}
+                        // Which of the three non-connected situations this is.
+                        // `unverified` wins: when the service did not answer we
+                        // know nothing about the channel, permissions included.
+                        state={
+                          configsError
+                            ? "unverified"
+                            : isAdmin
+                              ? "editable"
+                              : "restricted"
+                        }
+                        onRetry={fetchConfigs}
                         onSave={(data) => handleSave(channel, data)}
                         onTest={() => handleTestConfig(channel)}
                       />
@@ -483,7 +506,7 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
-              )}
+              </AsyncBoundary>
             </TabsContent>
           )}
 
@@ -794,7 +817,11 @@ export default function SettingsPage() {
                   <>
                     <div className="flex flex-col items-center sm:flex-row gap-6 p-6 rounded-2xl bg-primary/5 border border-primary/10">
                       <div className="relative group">
-                        <div className="w-24 h-24 rounded-full bg-gradient-navy-gold p-1 shadow-lg relative">
+                        {/* `bg-gradient-navy-gold` was not a real class -- the
+                            utility is `.gradient-navy-gold` -- so this ring
+                            rendered transparent. A flat token border is the
+                            honest fix and matches the rest of the surface. */}
+                        <div className="w-24 h-24 rounded-full border-2 border-primary/20 bg-secondary p-1 shadow-card relative">
                           <div className="w-full h-full rounded-full bg-card flex items-center justify-center overflow-hidden">
                             <Avatar className="h-full w-full">
                               <AvatarImage

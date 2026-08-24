@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import EmployeeCard from "@/components/employees/EmployeeCard";
 import { supabase } from "@/integrations/supabase/client";
 import { Employee, Profile, ChannelType } from "@/types/database";
@@ -36,7 +37,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
+import { MetricCard } from "@/components/dashboard/MetricCard";
 import { LiveRegion } from "@/components/ui/live-region";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Search,
   Plus,
@@ -45,6 +53,10 @@ import {
   Upload,
   Camera,
   Loader2,
+  MoreHorizontal,
+  UserPlus,
+  UserCheck,
+  Building2,
 } from "lucide-react";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { useAuth } from "@/hooks/useAuth";
@@ -59,6 +71,9 @@ export default function EmployeesPage() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isCreateUserOpen, setIsCreateUserOpen] = useState(false);
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   // Human-readable failure surfaced inside the create/edit dialog. Rendered via
   // an ErrorState (role="alert") so it is announced to AT, while the form's own
@@ -166,7 +181,19 @@ export default function EmployeesPage() {
     },
   });
 
+  // Department list comes from the data rather than a fixed enum: departments
+  // are free text on the employee record.
+  const departments = Array.from(
+    new Set((employees ?? []).map((e) => e.department).filter(Boolean)),
+  ).sort() as string[];
+
   const filteredEmployees = employees?.filter((emp) => {
+    if (departmentFilter !== "all" && emp.department !== departmentFilter) {
+      return false;
+    }
+    if (statusFilter === "active" && !emp.is_active) return false;
+    if (statusFilter === "inactive" && emp.is_active) return false;
+
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     const name = emp.profile
@@ -178,6 +205,51 @@ export default function EmployeesPage() {
       emp.department?.toLowerCase().includes(term)
     );
   });
+
+  const activeCount = employees?.filter((e) => e.is_active).length ?? 0;
+  const avgPerformance =
+    employees && employees.length > 0
+      ? Math.round(
+          (employees.reduce((sum, e) => sum + (e.performance_score || 0), 0) /
+            employees.length) *
+            100,
+        )
+      : 0;
+
+  const teamStats = [
+    {
+      key: "totalTeam",
+      label: t("employees.stats.totalTeam"),
+      value: (employees?.length ?? 0).toString(),
+      hint: t("employees.stats.acrossDepartments", {
+        count: departments.length,
+      }),
+      icon: Users,
+      tone: "info" as const,
+    },
+    {
+      key: "activeNow",
+      label: t("employees.stats.activeNow"),
+      value: activeCount.toString(),
+      hint: t("employees.stats.ofTotal", { count: employees?.length ?? 0 }),
+      icon: UserCheck,
+      tone: "success" as const,
+    },
+    {
+      key: "avgPerformance",
+      label: t("employees.stats.avgPerformance"),
+      value: `${avgPerformance}%`,
+      icon: Star,
+      tone: "warning" as const,
+    },
+    {
+      key: "activeDepts",
+      label: t("employees.stats.activeDepts"),
+      value: departments.length.toString(),
+      icon: Building2,
+      tone: "neutral" as const,
+    },
+  ];
 
   const handleEdit = (employee: Employee) => {
     setFormError(null);
@@ -205,15 +277,15 @@ export default function EmployeesPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-3xl font-display font-bold tracking-tight text-primary">
-              {t("employees.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("employees.subtitle")}</p>
-          </div>
+          <PageHeader
+            title={t("employees.title")}
+            description={t("employees.subtitle")}
+          />
           {canManage && (
-            <div className="flex gap-3">
-              <CreateUserDialog />
+            <div className="flex items-center gap-2">
+              {/* Exactly one primary action. Creating a login account is a
+                  different, rarer job and moves to the overflow rather than
+                  competing with it button-for-button. */}
               <Dialog
                 open={isDialogOpen}
                 onOpenChange={(open) => {
@@ -223,14 +295,8 @@ export default function EmployeesPage() {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="border-primary/20 hover:bg-primary/5"
-                  >
-                    <Plus
-                      className="h-4 w-4 me-2 text-primary"
-                      aria-hidden="true"
-                    />
+                  <Button className="min-h-[44px]">
+                    <Plus className="h-4 w-4 me-2" aria-hidden="true" />
                     {t("employees.addEmployee")}
                   </Button>
                 </DialogTrigger>
@@ -259,101 +325,107 @@ export default function EmployeesPage() {
                   />
                 </DialogContent>
               </Dialog>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="min-h-[44px] min-w-[44px]"
+                    aria-label={t("employees.moreActions")}
+                  >
+                    <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setIsCreateUserOpen(true)}>
+                    <UserPlus className="h-4 w-4 me-2" aria-hidden="true" />
+                    {t("employees.createUser")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <CreateUserDialog
+                open={isCreateUserOpen}
+                onOpenChange={setIsCreateUserOpen}
+              />
             </div>
           )}
         </div>
 
-        {/* Team Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className="bg-primary/5 border-primary/10 shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  {t("employees.stats.totalTeam")}
-                </p>
-                <h4 className="text-2xl font-bold text-primary">
-                  {employees?.length || 0}
-                </h4>
-              </div>
-              <div className="h-10 w-10 bg-primary/10 rounded-xl flex items-center justify-center text-primary">
-                <Users className="h-5 w-5" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-status-success/5 border-status-success/10 shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  {t("employees.stats.activeNow")}
-                </p>
-                <h4 className="text-2xl font-bold text-status-success">
-                  {employees?.filter((e) => e.is_active).length || 0}
-                </h4>
-              </div>
-              <div className="h-10 w-10 bg-status-success/10 rounded-xl flex items-center justify-center text-status-success">
-                <div className="w-2.5 h-2.5 rounded-full bg-status-success motion-safe:animate-pulse" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-status-warning/5 border-status-warning/10 shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  {t("employees.stats.avgPerformance")}
-                </p>
-                <h4 className="text-2xl font-bold text-status-warning-foreground">
-                  {employees && employees.length > 0
-                    ? (
-                        (employees.reduce(
-                          (acc, curr) => acc + (curr.performance_score || 0),
-                          0,
-                        ) /
-                          employees.length) *
-                        100
-                      ).toFixed(0)
-                    : 0}
-                  %
-                </h4>
-              </div>
-              <div className="h-10 w-10 bg-status-warning/10 rounded-xl flex items-center justify-center text-status-warning-foreground">
-                <Star className="h-5 w-5 fill-current" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-status-info/5 border-status-info/10 shadow-sm">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">
-                  {t("employees.stats.activeDepts")}
-                </p>
-                <h4 className="text-2xl font-bold text-status-info-foreground">
-                  {new Set(employees?.map((e) => e.department).filter(Boolean))
-                    .size || 0}
-                </h4>
-              </div>
-              <div className="h-10 w-10 bg-status-info/10 rounded-xl flex items-center justify-center text-status-info-foreground">
-                <Users className="h-5 w-5" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
+        {/* Team stats through the one shared MetricCard. These were four
+            bespoke tinted cards that disagreed with every other stat card in
+            the app on border, radius, padding and value size. */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {teamStats.map((stat) => (
+            <MetricCard
+              key={stat.key}
+              label={stat.label}
+              value={stat.value}
+              hint={stat.hint}
+              icon={stat.icon}
+              tone={stat.tone}
+            />
+          ))}
         </div>
 
-        {/* Search */}
-        <div className="relative group">
-          <Search
-            className="absolute start-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-muted-foreground group-focus-within:text-primary transition-colors"
-            aria-hidden="true"
-          />
-          <Label htmlFor="employee-search" className="sr-only">
-            {t("employees.searchLabel")}
-          </Label>
-          <Input
-            id="employee-search"
-            placeholder={t("employees.searchPlaceholder")}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="ps-12 h-14 bg-card border-border/40 shadow-sm text-lg focus-visible:ring-primary/20 rounded-2xl"
-          />
+        {/* One toolbar row: search plus the two filters that actually narrow a
+            team list. The search box was h-14 at text-lg -- a control size used
+            nowhere else in the app. */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative w-full sm:w-[320px]">
+            <Search
+              className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Label htmlFor="employee-search" className="sr-only">
+              {t("employees.searchLabel")}
+            </Label>
+            <Input
+              id="employee-search"
+              placeholder={t("employees.searchPlaceholder")}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="ps-9"
+            />
+          </div>
+
+          <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <SelectTrigger
+              className="w-[190px]"
+              aria-label={t("employees.filterDepartment")}
+            >
+              <SelectValue placeholder={t("employees.filterDepartment")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("employees.allDepartments")}
+              </SelectItem>
+              {departments.map((department) => (
+                <SelectItem key={department} value={department}>
+                  {department}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger
+              className="w-[170px]"
+              aria-label={t("employees.filterStatus")}
+            >
+              <SelectValue placeholder={t("employees.filterStatus")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("employees.anyStatus")}</SelectItem>
+              <SelectItem value="active">
+                {t("employees.card.active")}
+              </SelectItem>
+              <SelectItem value="inactive">
+                {t("employees.card.inactive")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Employees Grid — cards stack to a single column below md (768px) so
@@ -361,9 +433,9 @@ export default function EmployeesPage() {
         <AsyncBoundary
           status={listStatus}
           skeleton={
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="flex flex-col gap-3">
               {[...Array(6)].map((_, i) => (
-                <Skeleton key={i} className="h-64 rounded-lg" />
+                <Skeleton key={i} className="h-24 rounded-xl" />
               ))}
             </div>
           }
@@ -374,7 +446,11 @@ export default function EmployeesPage() {
           errorTitle={t("employees.errorTitle")}
           errorDescription={t("employees.errorDescription")}
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* A single column of wide rows, not a card grid. Three cards abreast
+              chopped each person into a narrow column and pushed the roster
+              below the fold; one row per person keeps shift, channels and
+              performance on one readable line. */}
+          <div className="flex flex-col gap-3">
             {filteredEmployees?.map((employee) => (
               <EmployeeCard
                 key={employee.id}
@@ -751,9 +827,23 @@ function EmployeeForm({
   );
 }
 
-function CreateUserDialog() {
+interface CreateUserDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * Creating a login account is a rarer, admin-shaped job than adding an
+ * employee record, so the dialog carries no trigger of its own -- the page
+ * opens it from the overflow menu beside the one primary action. Two buttons
+ * with the same `Plus` icon and near-identical labels sat side by side before.
+ */
+function CreateUserDialog({
+  open: isOpen,
+  onOpenChange,
+}: CreateUserDialogProps) {
   const { t } = useTranslation();
-  const [isOpen, setIsOpen] = useState(false);
+  const setIsOpen = onOpenChange;
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const queryClient = useQueryClient();
@@ -868,12 +958,6 @@ function CreateUserDialog() {
         if (!open) setErrorMessage(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4 me-2" aria-hidden="true" />
-          {t("employees.createUser")}
-        </Button>
-      </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t("employees.createDialog.title")}</DialogTitle>

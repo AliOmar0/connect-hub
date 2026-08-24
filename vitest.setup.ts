@@ -31,6 +31,9 @@ Object.defineProperty(window, "matchMedia", {
   }),
 });
 
+// Mock scrollIntoView (used for chat auto-scroll and Radix Select positioning)
+window.HTMLElement.prototype.scrollIntoView = function () {};
+
 // Mock IntersectionObserver
 global.IntersectionObserver = class IntersectionObserver {
   constructor() {}

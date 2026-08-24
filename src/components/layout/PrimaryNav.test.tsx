@@ -46,16 +46,23 @@ describe("PrimaryNav – role filtering (Req 11.3)", () => {
     mockUseAuth.mockReturnValue({ userRole: "agent" });
     render(<PrimaryNav variant="sidebar" />);
 
-    // Agent sees sessions/queue/shortcuts/settings but not employees/analytics.
+    // An item is visible exactly when the matching route guard in App.tsx
+    // admits the role. Dashboard, Employees and Analytics all list `agent` in
+    // their `allowedRoles`, so hiding them here left three pages reachable by
+    // URL with no link -- the nav claimed an access rule the router did not
+    // enforce.
     expect(screen.getByText("Active AI Sessions")).toBeInTheDocument();
     expect(screen.getByText("Escalation Queue")).toBeInTheDocument();
     expect(screen.getByText("Chat Shortcuts")).toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("Dashboard")).toBeInTheDocument();
+    expect(screen.getByText("Employees")).toBeInTheDocument();
+    expect(screen.getByText("Analytics")).toBeInTheDocument();
 
-    expect(screen.queryByText("Employees")).not.toBeInTheDocument();
-    expect(screen.queryByText("Analytics")).not.toBeInTheDocument();
-    // Dashboard is not visible to agent per config.
-    expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
+    // Complaints and the knowledge base are genuinely restricted to
+    // admin/supervisor/manager by their route guards, so they stay hidden.
+    expect(screen.queryByText("Complaints")).not.toBeInTheDocument();
+    expect(screen.queryByText("Knowledge Base")).not.toBeInTheDocument();
   });
 
   it("renders no items for an unauthenticated (null) role", () => {
@@ -110,8 +117,10 @@ describe("PrimaryNav – variant by breakpoint (Req 7.2, 7.3)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders a collapsible menu toggle below 1024px", () => {
-    mockUseBreakpoint.mockReturnValue(768);
+  it("renders a collapsible menu toggle below 768px", () => {
+    // 768-1023px keeps a persistent sidebar (an icon rail), so the menu
+    // variant only takes over below the tablet tier.
+    mockUseBreakpoint.mockReturnValue(375);
     render(<PrimaryNav />);
 
     expect(
@@ -121,8 +130,17 @@ describe("PrimaryNav – variant by breakpoint (Req 7.2, 7.3)", () => {
     expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
   });
 
-  it("honors an explicit variant prop over the breakpoint", () => {
+  it("renders a persistent sidebar at the tablet tier", () => {
     mockUseBreakpoint.mockReturnValue(768);
+    render(<PrimaryNav />);
+    expect(screen.getByRole("navigation")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /navigation menu/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("honors an explicit variant prop over the breakpoint", () => {
+    mockUseBreakpoint.mockReturnValue(375);
     render(<PrimaryNav variant="sidebar" />);
     expect(screen.getByRole("navigation")).toBeInTheDocument();
   });
@@ -166,6 +184,7 @@ describe("PrimaryNav – custom items", () => {
         icon: LayoutDashboard,
         labelKey: "appShell.nav.dashboard",
         roles: ["admin"],
+        group: "operations",
       },
     ];
     render(<PrimaryNav variant="sidebar" items={items} />);

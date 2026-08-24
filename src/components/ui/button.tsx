@@ -29,14 +29,11 @@ const buttonVariants = cva(
         ghost:
           "hover:bg-secondary hover:text-secondary-foreground active:bg-secondary/80",
         link: "text-primary underline-offset-4 hover:underline active:text-primary/80",
-        gold: "bg-gold text-navy-dark font-semibold shadow-glow hover:bg-gold-light hover:shadow-glow-lg active:bg-gold-dark",
-        navy: "bg-navy text-primary-foreground shadow-soft hover:bg-navy-light active:bg-navy-dark",
-        "outline-gold":
-          "border-2 border-gold text-gold hover:bg-gold hover:text-navy-dark active:bg-gold-dark active:text-navy-dark",
-        "outline-navy":
-          "border-2 border-navy text-navy hover:bg-navy hover:text-primary-foreground active:bg-navy-dark active:text-primary-foreground",
-        glass:
-          "bg-background/50 backdrop-blur-sm border border-border/50 hover:bg-background/80 active:bg-background/90",
+        // `gold`, `navy`, `outline-gold`, `outline-navy` and `glass` are gone.
+        // They were five more ways to say what `default` and `outline` already
+        // said, none of them reachable from the four documented roles below --
+        // and `glass` was never invoked once. Gold stays a brand accent, not a
+        // button colour.
       },
       size: {
         default: "h-10 px-4 py-2",

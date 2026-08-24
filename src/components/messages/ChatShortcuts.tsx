@@ -213,7 +213,7 @@ export default function ChatShortcuts({ onSelect }: ChatShortcutsProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-[10px] text-muted-foreground hover:text-primary"
+                className="h-6 px-2 text-caption text-muted-foreground hover:text-primary"
                 onClick={() => setManageMode((m) => !m)}
               >
                 {manageMode ? "Done" : "Manage"}
@@ -293,7 +293,7 @@ export default function ChatShortcuts({ onSelect }: ChatShortcutsProps) {
                       <p className="text-sm font-medium truncate leading-none mb-0.5">
                         {shortcut.title}
                       </p>
-                      <p className="text-[11px] text-muted-foreground truncate">
+                      <p className="text-caption text-muted-foreground truncate">
                         {shortcut.content}
                       </p>
                     </div>
@@ -335,9 +335,9 @@ export default function ChatShortcuts({ onSelect }: ChatShortcutsProps) {
           {/* Footer tip */}
           {!manageMode && filteredShortcuts.length > 0 && (
             <div className="px-3 py-2 border-t border-border bg-muted/20">
-              <p className="text-[10px] text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Tip: Type{" "}
-                <kbd className="px-1 py-0.5 bg-muted rounded text-[9px] font-mono border border-border">
+                <kbd className="px-1 py-0.5 bg-muted rounded text-caption font-mono border border-border">
                   \
                 </kbd>{" "}
                 in the chat to quick-insert a shortcut
@@ -380,7 +380,7 @@ export default function ChatShortcuts({ onSelect }: ChatShortcutsProps) {
                   if (e.key === "Enter") e.preventDefault();
                 }}
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Used to search and identify this shortcut.
               </p>
             </div>
@@ -393,7 +393,7 @@ export default function ChatShortcuts({ onSelect }: ChatShortcutsProps) {
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
               />
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 This text will be inserted into the chat input when you select
                 this shortcut.
               </p>

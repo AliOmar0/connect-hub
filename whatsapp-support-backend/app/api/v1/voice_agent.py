@@ -1,16 +1,20 @@
 """Tool + signed-url + post-call-webhook endpoints for the ElevenLabs voice agent.
 
 This channel inherits the invariants documented in docs/BANK_ACCOUNT_ACCESS.md
-and enforced by app/core/bank/: bank_db_oss is read-only and reached only
-through the get_bank_account_by_phone RPC, and account data is only disclosed
-after phone identification + OTP verification. What's relaxed here (by explicit
-product decision, voice-only): the /tools/account-info response goes straight
-to ElevenLabs' own hosted LLM as a tool result, so it can be spoken aloud --
-unlike WhatsApp, where account values never reach any LLM. Nothing is persisted
-by the tool endpoints themselves; conversation logging is the post-call
-webhook's job (see plan: turn-by-turn logging would need a public, weakly
-authenticated browser-facing endpoint, so the ElevenLabs-signed post-call
-webhook is used instead).
+and enforced by app/core/bank/: bank_db_oss is read-only, and account data is
+only disclosed after identity + OTP verification. Identity is established the
+same way WhatsApp does it (app/api/v1/webhook.py's identity_pending branch):
+the caller states their national ID + date of birth, /tools/verify-identity
+resolves that pair to the phone Bank_db_oss has ON FILE via
+resolve_customer_phone_by_identity, and the OTP goes to THAT phone --
+regardless of what number the caller is calling from. What's relaxed here (by
+explicit product decision, voice-only): the /tools/account-info response goes
+straight to ElevenLabs' own hosted LLM as a tool result, so it can be spoken
+aloud -- unlike WhatsApp, where account values never reach any LLM. Nothing is
+persisted by the tool endpoints themselves; conversation logging is the
+post-call webhook's job (see plan: turn-by-turn logging would need a public,
+weakly authenticated browser-facing endpoint, so the ElevenLabs-signed
+post-call webhook is used instead).
 """
 
 from __future__ import annotations
@@ -28,11 +32,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 
+from app.api.v1.deps import verify_jwt
 from app.core.bank import (
     ALLOWED_FIELDS,
     AccountField,
+    normalize_identity_input,
     process_otp_verification,
     required_crud_fields,
+    resolve_customer_phone_by_identity,
     start_verification,
 )
 from app.core.complaints import (
@@ -41,9 +48,8 @@ from app.core.complaints import (
     is_valid_description,
 )
 from app.core.config import settings
-from app.core.nlp.normalize import mask_identifier, normalize_msisdn
+from app.core.nlp.normalize import mask_identifier
 from app.core.pii import redact_pii
-from app.api.v1.deps import verify_jwt
 from app.core.triage.session_types import COMPLAINT_SESSION_TYPE
 from app.core.voice_agent_state import voice_conversation_store
 from app.crud import crud
@@ -152,9 +158,12 @@ def _verify_elevenlabs_webhook_signature(raw_body: bytes, signature_header: Opti
 # ---------------------------------------------------------------------------
 
 
-class IdentifyRequest(BaseModel):
+class VerifyIdentityRequest(BaseModel):
     conversation_id: str
-    phone: str
+    national_id: str
+    # The agent is instructed to send ISO YYYY-MM-DD; day-first forms are
+    # accepted as a fallback. See app/core/bank/identity_input.py.
+    date_of_birth: str
 
 
 class ConversationIdRequest(BaseModel):
@@ -181,8 +190,8 @@ class FileComplaintRequest(BaseModel):
 class KnowledgeSearchRequest(BaseModel):
     query: str
     # Optional on purpose: general questions about products, fees and branches
-    # must work before the caller has been through /tools/identify. It is used
-    # only to correlate the retrieval log with a session.
+    # must work before the caller has been through /tools/verify-identity. It
+    # is used only to correlate the retrieval log with a session.
     conversation_id: Optional[str] = None
 
 
@@ -196,31 +205,99 @@ class EscalateRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.post("/tools/identify", dependencies=[Depends(require_elevenlabs_tool_secret)])
-async def identify(body: IdentifyRequest):
-    phone = normalize_msisdn(body.phone)
-    if not phone:
-        raise HTTPException(status_code=400, detail="Invalid phone number")
+@router.post("/tools/verify-identity", dependencies=[Depends(require_elevenlabs_tool_secret)])
+async def verify_identity(body: VerifyIdentityRequest):
+    """Resolve a spoken (national_id, date_of_birth) claim to the phone
+    Bank_db_oss has on file, and OTP that phone -- the same identity-first
+    gate WhatsApp uses (app/api/v1/webhook.py's identity_pending branch),
+    applied to voice.
 
-    customer = await crud.get_customer_by_phone(None, phone)
+    Replaces the old phone-based /tools/identify: there, the caller SPOKE a
+    phone number and it was trusted at face value, so anyone who knew a
+    customer's number could start the flow and the OTP landed on whatever
+    number the caller chose. Here the OTP always goes to the number
+    Bank_db_oss has on record for the matched identity, regardless of what
+    the caller is calling from.
+
+    The caller's NAME is not a factor: it was the one value arriving through
+    speech-to-text, and Arabic names vary in hamza/alef/ta-marbuta forms
+    constantly, so matching it required a deliberately loosened comparison.
+    A date of birth is exact and has no spelling. See
+    scripts/sql/bank_db_oss_identity_lookup_v3.sql.
+
+    The DB session is created/attached BEFORE any identity lookup runs (see
+    app/core/voice_agent_state.py's module docstring): a caller who never
+    gets past this gate must still have a loggable, escalatable session, or
+    /tools/escalate and the post-call webhook would have nothing to act on.
+
+    Can legitimately be called more than once per conversation -- the caller
+    misspoke their name or ID and is retrying. Re-inserting would violate
+    external_conversation_id's unique index (one session per conversation),
+    so the existing session is re-pointed rather than duplicated.
+    """
+    existing = await crud.get_session_by_external_conversation_id(None, body.conversation_id)
+    if existing is not None:
+        session = existing
+    else:
+        session = await crud.create_session(
+            None,
+            None,
+            channel=ChannelType.voice,
+            external_conversation_id=body.conversation_id,
+        )
+
+    convo = voice_conversation_store.get(body.conversation_id)
+    if convo is None:
+        convo = voice_conversation_store.start(body.conversation_id, db_session_id=session.id)
+
+    cleaned, problem, digit_count = normalize_identity_input(body.national_id, body.date_of_birth)
+    if problem is not None:
+        # A format problem, not a database miss -- does NOT consume an
+        # identity attempt (mirrors WhatsApp's build_identity_malformed_reply
+        # path) and is safe to name specifically: it discloses nothing about
+        # who does or doesn't have an account.
+        return {"status": problem, "digits_received": digit_count}
+
+    clean_id, clean_dob = cleaned
+    try:
+        phone_on_file = await resolve_customer_phone_by_identity(clean_id, clean_dob)
+    except BankDbUnavailable as e:
+        logger.error(f"[voice-agent] bank identity lookup unavailable: {e}")
+        return {"status": "unavailable"}
+    except Exception as e:
+        logger.error(f"[voice-agent] bank identity lookup failed: {e}")
+        return {"status": "unavailable"}
+
+    if phone_on_file is None:
+        # Deliberately generic either way -- see
+        # resolve_customer_phone_by_identity's docstring -- do not let this
+        # branch become an oracle for whether it was the national ID or the
+        # date of birth that was wrong, and never echo back any part of a
+        # phone number here.
+        attempts = voice_conversation_store.record_identity_failure(body.conversation_id)
+        remaining = settings.IDENTITY_MAX_ATTEMPTS - attempts
+        if remaining <= 0:
+            return {"status": "exhausted"}
+        return {"status": "not_found", "attempts_remaining": remaining}
+
+    customer = await crud.get_customer_by_phone(None, phone_on_file)
     if customer is None:
-        customer = await crud.create_customer(None, phone, name="", channel=ChannelType.voice)
+        # No name to seed the row with -- the caller never states one now, and
+        # the authoritative name arrives from the bank in send_otp below.
+        customer = await crud.create_customer(
+            None, phone_on_file, name="", channel=ChannelType.voice
+        )
 
-    session = await crud.create_session(
-        None,
-        customer.id,
-        channel=ChannelType.voice,
-        external_conversation_id=body.conversation_id,
-    )
-
-    voice_conversation_store.start(
+    await crud.update_session_customer(None, session.id, customer.id)
+    voice_conversation_store.mark_identity_verified(
         body.conversation_id,
-        db_session_id=session.id,
         customer_id=customer.id,
-        phone=phone,
+        phone=phone_on_file,
+        national_id=clean_id,
     )
     logger.info(
-        f"[voice-agent] identified {mask_identifier(phone)} for conversation {body.conversation_id}"
+        f"[voice-agent] verified identity for {mask_identifier(phone_on_file)} "
+        f"in conversation {body.conversation_id}"
     )
     return {"status": "ok"}
 
@@ -229,15 +306,21 @@ async def identify(body: IdentifyRequest):
 async def send_otp(body: ConversationIdRequest):
     convo = voice_conversation_store.get(body.conversation_id)
     if convo is None:
-        raise HTTPException(status_code=404, detail="Unknown conversation - call identify first")
+        raise HTTPException(
+            status_code=404, detail="Unknown conversation - call verify-identity first"
+        )
+    if not convo.identity_verified:
+        raise HTTPException(
+            status_code=403, detail="Caller has not completed identity verification"
+        )
 
-    # Verify the caller-stated phone actually belongs to a Bank_db_oss customer
-    # BEFORE sending a real OTP. Without this check, /tools/identify accepts
-    # any phone number at face value (there is no equivalent of WhatsApp's
-    # identity-first flow here -- see app/core/bank/verification_flow.py), and
-    # account existence used to be checked only later, in /tools/account-info.
-    # That meant this endpoint would text a real verification code to ANY
-    # phone number handed to /tools/identify, registered customer or not.
+    # Verify the resolved phone-on-file actually has a Bank_db_oss account
+    # BEFORE sending a real OTP. identity_verified only proves a *customer*
+    # row matched (see resolve_customer_phone_by_identity) -- it says nothing
+    # about whether that customer has an *account*, and account existence
+    # used to be checked only later, in /tools/account-info. That meant this
+    # endpoint could text a real verification code to a customer with no
+    # account to disclose.
     try:
         account = await crud.get_bank_account_fields(convo.phone, ["owner_name"])
     except BankDbUnavailable as e:
@@ -251,6 +334,13 @@ async def send_otp(body: ConversationIdRequest):
         )
         return {"status": "not_found"}
 
+    # The account lookup above already carries the holder's name as the bank
+    # records it. Keep it: a complaint filed later is recorded under this,
+    # rather than under a name the caller spoke and ASR transcribed.
+    voice_conversation_store.record_owner_name(
+        body.conversation_id, str(account.get("owner_name") or "")
+    )
+
     # Which fields get unlocked by this OTP is irrelevant here (unlike the
     # WhatsApp flow): /tools/account-info re-validates against the same
     # allowlist per-request. Passing the full allowlist just keeps
@@ -263,7 +353,9 @@ async def send_otp(body: ConversationIdRequest):
 async def verify_otp(body: VerifyOtpRequest):
     convo = voice_conversation_store.get(body.conversation_id)
     if convo is None:
-        raise HTTPException(status_code=404, detail="Unknown conversation - call identify first")
+        raise HTTPException(
+            status_code=404, detail="Unknown conversation - call verify-identity first"
+        )
 
     outcome, remaining = await process_otp_verification(
         str(convo.db_session_id), convo.phone, body.code
@@ -280,7 +372,9 @@ async def verify_otp(body: VerifyOtpRequest):
 async def account_info(body: AccountInfoRequest):
     convo = voice_conversation_store.get(body.conversation_id)
     if convo is None:
-        raise HTTPException(status_code=404, detail="Unknown conversation - call identify first")
+        raise HTTPException(
+            status_code=404, detail="Unknown conversation - call verify-identity first"
+        )
     if not convo.otp_verified:
         raise HTTPException(status_code=403, detail="Caller has not completed OTP verification")
 
@@ -327,9 +421,20 @@ async def file_complaint(body: FileComplaintRequest):
     Unlike WhatsApp -- where a deterministic slot machine collects the details
     (app/core/complaints/) -- the ElevenLabs agent does the collecting here and
     submits it in one call. That is this channel's existing model: it drives the
-    conversation and calls tools for effects. Deliberately does NOT require OTP
-    verification: filing a complaint discloses nothing about an account, and
-    making a frustrated caller verify first is the wrong trade.
+    conversation and calls tools for effects.
+
+    Now requires the SAME identity + OTP gate as an account question
+    (identity_verified and otp_verified on the conversation entry -- see
+    /tools/verify-identity and /tools/verify-otp). This reverses the previous
+    design, which deliberately skipped verification on the argument that
+    filing a complaint discloses nothing about an account. The accepted
+    consequence: a caller whose identity does not resolve, or who never
+    completes OTP, cannot file a complaint by voice at all -- /tools/escalate
+    is the designated path for them instead. full_name/national_id are no
+    longer request fields; they come from the conversation entry that passed
+    verify-identity, so this can never be handed an identity that never
+    passed the gate. national_id is stored masked by crud.create_complaint,
+    same as everywhere else it's collected.
 
     The category is validated against the same fixed set WhatsApp offers, so a
     hallucinated category cannot enter the table and split the dashboard's
@@ -337,7 +442,11 @@ async def file_complaint(body: FileComplaintRequest):
     """
     convo = voice_conversation_store.get(body.conversation_id)
     if convo is None:
-        raise HTTPException(status_code=404, detail="Unknown conversation - call identify first")
+        raise HTTPException(
+            status_code=404, detail="Unknown conversation - call verify-identity first"
+        )
+    if not convo.otp_verified:
+        raise HTTPException(status_code=403, detail="Caller has not completed verification")
 
     if body.category not in CATEGORY_LABELS:
         raise HTTPException(
@@ -362,6 +471,8 @@ async def file_complaint(body: FileComplaintRequest):
             description=redact_pii(description),
             session_id=convo.db_session_id,
             customer_id=convo.customer_id,
+            customer_name=convo.verified_full_name,
+            national_id=convo.verified_national_id,
             customer_phone=convo.phone,
             preferred_contact=body.preferred_contact,
             context={
@@ -381,9 +492,7 @@ async def file_complaint(body: FileComplaintRequest):
             session = await crud.get_session_by_id(None, convo.db_session_id)
             if session and session.main_type_id is None:
                 types = await crud.get_session_main_types(None)
-                match = next(
-                    (t for t in types if t.get("name") == COMPLAINT_SESSION_TYPE), None
-                )
+                match = next((t for t in types if t.get("name") == COMPLAINT_SESSION_TYPE), None)
                 if match:
                     await crud.update_session_main_type(
                         None, convo.db_session_id, UUID(match["id"])
@@ -464,9 +573,7 @@ async def knowledge_search(body: KnowledgeSearchRequest):
         # directly instead: degraded, but an answer.
         logger.warning(f"[voice-agent] vector retrieval failed ({e}); using keyword fallback")
         try:
-            chunks = await run_in_threadpool(
-                _keyword_chunks, query, _KNOWLEDGE_SEARCH_TOP_K
-            )
+            chunks = await run_in_threadpool(_keyword_chunks, query, _KNOWLEDGE_SEARCH_TOP_K)
         except Exception as fallback_error:
             logger.error(f"[voice-agent] knowledge search failed: {fallback_error}")
             return {"found": False, "context": "", "sources": []}
@@ -491,9 +598,7 @@ async def knowledge_search(body: KnowledgeSearchRequest):
         if source and source not in sources:
             sources.append(source)
 
-    logger.info(
-        f"[voice-agent] knowledge search: {len(chunks)} chunk(s) in {elapsed_ms} ms"
-    )
+    logger.info(f"[voice-agent] knowledge search: {len(chunks)} chunk(s) in {elapsed_ms} ms")
     return {
         "found": True,
         "context": build_context_block(
@@ -512,13 +617,20 @@ async def escalate(body: EscalateRequest):
     one was notified. Mirrors the two durable effects of webhook.py::_escalate
     (status + staff notification); the WhatsApp reply it also sends has no
     equivalent here, because the agent speaks the handover itself.
+
+    Degrades rather than 404s when there is no conversation entry (the store's
+    30-minute TTL expired, or the agent escalates -- e.g. a bank-transfer
+    request -- before ever calling verify-identity). escalate is now also the
+    designated failure path for `exhausted` identity/OTP verification, so it
+    must not be the thing that breaks; a notification with no session link is
+    strictly better than none at all.
     """
     convo = voice_conversation_store.get(body.conversation_id)
-    if convo is None:
-        raise HTTPException(status_code=404, detail="Unknown conversation - call identify first")
 
-    await crud.update_session_status(None, convo.db_session_id, SessionStatus.escalated)
+    if convo is not None:
+        await crud.update_session_status(None, convo.db_session_id, SessionStatus.escalated)
 
+    action_url = f"/sessions/{convo.db_session_id}" if convo is not None else None
     try:
         await crud.create_notification(
             None,
@@ -528,7 +640,7 @@ async def escalate(body: EscalateRequest):
             # explaining why they need a human reads out card numbers.
             message=redact_pii((body.reason or "").strip()) or "Voice call escalated.",
             type="escalation",
-            action_url=f"/sessions/{convo.db_session_id}",
+            action_url=action_url,
         )
     except Exception as e:
         logger.error(f"[voice-agent] failed to create escalation notification: {e}")
@@ -668,9 +780,7 @@ async def post_call_webhook(request: Request, elevenlabs_signature: Optional[str
     if not transcript and event_type != "post_call_transcription":
         # An unrecognised event type with nothing to log. Closing the session on
         # it would have the same transcript-eating effect as the audio webhook.
-        logger.warning(
-            f"[voice-agent] webhook type {event_type!r} carried no transcript; ignoring"
-        )
+        logger.warning(f"[voice-agent] webhook type {event_type!r} carried no transcript; ignoring")
         return {"status": "ignored"}
 
     for turn in transcript:

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -32,6 +33,8 @@ import {
   Cell,
 } from "recharts";
 import { format, subDays } from "date-fns";
+import type { ChannelType } from "@/types/database";
+import { notifySuccess } from "@/lib/feedback";
 
 // Chart series colors reference design tokens only (Requirements 17.1, 17.2)
 // so every visualization shares the documented palette and inherits the
@@ -88,11 +91,16 @@ function ChartSkeleton() {
   return <Skeleton className="h-80 w-full rounded-lg" aria-hidden="true" />;
 }
 
+/** "all" plus every real channel -- what the channel Select can hold. */
+type ChannelFilter = "all" | ChannelType;
+
 export default function AnalyticsPage() {
   const { t } = useTranslation();
   const isRtl = useDirection() === "rtl";
   const [dateRange, setDateRange] = useState<number>(30);
-  const [channelFilter, setChannelFilter] = useState<string>("all");
+  // Typed as the channel union rather than `string` so the value can be
+  // handed straight to a `.eq("channel", ...)` filter.
+  const [channelFilter, setChannelFilter] = useState<ChannelFilter>("all");
 
   const {
     data: analyticsData,
@@ -134,27 +142,44 @@ export default function AnalyticsPage() {
     isError: summaryError,
     refetch: refetchSummary,
   } = useQuery({
-    queryKey: ["analytics-summary", dateRange],
+    // The channel is part of the key, not just the date range. The filter
+    // used to govern the activity chart alone, so picking "Voice" left the
+    // summary cards and the distribution showing every channel -- three
+    // panels on one screen disagreeing about what was being measured.
+    queryKey: ["analytics-summary", dateRange, channelFilter],
     queryFn: async () => {
       const endDate = new Date();
       const startDate = subDays(endDate, dateRange);
 
-      const { data: sessions } = await supabase
+      let sessionsQuery = supabase
         .from("sessions")
         .select(
           "status, satisfaction_score, wait_time_seconds, duration_seconds",
         )
         .gte("started_at", startDate.toISOString());
+      if (channelFilter !== "all") {
+        sessionsQuery = sessionsQuery.eq("channel", channelFilter);
+      }
+      const { data: sessions } = await sessionsQuery;
 
-      const { data: messages } = await supabase
+      let messagesQuery = supabase
         .from("messages")
         .select("id")
         .gte("created_at", startDate.toISOString());
+      if (channelFilter !== "all") {
+        messagesQuery = messagesQuery.eq("channel", channelFilter);
+      }
+      const { data: messages } = await messagesQuery;
 
-      const { data: calls } = await supabase
-        .from("calls")
-        .select("id, duration_seconds")
-        .gte("started_at", startDate.toISOString());
+      // Calls are voice by construction, so any non-voice channel filter
+      // means "no calls in scope" rather than "all calls".
+      const callsInScope = channelFilter === "all" || channelFilter === "voice";
+      const { data: calls } = callsInScope
+        ? await supabase
+            .from("calls")
+            .select("id, duration_seconds")
+            .gte("started_at", startDate.toISOString())
+        : { data: [] as Array<{ id: string; duration_seconds: number }> };
 
       const totalSessions = sessions?.length || 0;
       const completedSessions =
@@ -203,15 +228,19 @@ export default function AnalyticsPage() {
     isError: channelError,
     refetch: refetchChannels,
   } = useQuery({
-    queryKey: ["analytics-channels", dateRange],
+    queryKey: ["analytics-channels", dateRange, channelFilter],
     queryFn: async () => {
       const endDate = new Date();
       const startDate = subDays(endDate, dateRange);
 
-      const { data: sessions, error } = await supabase
+      let query = supabase
         .from("sessions")
         .select("channel")
         .gte("started_at", startDate.toISOString());
+      if (channelFilter !== "all") {
+        query = query.eq("channel", channelFilter);
+      }
+      const { data: sessions, error } = await query;
 
       if (error) {
         throw new Error(error.message);
@@ -247,6 +276,49 @@ export default function AnalyticsPage() {
     name: channelName(entry.channel),
   }));
 
+  /**
+   * Export the activity series currently on screen as CSV. The control was
+   * previously a bare Download glyph with no `onClick` at all -- it looked
+   * like an export and did nothing. Exporting `chartData` keeps the file and
+   * the chart in agreement about the date range and channel in view.
+   */
+  const handleExport = () => {
+    const header = [
+      t("analytics.series.date"),
+      t("analytics.series.sessions"),
+      t("analytics.series.messages"),
+      t("analytics.series.calls"),
+      t("analytics.series.satisfaction"),
+    ];
+    const escape = (value: string | number) => {
+      const text = String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const rows = chartData.map((row) =>
+      [row.date, row.sessions, row.messages, row.calls, row.satisfaction]
+        .map(escape)
+        .join(","),
+    );
+    // BOM so Excel opens the Arabic column headers as UTF-8.
+    const csv = `\uFEFF${[header.map(escape).join(","), ...rows].join("\r\n")}`;
+
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: "text/csv;charset=utf-8" }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `analytics-${channelFilter}-${dateRange}d-${format(
+      new Date(),
+      "yyyy-MM-dd",
+    )}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    notifySuccess(t("analytics.exportSuccess", { count: chartData.length }));
+  };
+
   // Derive one ViewStatus per visualization so each renders the shared
   // Skeleton / Empty / Error / loaded presentation independently
   // (Requirements 17.3, 17.4, 17.5, 10.8).
@@ -278,12 +350,10 @@ export default function AnalyticsPage() {
     <DashboardLayout>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-display font-bold tracking-tight">
-              {t("analytics.title")}
-            </h1>
-            <p className="text-muted-foreground">{t("analytics.subtitle")}</p>
-          </div>
+          <PageHeader
+            title={t("analytics.title")}
+            description={t("analytics.subtitle")}
+          />
           <div className="flex flex-wrap gap-2">
             <Select
               value={dateRange.toString()}
@@ -311,7 +381,10 @@ export default function AnalyticsPage() {
                 </SelectItem>
               </SelectContent>
             </Select>
-            <Select value={channelFilter} onValueChange={setChannelFilter}>
+            <Select
+              value={channelFilter}
+              onValueChange={(v) => setChannelFilter(v as ChannelFilter)}
+            >
               <SelectTrigger
                 className="w-[180px]"
                 aria-label={t("analytics.channelFilter.label")}
@@ -341,11 +414,12 @@ export default function AnalyticsPage() {
             </Select>
             <Button
               variant="outline"
-              size="icon"
-              className="min-h-[44px] min-w-[44px]"
-              aria-label={t("analytics.export")}
+              className="min-h-[44px]"
+              onClick={handleExport}
+              disabled={chartData.length === 0}
             >
-              <Download className="h-4 w-4" aria-hidden="true" />
+              <Download className="h-4 w-4 me-2" aria-hidden="true" />
+              {t("analytics.export")}
             </Button>
           </div>
         </div>

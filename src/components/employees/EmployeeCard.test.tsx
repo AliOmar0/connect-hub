@@ -87,8 +87,10 @@ describe("EmployeeCard", () => {
       />,
     );
 
-    expect(screen.getByText("whatsapp")).toBeInTheDocument();
-    expect(screen.getByText("messenger")).toBeInTheDocument();
+    // Chips carry the catalogue name, not `capitalize` on the raw key --
+    // that rendered "Whatsapp".
+    expect(screen.getByText("WhatsApp")).toBeInTheDocument();
+    expect(screen.getByText("Messenger")).toBeInTheDocument();
   });
 
   it("displays 'No channels' when no channels assigned", () => {
@@ -166,7 +168,7 @@ describe("EmployeeCard", () => {
       />,
     );
 
-    expect(screen.getByText("online")).toBeInTheDocument();
+    expect(screen.getByText("Online")).toBeInTheDocument();
   });
 
   it("displays languages when available", () => {
@@ -186,8 +188,10 @@ describe("EmployeeCard", () => {
       />,
     );
 
-    expect(screen.getByText("English")).toBeInTheDocument();
-    expect(screen.getByText("Spanish")).toBeInTheDocument();
+    // Languages ride on the presence line rather than a separate badge row:
+    // in a single-row layout a second chip row pushed every card taller for
+    // information that is read at the same moment as presence.
+    expect(screen.getByText(/English, Spanish/)).toBeInTheDocument();
   });
 
   it("does not display languages section when no languages", () => {
@@ -336,7 +340,7 @@ describe("EmployeeCard", () => {
     expect(screen.getByText("Unknown")).toBeInTheDocument();
   });
 
-  it("displays 'No ID' when employee_code is missing", () => {
+  it("displays a fallback when employee_code is missing", () => {
     const employeeWithoutCode: Employee & { profile?: Profile } = {
       ...mockEmployeeWithProfile,
       employee_code: null,
@@ -350,10 +354,10 @@ describe("EmployeeCard", () => {
       />,
     );
 
-    expect(screen.getByText(/No ID/)).toBeInTheDocument();
+    expect(screen.getByText(/No code/)).toBeInTheDocument();
   });
 
-  it("displays 'No Dept' when department is missing", () => {
+  it("displays a fallback when department is missing", () => {
     const employeeWithoutDept: Employee & { profile?: Profile } = {
       ...mockEmployeeWithProfile,
       department: null,
@@ -367,7 +371,7 @@ describe("EmployeeCard", () => {
       />,
     );
 
-    expect(screen.getByText(/No Dept/)).toBeInTheDocument();
+    expect(screen.getByText(/No department/)).toBeInTheDocument();
   });
 
   it("handles zero performance score", () => {
@@ -405,9 +409,14 @@ describe("EmployeeCard", () => {
   });
 
   it("displays different status colors for different statuses", () => {
-    const statuses = ["online", "busy", "away", "offline"] as const;
+    const statuses = {
+      online: "Online",
+      busy: "Busy",
+      away: "Away",
+      offline: "Offline",
+    } as const;
 
-    statuses.forEach((status) => {
+    Object.entries(statuses).forEach(([status, label]) => {
       const { unmount } = render(
         <EmployeeCard
           employee={{
@@ -422,7 +431,7 @@ describe("EmployeeCard", () => {
         />,
       );
 
-      expect(screen.getByText(status)).toBeInTheDocument();
+      expect(screen.getByText(label)).toBeInTheDocument();
       unmount();
     });
   });

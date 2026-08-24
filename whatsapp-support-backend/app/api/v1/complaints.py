@@ -10,7 +10,8 @@ written once as 'new' and never changed, so an employee had no way to record
 that they had handled one.
 
 Endpoints:
-    GET   /complaints        - most urgent first, optional status/severity filter
+    GET   /complaints        - most urgent first, optional status/severity/channel/
+                               text filter; total match count in X-Total-Count
     GET   /complaints/{id}   - one complaint
     PATCH /complaints/{id}   - change status (admin/supervisor/manager only)
 
@@ -27,7 +28,7 @@ import logging
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.api.v1.deps import require_admin_access
@@ -40,6 +41,11 @@ router = APIRouter()
 _STATUSES = ("new", "in_progress", "resolved", "closed")
 # Mirrors the CHECK constraint in migration 20260822000000.
 _SEVERITIES = ("critical", "high", "medium", "low")
+# Mirrors the channel enum the intake flows write.
+_CHANNELS = ("whatsapp", "messenger", "sms", "voice", "email")
+# "severity" is worst-first within the returned page; "newest" is the query's
+# own created_at ordering, which is the one that holds across pages.
+_SORTS = ("severity", "newest")
 
 
 class UpdateComplaintRequest(BaseModel):
@@ -51,18 +57,49 @@ class UpdateComplaintRequest(BaseModel):
 
 @router.get("/complaints", response_model=List[Complaint])
 async def list_complaints(
+    response: Response,
     status: Optional[str] = Query(None, description=f"One of {', '.join(_STATUSES)}"),
     severity: Optional[str] = Query(None, description=f"One of {', '.join(_SEVERITIES)}"),
+    channel: Optional[str] = Query(None, description=f"One of {', '.join(_CHANNELS)}"),
+    search: Optional[str] = Query(
+        None,
+        max_length=200,
+        description="Matches reference number, customer name, or complaint text",
+    ),
+    sort: str = Query("severity", description=f"One of {', '.join(_SORTS)}"),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> List[Complaint]:
-    """List complaints, most urgent first then newest."""
+    """List complaints, most urgent first then newest.
+
+    The page cap is real: at most 200 rows come back per request. The total
+    number of matches is returned in `X-Total-Count` so the dashboard can show
+    which slice it is on instead of silently truncating the table at the cap.
+    """
     if status is not None and status not in _STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {list(_STATUSES)}")
     if severity is not None and severity not in _SEVERITIES:
         raise HTTPException(status_code=400, detail=f"severity must be one of {list(_SEVERITIES)}")
+    if channel is not None and channel not in _CHANNELS:
+        raise HTTPException(status_code=400, detail=f"channel must be one of {list(_CHANNELS)}")
+    if sort not in _SORTS:
+        raise HTTPException(status_code=400, detail=f"sort must be one of {list(_SORTS)}")
+
+    total = await crud.count_complaints(
+        None, status=status, severity=severity, channel=channel, search=search
+    )
+    if total is not None:
+        response.headers["X-Total-Count"] = str(total)
+
     return await crud.list_complaints(
-        None, status=status, severity=severity, limit=limit, offset=offset
+        None,
+        status=status,
+        severity=severity,
+        channel=channel,
+        search=search,
+        sort=sort,
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -79,9 +116,7 @@ async def get_complaint(complaint_id: UUID) -> Complaint:
     response_model=Complaint,
     dependencies=[Depends(require_admin_access)],
 )
-async def update_complaint(
-    complaint_id: UUID, payload: UpdateComplaintRequest
-) -> Complaint:
+async def update_complaint(complaint_id: UUID, payload: UpdateComplaintRequest) -> Complaint:
     """Move a complaint to another status.
 
     Goes through the backend rather than letting the dashboard UPDATE the row
@@ -90,9 +125,7 @@ async def update_complaint(
     client here covers all three, with require_admin_access as the gate.
     """
     if payload.status not in _STATUSES:
-        raise HTTPException(
-            status_code=400, detail=f"status must be one of {list(_STATUSES)}"
-        )
+        raise HTTPException(status_code=400, detail=f"status must be one of {list(_STATUSES)}")
 
     try:
         complaint = await crud.update_complaint_status(None, complaint_id, payload.status)

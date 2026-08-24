@@ -1,7 +1,40 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Settings, ExternalLink, Check, AlertCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ExternalLink,
+  Mail,
+  MessageCircle,
+  MessageSquare,
+  Phone,
+  Settings,
+  type LucideIcon,
+} from "lucide-react";
+
+// Stroke icons on token-backed tints, matching SessionsTable and
+// ActiveSessionsPanel. These were emoji, which are decorative glyphs in
+// interface copy and do not recolour with the theme (Requirement 2.4).
+const channelIcons: Record<string, { Icon: LucideIcon; className: string }> = {
+  whatsapp: {
+    Icon: MessageCircle,
+    className: "bg-chart-success/10 text-chart-success",
+  },
+  messenger: {
+    Icon: MessageSquare,
+    className: "bg-chart-info/10 text-chart-info",
+  },
+  voice: {
+    Icon: Phone,
+    className: "bg-chart-warning/10 text-chart-warning",
+  },
+  sms: {
+    Icon: MessageSquare,
+    className: "bg-chart-secondary/10 text-chart-secondary",
+  },
+  email: { Icon: Mail, className: "bg-chart-primary/10 text-chart-primary" },
+};
 import { cn } from "@/lib/utils";
 import { Tables } from "@/integrations/supabase/types";
 import { formatDistanceToNow } from "date-fns";
@@ -87,19 +120,20 @@ export default function IntegrationStatus({
               style={{ animationDelay: `${index * 100}ms` }}
             >
               {/* Icon */}
-              <div className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center overflow-hidden">
-                <span className="text-xl">
-                  {integration.channel === "whatsapp"
-                    ? "🟢"
-                    : integration.channel === "messenger"
-                      ? "🔵"
-                      : integration.channel === "voice"
-                        ? "📞"
-                        : integration.channel === "sms"
-                          ? "💬"
-                          : "📧"}
-                </span>
-              </div>
+              {(() => {
+                const channel =
+                  channelIcons[integration.channel] ?? channelIcons.email;
+                return (
+                  <div
+                    className={cn(
+                      "w-10 h-10 rounded-lg flex items-center justify-center overflow-hidden",
+                      channel.className,
+                    )}
+                  >
+                    <channel.Icon aria-hidden="true" className="h-5 w-5" />
+                  </div>
+                );
+              })()}
 
               {/* Info */}
               <div className="flex-1 min-w-0">
@@ -118,7 +152,7 @@ export default function IntegrationStatus({
                 <Badge
                   variant="outline"
                   className={cn(
-                    "text-[10px] font-medium gap-1",
+                    "text-overline font-medium gap-1",
                     statusConfig[status].className,
                   )}
                 >
@@ -126,7 +160,7 @@ export default function IntegrationStatus({
                   {statusConfig[status].label}
                 </Badge>
                 {lastSync && (
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-caption text-muted-foreground">
                     Synced {lastSync}
                   </span>
                 )}

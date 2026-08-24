@@ -2,7 +2,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { MoreHorizontal, Phone, MessageSquare, Star } from "lucide-react";
+import {
+  Circle,
+  CircleDot,
+  Clock,
+  MessageSquare,
+  MinusCircle,
+  MoreHorizontal,
+  Phone,
+  Star,
+} from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,36 +38,44 @@ interface EmployeesTableProps {
   employees?: Array<Employee & { profile?: Profile }>;
 }
 
-const statusConfig = {
+// Presence pairs a token-backed colour with BOTH a shape (icon) and a text
+// label, so meaning never rests on colour alone (Requirement 3.5). The previous
+// config used raw `emerald/rose/amber/slate` hues -- bypassing the `--status-*`
+// tokens entirely -- and rendered a colour-only dot with no icon or label.
+const presenceConfig: Record<
+  string,
+  { tone: StatusTone; icon: typeof CircleDot; labelKey: string; dot: string }
+> = {
   online: {
-    label: "Online",
-    className:
-      "bg-emerald-500/10 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400 border-emerald-500/20",
-    dotClass: "bg-emerald-500 pulse-green",
+    tone: "success",
+    icon: CircleDot,
+    labelKey: "employees.presence.online",
+    dot: "bg-status-success",
   },
   busy: {
-    label: "Busy",
-    className:
-      "bg-rose-500/10 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400 border-rose-500/20",
-    dotClass: "bg-rose-500",
+    tone: "error",
+    icon: MinusCircle,
+    labelKey: "employees.presence.busy",
+    dot: "bg-status-error",
   },
   away: {
-    label: "Away",
-    className:
-      "bg-amber-500/10 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400 border-amber-500/20",
-    dotClass: "bg-amber-500",
+    tone: "warning",
+    icon: Clock,
+    labelKey: "employees.presence.away",
+    dot: "bg-status-warning",
   },
   offline: {
-    label: "Offline",
-    className:
-      "bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-400 border-slate-500/20",
-    dotClass: "bg-slate-400",
+    tone: "neutral",
+    icon: Circle,
+    labelKey: "employees.presence.offline",
+    dot: "bg-status-neutral",
   },
 };
 
 export default function EmployeesTable({
   employees = [],
 }: EmployeesTableProps) {
+  const { t } = useTranslation();
   const { data: employeeStats } = useQuery({
     queryKey: ["employee-stats", employees.map((e) => e.id)],
     queryFn: async () => {
@@ -162,10 +181,11 @@ export default function EmployeesTable({
                             </AvatarFallback>
                           </Avatar>
                           <div
+                            aria-hidden="true"
                             className={cn(
-                              "absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-card",
-                              statusConfig[status as keyof typeof statusConfig]
-                                ?.dotClass || statusConfig.offline.dotClass,
+                              "absolute -bottom-0.5 -end-0.5 w-3 h-3 rounded-full border-2 border-card",
+                              (presenceConfig[status] ?? presenceConfig.offline)
+                                .dot,
                             )}
                           />
                         </div>
@@ -178,17 +198,21 @@ export default function EmployeesTable({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-[10px] font-medium px-2 py-0.5 rounded-full border",
-                          statusConfig[status as keyof typeof statusConfig]
-                            ?.className || statusConfig.offline.className,
+                      <StatusBadge
+                        size="sm"
+                        tone={
+                          (presenceConfig[status] ?? presenceConfig.offline)
+                            .tone
+                        }
+                        icon={
+                          (presenceConfig[status] ?? presenceConfig.offline)
+                            .icon
+                        }
+                        label={t(
+                          (presenceConfig[status] ?? presenceConfig.offline)
+                            .labelKey,
                         )}
-                      >
-                        {statusConfig[status as keyof typeof statusConfig]
-                          ?.label || "Offline"}
-                      </Badge>
+                      />
                     </TableCell>
                     <TableCell className="text-center">
                       <span
