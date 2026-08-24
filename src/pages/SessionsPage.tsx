@@ -1,8 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import SessionsTable from "@/components/sessions/SessionsTable";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { cn } from "@/lib/utils";
+import SessionList, {
+  SessionListSkeleton,
+} from "@/components/sessions/SessionList";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Session,
@@ -10,14 +14,12 @@ import {
   Employee,
   Profile,
   Message,
-  Call,
   SessionMainType,
   SessionStatus,
 } from "@/types/database";
 import type { ViewStatus } from "@/types/presentation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -32,25 +34,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { EmptyState } from "@/components/ui/empty-state";
-import { BidiText } from "@/components/ui/bidi-text";
 import {
   Search,
   Filter,
   Download,
   Users,
-  Phone,
   MessageSquare,
   MessageCircle,
-  Clock,
   CheckCircle,
   ArrowLeft,
+  ChevronDown,
   Inbox,
 } from "lucide-react";
-import { subDays } from "date-fns";
+import { subDays, isToday } from "date-fns";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
@@ -104,11 +110,57 @@ export default function SessionsPage() {
   // Below 768px the list and detail become separate navigable views (14.6).
   const isMobile = breakpoint < 768;
   const [mobileView, setMobileView] = useState<"list" | "detail">("list");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [channelFilter, setChannelFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [dateRange, setDateRange] = useState<number>(7); // days
+
+  const [savedFilters] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("sessions-filters") ?? "{}");
+    } catch {
+      return {};
+    }
+  });
+  const [searchTerm, setSearchTerm] = useState<string>(
+    savedFilters.searchTerm ?? "",
+  );
+  const [statusFilter, setStatusFilter] = useState<string>(
+    savedFilters.statusFilter ?? "all",
+  );
+  const [channelFilter, setChannelFilter] = useState<string>(
+    savedFilters.channelFilter ?? "all",
+  );
+  const [typeFilter, setTypeFilter] = useState<string>(
+    savedFilters.typeFilter ?? "all",
+  );
+  const [dateRange, setDateRange] = useState<number>(
+    savedFilters.dateRange ?? 7,
+  ); // days
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">(
+    savedFilters.sortOrder === "oldest" ? "oldest" : "newest",
+  );
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "sessions-filters",
+        JSON.stringify({
+          searchTerm,
+          statusFilter,
+          channelFilter,
+          typeFilter,
+          dateRange,
+          sortOrder,
+        }),
+      );
+    } catch {
+      // ignore
+    }
+  }, [
+    searchTerm,
+    statusFilter,
+    channelFilter,
+    typeFilter,
+    dateRange,
+    sortOrder,
+  ]);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [assigningSession, setAssigningSession] = useState<Session | null>(
@@ -380,35 +432,11 @@ export default function SessionsPage() {
     enabled: !!selectedSession?.id,
   });
 
-  const {
-    data: sessionCalls,
-    isLoading: callsLoading,
-    refetch: refetchCalls,
-  } = useQuery({
-    queryKey: ["session-calls", selectedSession?.id],
-    queryFn: async () => {
-      if (!selectedSession?.id) return [];
-      const { data, error } = await supabase
-        .from("calls")
-        .select("*")
-        .eq("session_id", selectedSession.id)
-        .order("started_at", { ascending: false });
-
-      if (error) {
-        console.error("Error fetching calls:", error);
-        return [];
-      }
-
-      return (data || []) as Call[];
-    },
-    enabled: !!selectedSession?.id,
-  });
-
-  // Realtime updates for the selected session (calls + updates)
+  // Realtime updates for the selected session (message status)
   useEffect(() => {
     if (!selectedSession?.id) return;
 
-    console.log(`Monitoring session status/calls for: ${selectedSession.id}`);
+    console.log(`Monitoring session status for: ${selectedSession.id}`);
     const channel = supabase
       .channel(`session-${selectedSession.id}-monitor`)
       .on(
@@ -423,25 +451,12 @@ export default function SessionsPage() {
           refetchMessages(); // For status updates (delivered/read)
         },
       )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "calls",
-          filter: `session_id=eq.${selectedSession.id}`,
-        },
-        (payload) => {
-          console.log("Call change received:", payload);
-          refetchCalls();
-        },
-      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedSession?.id, refetchMessages, refetchCalls]);
+  }, [selectedSession?.id, refetchMessages]);
 
   const assignMutation = useMutation({
     mutationFn: async ({
@@ -751,64 +766,115 @@ export default function SessionsPage() {
   const showList = !isMobile || mobileView === "list";
   const showDetail = !isMobile || mobileView === "detail";
 
+  // The rail's own order, independent of the filters above it. Newest first
+  // by default, matching the order sessions arrive in.
+  const sortedSessions = useMemo(() => {
+    if (!sessions) return sessions;
+    const sorted = [...sessions].sort((a, b) => {
+      const diff =
+        new Date(a.started_at).getTime() - new Date(b.started_at).getTime();
+      return sortOrder === "newest" ? -diff : diff;
+    });
+    return sorted;
+  }, [sessions, sortOrder]);
+
+  // Inline status tallies. Four tinted stat cards used to sit above the list
+  // restating what the list already showed; the same three numbers now ride
+  // in the toolbar where the filters are.
+  const tallies = [
+    {
+      key: "active",
+      dot: "bg-status-success",
+      label: t("sessions.stats.activeSessions"),
+      count: sessions?.filter((s) => s.status === "active").length ?? 0,
+    },
+    {
+      key: "waiting",
+      dot: "bg-status-warning",
+      label: t("sessions.status.waiting"),
+      count: sessions?.filter((s) => s.status === "waiting").length ?? 0,
+    },
+    {
+      key: "closedToday",
+      dot: "bg-status-neutral",
+      label: t("sessions.stats.closedToday"),
+      count:
+        sessions?.filter(
+          (s) =>
+            (s.status === "completed" || s.status === "auto_closed") &&
+            isToday(new Date(s.started_at)),
+        ).length ?? 0,
+    },
+  ];
+
   const listSection = (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <Users className="h-5 w-5 text-primary" aria-hidden="true" />
-          {t("sessions.overviewTitle")}
-        </h2>
-      </div>
-      <AsyncBoundary
-        status={listStatus}
-        onRetry={() => refetch()}
-        emptyTitle={t("sessions.emptyList.title")}
-        emptyDescription={t("sessions.emptyList.description")}
-        emptyIcon={<Inbox />}
-        skeleton={
-          <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm">
-            <SessionsTable sessions={[]} loading />
-          </div>
-        }
-      >
-        <div className="border border-border rounded-xl bg-card overflow-hidden shadow-sm max-h-[450px] overflow-y-auto custom-scrollbar">
-          <SessionsTable
-            sessions={sessions || []}
-            sessionTypes={sessionTypes}
-            loading={false}
-            onViewSession={handleViewSession}
-            onAssignAgent={canAssign ? handleAssignAgent : undefined}
-          />
+    <AsyncBoundary
+      status={listStatus}
+      className="flex min-h-0 flex-1 flex-col"
+      onRetry={() => refetch()}
+      emptyTitle={t("sessions.emptyList.title")}
+      emptyDescription={t("sessions.emptyList.description")}
+      emptyIcon={<Inbox />}
+      skeleton={
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-card">
+          <SessionListSkeleton />
         </div>
-      </AsyncBoundary>
-    </div>
+      }
+    >
+      <SessionList
+        sessions={sortedSessions || []}
+        sessionTypes={sessionTypes}
+        selectedId={selectedSession?.id ?? null}
+        onSelect={handleViewSession}
+        className="h-full"
+        headerAction={
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={t("sessions.list.sortLabel")}
+                className="flex items-center gap-1 rounded-md px-1.5 py-1 text-caption font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"
+              >
+                {sortOrder === "newest"
+                  ? t("sessions.list.sortNewest")
+                  : t("sessions.list.sortOldest")}
+                <ChevronDown className="h-3 w-3" aria-hidden="true" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSortOrder("newest")}>
+                {t("sessions.list.sortNewest")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setSortOrder("oldest")}>
+                {t("sessions.list.sortOldest")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        }
+      />
+    </AsyncBoundary>
   );
 
   const detailSection = (
-    <div
-      className="border-t border-border pt-8 mt-4 space-y-4"
+    // The conversation pane sits beside the rail rather than below it, so the
+    // two are one console instead of two stacked pages. Only the phone layout
+    // still swaps between them.
+    <section
+      aria-label={t("sessions.conversationDetails")}
+      className="flex min-h-0 flex-1 flex-col gap-4"
       ref={chatContainerRef}
     >
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          {isMobile && (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setMobileView("list")}
-              aria-label={t("sessions.backToList")}
-              className="shrink-0"
-            >
-              <ArrowLeft
-                className="h-5 w-5 rtl:rotate-180"
-                aria-hidden="true"
-              />
-            </Button>
-          )}
-          <MessageSquare className="h-5 w-5 text-primary" aria-hidden="true" />
-          {t("sessions.conversationDetails")}
-        </h2>
-      </div>
+      {isMobile && (
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setMobileView("list")}
+          className="w-fit min-h-[44px] gap-2"
+        >
+          <ArrowLeft className="h-4 w-4 rtl:rotate-180" aria-hidden="true" />
+          {t("sessions.backToList")}
+        </Button>
+      )}
 
       {!hasSelection ? (
         // No session selected -> direct the user to pick one (14.2).
@@ -819,10 +885,10 @@ export default function SessionsPage() {
         />
       ) : (
         <div
-          className="grid lg:grid-cols-3 gap-6 h-[800px]"
+          className="flex min-h-0 flex-1 flex-col gap-3"
           id="chat-view-container"
         >
-          <Card className="lg:col-span-2 flex flex-col overflow-hidden border-border/60 shadow-md">
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-border shadow-card">
             <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
               <ChatView
                 session={selectedSession}
@@ -834,319 +900,193 @@ export default function SessionsPage() {
                 loading={messagesLoading}
                 error={isMessagesError}
                 onRetryMessages={() => refetchMessages()}
+                onAssignAgent={
+                  canAssign
+                    ? () => handleAssignAgent(selectedSession)
+                    : undefined
+                }
+                onEscalate={() => handleUpdateSessionStatus("escalated")}
+                onViewActivity={() =>
+                  navigate(`/sessions/${selectedSession.id}/activity`)
+                }
               />
-            </CardContent>
-          </Card>
-
-          <Card className="flex flex-col overflow-hidden border-border/60 shadow-md">
-            <CardContent className="p-6 flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between mb-6 shrink-0">
-                <div>
-                  <h3 className="text-lg font-semibold">
-                    {t("sessions.activity.title")}
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    {t("sessions.activity.subtitle")}
-                  </p>
-                </div>
-                {selectedSession && (
-                  <Badge className="font-medium px-3 py-1">
-                    {t(`sessions.status.${selectedSession.status}`, {
-                      defaultValue: selectedSession.status,
-                    })}
-                  </Badge>
-                )}
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-4 pr-2 custom-scrollbar">
-                {callsLoading ? (
-                  [...Array(4)].map((_, idx) => (
-                    <div
-                      key={idx}
-                      className="h-20 rounded-xl bg-muted animate-pulse"
-                    />
-                  ))
-                ) : sessionCalls && sessionCalls.length > 0 ? (
-                  sessionCalls.map((call) => (
-                    <div
-                      key={call.id}
-                      className="rounded-xl border border-border p-4 bg-muted/20 space-y-2 hover:border-primary/20 hover:bg-muted/40 transition-all group"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-semibold flex items-center gap-2">
-                          {call.direction === "inbound" ? (
-                            <div className="w-2.5 h-2.5 rounded-full bg-status-info"></div>
-                          ) : (
-                            <div className="w-2.5 h-2.5 rounded-full bg-status-success"></div>
-                          )}
-                          {call.direction === "inbound"
-                            ? t("sessions.activity.inboundCall")
-                            : t("sessions.activity.outboundCall")}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground font-medium">
-                          {new Date(call.started_at).toLocaleString([], {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            day: "2-digit",
-                            month: "short",
-                          })}
-                        </span>
-                      </div>
-                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                        <div className="bg-background/50 p-2 rounded-lg border border-border/50">
-                          <span className="block opacity-60">
-                            {t("sessions.activity.status")}
-                          </span>
-                          <span className="font-medium text-foreground">
-                            {call.status}
-                          </span>
-                        </div>
-                        <div className="bg-background/50 p-2 rounded-lg border border-border/50">
-                          <span className="block opacity-60">
-                            {t("sessions.activity.duration")}
-                          </span>
-                          <span className="font-medium text-foreground">
-                            {call.duration_seconds
-                              ? `${call.duration_seconds}s`
-                              : "0s"}
-                          </span>
-                        </div>
-                      </div>
-                      {call.phone_number && (
-                        <p className="text-xs text-muted-foreground px-1 flex items-center gap-1">
-                          <span className="opacity-60">
-                            {t("sessions.activity.id")}:
-                          </span>{" "}
-                          <BidiText value={call.phone_number} />
-                        </p>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-20 text-center opacity-40">
-                    <Phone className="h-10 w-10 mb-4" aria-hidden="true" />
-                    <p className="text-sm font-medium">
-                      {t("sessions.activity.empty")}
-                    </p>
-                  </div>
-                )}
-              </div>
             </CardContent>
           </Card>
         </div>
       )}
-    </div>
+    </section>
   );
 
   return (
     <DashboardLayout>
-      <div className="flex flex-col space-y-8 pb-10">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-3xl font-display font-bold tracking-tight">
-            {t("sessions.title")}
-          </h1>
-          <p className="text-muted-foreground">{t("sessions.subtitle")}</p>
-        </div>
+      {/* One tall console: the page itself does not scroll, each pane does.
+          113px is the shell chrome above this box: the 64px header row (+1px
+          border) plus DashboardLayout's 24px top/bottom <main> padding. The
+          previous 8.5rem (136px) over-subtracted by 23px, leaving that much
+          dead space below the console instead of giving it to the chat. */}
+      <div className="flex h-[calc(100vh-113px)] min-h-0 flex-col gap-4">
+        <PageHeader
+          title={t("sessions.title")}
+          description={t("sessions.subtitle")}
+          actions={
+            <Button
+              variant="outline"
+              className="min-h-[44px]"
+              onClick={handleDownloadSessions}
+            >
+              <Download className="h-4 w-4 me-2" aria-hidden="true" />
+              {t("sessions.exportCsv")}
+            </Button>
+          }
+        />
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={t("sessions.searchPlaceholder")}
-                  aria-label={t("sessions.searchPlaceholder")}
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9 rtl:pl-3 rtl:pr-9"
+        {/* One toolbar row. The filters used to live in a 130-line Card of
+            their own above four tinted stat cards, so two thirds of the screen
+            was chrome before the first conversation. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="relative w-full sm:w-[320px]">
+            <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder={t("sessions.searchPlaceholder")}
+              aria-label={t("sessions.searchPlaceholder")}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-9 rtl:pl-3 rtl:pr-9"
+            />
+          </div>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger
+              className="w-full sm:w-[150px]"
+              aria-label={t("sessions.filters.status")}
+            >
+              <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
+              <SelectValue placeholder={t("sessions.filters.status")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("sessions.filters.allStatus")}
+              </SelectItem>
+              <SelectItem value="active">
+                {t("sessions.status.active")}
+              </SelectItem>
+              <SelectItem value="waiting">
+                {t("sessions.status.waiting")}
+              </SelectItem>
+              <SelectItem value="completed">
+                {t("sessions.status.completed")}
+              </SelectItem>
+              <SelectItem value="escalated">
+                {t("sessions.status.escalated")}
+              </SelectItem>
+              <SelectItem value="auto_closed">
+                {t("sessions.status.auto_closed")}
+              </SelectItem>
+              <SelectItem value="missed">
+                {t("sessions.status.missed")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={channelFilter} onValueChange={setChannelFilter}>
+            <SelectTrigger
+              className="w-full sm:w-[180px]"
+              aria-label={t("sessions.filters.channel")}
+            >
+              <SelectValue placeholder={t("sessions.filters.channel")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("sessions.filters.allChannels")}
+              </SelectItem>
+              <SelectItem value="whatsapp">
+                {t("sessions.channels.whatsapp")}
+              </SelectItem>
+              <SelectItem value="messenger">
+                {t("sessions.channels.messenger")}
+              </SelectItem>
+              <SelectItem value="sms">{t("sessions.channels.sms")}</SelectItem>
+              <SelectItem value="voice">
+                {t("sessions.channels.voice")}
+              </SelectItem>
+              <SelectItem value="email">
+                {t("sessions.channels.email")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger
+              className="w-full sm:w-[180px]"
+              aria-label={t("sessions.filters.type")}
+            >
+              <SelectValue placeholder={t("sessions.filters.type")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">
+                {t("sessions.filters.allTypes")}
+              </SelectItem>
+              {sessionTypes?.map((type) => (
+                <SelectItem key={type.id} value={type.id}>
+                  {type.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={dateRange.toString()}
+            onValueChange={(v) => setDateRange(parseInt(v))}
+          >
+            <SelectTrigger
+              className="w-full sm:w-[180px]"
+              aria-label={t("sessions.filters.dateRange")}
+            >
+              <SelectValue placeholder={t("sessions.filters.dateRange")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="1">{t("sessions.filters.last24h")}</SelectItem>
+              <SelectItem value="7">{t("sessions.filters.last7d")}</SelectItem>
+              <SelectItem value="30">
+                {t("sessions.filters.last30d")}
+              </SelectItem>
+              <SelectItem value="90">
+                {t("sessions.filters.last90d")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Tallies, not stat cards. */}
+          <div className="ms-auto flex flex-wrap items-center gap-4">
+            {tallies.map((tally) => (
+              <span key={tally.key} className="flex items-center gap-1.5">
+                <span
+                  className={cn("h-2 w-2 rounded-full", tally.dot)}
+                  aria-hidden="true"
                 />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger
-                  className="w-full sm:w-[150px]"
-                  aria-label={t("sessions.filters.status")}
-                >
-                  <Filter className="h-4 w-4 mr-2" aria-hidden="true" />
-                  <SelectValue placeholder={t("sessions.filters.status")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {t("sessions.filters.allStatus")}
-                  </SelectItem>
-                  <SelectItem value="active">
-                    {t("sessions.status.active")}
-                  </SelectItem>
-                  <SelectItem value="waiting">
-                    {t("sessions.status.waiting")}
-                  </SelectItem>
-                  <SelectItem value="completed">
-                    {t("sessions.status.completed")}
-                  </SelectItem>
-                  <SelectItem value="escalated">
-                    {t("sessions.status.escalated")}
-                  </SelectItem>
-                  <SelectItem value="auto_closed">
-                    {t("sessions.status.auto_closed")}
-                  </SelectItem>
-                  <SelectItem value="missed">
-                    {t("sessions.status.missed")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={channelFilter} onValueChange={setChannelFilter}>
-                <SelectTrigger
-                  className="w-full sm:w-[180px]"
-                  aria-label={t("sessions.filters.channel")}
-                >
-                  <SelectValue placeholder={t("sessions.filters.channel")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {t("sessions.filters.allChannels")}
-                  </SelectItem>
-                  <SelectItem value="whatsapp">
-                    {t("sessions.channels.whatsapp")}
-                  </SelectItem>
-                  <SelectItem value="messenger">
-                    {t("sessions.channels.messenger")}
-                  </SelectItem>
-                  <SelectItem value="sms">
-                    {t("sessions.channels.sms")}
-                  </SelectItem>
-                  <SelectItem value="voice">
-                    {t("sessions.channels.voice")}
-                  </SelectItem>
-                  <SelectItem value="email">
-                    {t("sessions.channels.email")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger
-                  className="w-full sm:w-[180px]"
-                  aria-label={t("sessions.filters.type")}
-                >
-                  <SelectValue placeholder={t("sessions.filters.type")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">
-                    {t("sessions.filters.allTypes")}
-                  </SelectItem>
-                  {sessionTypes?.map((type) => (
-                    <SelectItem key={type.id} value={type.id}>
-                      {type.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={dateRange.toString()}
-                onValueChange={(v) => setDateRange(parseInt(v))}
-              >
-                <SelectTrigger
-                  className="w-full sm:w-[180px]"
-                  aria-label={t("sessions.filters.dateRange")}
-                >
-                  <SelectValue placeholder={t("sessions.filters.dateRange")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">
-                    {t("sessions.filters.last24h")}
-                  </SelectItem>
-                  <SelectItem value="7">
-                    {t("sessions.filters.last7d")}
-                  </SelectItem>
-                  <SelectItem value="30">
-                    {t("sessions.filters.last30d")}
-                  </SelectItem>
-                  <SelectItem value="90">
-                    {t("sessions.filters.last90d")}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                onClick={handleDownloadSessions}
-                variant="outline"
-                size="icon"
-                className="border-dashed border-primary/30 hover:border-primary/60 hover:bg-primary/5 transition-all text-primary"
-                title={t("sessions.exportCsv")}
-                aria-label={t("sessions.exportCsv")}
-              >
-                <Download className="h-4 w-4" aria-hidden="true" />
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Simple Stats Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
-          <Card className="bg-status-success/5 border-status-success/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  {t("sessions.stats.activeSessions")}
-                </p>
-                <h4 className="text-xl font-bold text-status-success">
-                  {sessions?.filter((s) => s.status === "active").length || 0}
-                </h4>
-              </div>
-              <div className="p-2 bg-status-success/10 rounded-lg text-status-success">
-                <MessageCircle className="h-4 w-4" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-status-error/5 border-status-error/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  {t("sessions.stats.escalated")}
-                </p>
-                <h4 className="text-xl font-bold text-status-error">
-                  {sessions?.filter((s) => s.status === "escalated").length ||
-                    0}
-                </h4>
-              </div>
-              <div className="p-2 bg-status-error/10 rounded-lg text-status-error">
-                <Clock className="h-4 w-4" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-status-info/5 border-status-info/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  {t("sessions.stats.completed")}
-                </p>
-                <h4 className="text-xl font-bold text-status-info">
-                  {sessions?.filter((s) => s.status === "completed").length ||
-                    0}
-                </h4>
-              </div>
-              <div className="p-2 bg-status-info/10 rounded-lg text-status-info">
-                <CheckCircle className="h-4 w-4" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="bg-primary/5 border-primary/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium">
-                  {t("sessions.stats.totalAgents")}
-                </p>
-                <h4 className="text-xl font-bold text-primary">
-                  {employees?.length || 0}
-                </h4>
-              </div>
-              <div className="p-2 bg-primary/10 rounded-lg text-primary">
-                <Users className="h-4 w-4" aria-hidden="true" />
-              </div>
-            </CardContent>
-          </Card>
+                <span className="text-body-sm text-muted-foreground">
+                  {tally.label}
+                </span>
+                <span className="text-body-sm font-bold tabular-nums text-foreground">
+                  {tally.count}
+                </span>
+              </span>
+            ))}
+          </div>
         </div>
 
-        {showList && listSection}
-        {showDetail && detailSection}
+        {/* Two panes, one console. The rail holds a fixed 420px on a wide
+            screen; below `lg` the phone swaps between list and conversation. */}
+        <div className="flex min-h-0 flex-1 gap-5">
+          {showList && (
+            // Named region rather than a visible "Sessions Overview" heading:
+            // the rail's own header already says what it holds, so the heading
+            // was a second label for the same thing.
+            <section
+              aria-label={t("sessions.overviewTitle")}
+              className="flex min-h-0 w-full flex-col lg:w-[420px] lg:shrink-0"
+            >
+              {listSection}
+            </section>
+          )}
+          {showDetail && detailSection}
+        </div>
 
         {/* Assign Agent Dialog */}
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
@@ -1190,7 +1130,7 @@ export default function SessionsPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="unassign">
-                      {t("sessions.assign.unassign")}
+                      {t("sessions.table.aiAgent")}
                     </SelectItem>
                     {employees?.map((emp) => (
                       <SelectItem key={emp.id} value={emp.id}>

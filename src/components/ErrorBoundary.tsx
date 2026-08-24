@@ -28,7 +28,7 @@ function ErrorBoundaryFallback({ onReset }: { onReset: () => void }) {
   const { t } = useTranslation();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+    <div className="flex h-full min-h-screen w-full overflow-y-auto items-center justify-center bg-background p-6">
       <ErrorState
         title={t("feedback.boundaryTitle")}
         description={t("feedback.boundaryDescription")}

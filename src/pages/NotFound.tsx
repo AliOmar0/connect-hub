@@ -29,7 +29,7 @@ const NotFound = () => {
     <main
       id="main-content"
       role="main"
-      className="flex min-h-screen items-center justify-center bg-background px-4 py-8"
+      className="flex h-full min-h-screen w-full overflow-y-auto items-center justify-center bg-background px-4 py-8"
     >
       <div className="w-full max-w-md text-center">
         <p className="text-6xl font-bold tracking-tight text-primary">

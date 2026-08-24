@@ -2,7 +2,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Phone, MessageSquare, Clock, ChevronRight } from "lucide-react";
+import {
+  ChevronRight,
+  Clock,
+  Mail,
+  MessageCircle,
+  MessageSquare,
+  Phone,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
@@ -63,12 +71,39 @@ const statusConfig: Record<
   },
 };
 
-const channelMeta: Record<string, { icon: string; label: string }> = {
-  whatsapp: { icon: "🟢", label: "WhatsApp" },
-  messenger: { icon: "🔵", label: "Messenger" },
-  voice: { icon: "📞", label: "Voice call" },
-  sms: { icon: "💬", label: "SMS" },
-  email: { icon: "📧", label: "Email" },
+// Channels are drawn as stroke icons on token-backed tints, matching
+// SessionsTable. They used to be emoji (🟢🔵📞💬📧), which do not recolour with
+// the theme, render differently on every platform, and are decorative glyphs in
+// interface copy (Requirement 2.4).
+const channelMeta: Record<
+  string,
+  { Icon: LucideIcon; label: string; className: string }
+> = {
+  whatsapp: {
+    Icon: MessageCircle,
+    label: "WhatsApp",
+    className: "bg-chart-success/10 text-chart-success",
+  },
+  messenger: {
+    Icon: MessageSquare,
+    label: "Messenger",
+    className: "bg-chart-info/10 text-chart-info",
+  },
+  voice: {
+    Icon: Phone,
+    label: "Voice call",
+    className: "bg-chart-warning/10 text-chart-warning",
+  },
+  sms: {
+    Icon: MessageSquare,
+    label: "SMS",
+    className: "bg-chart-secondary/10 text-chart-secondary",
+  },
+  email: {
+    Icon: Mail,
+    label: "Email",
+    className: "bg-chart-primary/10 text-chart-primary",
+  },
 };
 
 function formatDurationFromSeconds(seconds: number): string {
@@ -169,8 +204,9 @@ export default function ActiveSessionsPanel({
             const duration = formatDurationFromSeconds(seconds);
             const isCall = session.channel === "voice";
             const channel = channelMeta[session.channel] || {
-              icon: "💬",
+              Icon: MessageSquare,
               label: session.channel,
+              className: "bg-status-neutral/10 text-status-neutral",
             };
             const status =
               statusConfig[session.status as keyof typeof statusConfig] ||
@@ -208,8 +244,15 @@ export default function ActiveSessionsPanel({
                         .toUpperCase() || "?"}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="absolute -bottom-1 -right-1 text-xs leading-none">
-                    {channel.icon}
+                  <span
+                    title={channel.label}
+                    className={cn(
+                      "absolute -bottom-1 -end-1 flex h-4 w-4 items-center justify-center rounded-full border border-card",
+                      channel.className,
+                    )}
+                  >
+                    <channel.Icon aria-hidden="true" className="h-2.5 w-2.5" />
+                    <span className="sr-only">{channel.label}</span>
                   </span>
                 </div>
 
@@ -222,7 +265,7 @@ export default function ActiveSessionsPanel({
                     <Badge
                       variant="outline"
                       className={cn(
-                        "text-[10px] font-medium gap-1 py-0",
+                        "text-overline font-medium gap-1 py-0",
                         status.className,
                       )}
                     >
@@ -245,7 +288,7 @@ export default function ActiveSessionsPanel({
                     )}
                   </p>
 
-                  <div className="flex items-center gap-3 text-[11px] text-muted-foreground mt-1">
+                  <div className="flex items-center gap-3 text-caption text-muted-foreground mt-1">
                     <span className="flex items-center gap-1">
                       {isCall ? (
                         <Phone className="h-3 w-3 text-gold" />

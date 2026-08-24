@@ -9,7 +9,7 @@
 //
 // Requirements: 2.2, 2.3, 11.4, 11.5, 11.6
 import { useEffect, useState } from "react";
-import { Bell, Search } from "lucide-react";
+import { Bell, LogOut, Search, UserRound } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
@@ -28,6 +28,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import {
+  CommandPalette,
+  useCommandPaletteHotkey,
+} from "@/components/layout/CommandPalette";
 import ThemeToggle from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
@@ -59,7 +63,7 @@ function resolvePageKey(pathname: string): string {
 }
 
 export default function AppShellHeader() {
-  const { user } = useAuth();
+  const { user, userRole, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
@@ -67,6 +71,14 @@ export default function AppShellHeader() {
 
   const isAuthenticated = !!user;
   const [logoError, setLogoError] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useCommandPaletteHotkey(setPaletteOpen);
+
+  // Mac reports "MacIntel"/"Mac" here; everything else gets the Ctrl label.
+  const paletteChordLabel =
+    typeof navigator !== "undefined" && /mac/i.test(navigator.platform || "")
+      ? "⌘K"
+      : "Ctrl K";
 
   const pageKey = resolvePageKey(location.pathname);
   const pageName = t(`appShell.header.pages.${pageKey}`);
@@ -157,7 +169,12 @@ export default function AppShellHeader() {
     `${profile?.first_name?.[0] || ""}${profile?.last_name?.[0] || ""}`.toUpperCase();
 
   return (
-    <header className="h-16 border-b border-border/80 bg-card/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-4 sticky top-0 z-30 transition-all">
+    // The bottom border lives on the header ROW in DashboardLayout, which spans
+    // the sidebar toggle too; repeating it here drew a double rule at two
+    // different opacities. `sticky`/`z-30`/`backdrop-blur` were also inert --
+    // this header's parent does not scroll, `<main>` is the scroll container --
+    // so they cost paint and bought nothing.
+    <header className="h-16 bg-card px-4 sm:px-6 flex items-center justify-between gap-4">
       {/* Brand + page context */}
       <div className="flex items-center gap-4 min-w-0">
         {/* PIB logo with bank-name text fallback that preserves layout */}
@@ -181,11 +198,11 @@ export default function AppShellHeader() {
 
         {/* Page-context indicator naming the current page */}
         <div
-          className="hidden sm:flex items-center gap-2 border-l border-border/70 pl-4 py-1 min-w-0"
+          className="hidden sm:flex items-center gap-2 border-s border-border/70 ps-4 py-1 min-w-0"
           aria-label={t("appShell.header.pageContextLabel")}
         >
           <div className="flex flex-col min-w-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/80">
+            <span className="text-overline font-bold uppercase tracking-wider text-muted-foreground/80">
               {t("appShell.header.pageContextLabel")}
             </span>
             <span
@@ -199,18 +216,33 @@ export default function AppShellHeader() {
         </div>
       </div>
 
-      {/* Search (auth-only: operates on protected data) */}
+      {/* Command palette trigger (auth-only: operates on protected data).
+          This was an `Input type="search"` with no value, onChange or onSubmit
+          -- an affordance that promised search and did nothing. It is now a
+          button that opens a real palette. */}
       {isAuthenticated && (
         <div className="flex-1 max-w-md hidden md:block">
-          <div className="relative group">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
-            <Input
-              type="search"
-              placeholder={t("appShell.header.searchPlaceholder")}
-              className="pl-10 h-9 bg-secondary/40 hover:bg-secondary/60 border-border/40 focus-visible:bg-background focus-visible:border-primary/50 focus-visible:ring-2 focus-visible:ring-primary/15 rounded-xl transition-all text-xs sm:text-sm"
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="group flex h-9 w-full items-center gap-2.5 rounded-xl border border-border/60 bg-secondary/40 ps-3 pe-2 text-start transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
+            <Search
+              aria-hidden="true"
+              className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground"
             />
-          </div>
+            <span className="flex-1 truncate text-body-sm text-muted-foreground">
+              {t("appShell.header.commandHint")}
+            </span>
+            <kbd className="hidden items-center gap-0.5 rounded-md border border-border/70 bg-background px-1.5 font-sans text-overline text-muted-foreground lg:inline-flex">
+              {paletteChordLabel}
+            </kbd>
+          </button>
         </div>
+      )}
+
+      {isAuthenticated && (
+        <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       )}
 
       {/* Right-side controls */}
@@ -234,7 +266,7 @@ export default function AppShellHeader() {
                 >
                   <Bell className="h-4 w-4 text-foreground/80" />
                   {notifications && notifications.count > 0 && (
-                    <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center ring-2 ring-background animate-pulse">
+                    <span className="absolute -top-1 -end-1 min-w-[18px] h-[18px] px-1 bg-destructive text-destructive-foreground text-caption font-bold rounded-full flex items-center justify-center ring-2 ring-background animate-pulse">
                       {notifications.count > 99 ? "99+" : notifications.count}
                     </span>
                   )}
@@ -271,7 +303,7 @@ export default function AppShellHeader() {
                             {notif.message}
                           </span>
                         )}
-                        <span className="text-[10px] text-muted-foreground/80 font-medium mt-0.5">
+                        <span className="text-caption text-muted-foreground/80 font-medium mt-0.5">
                           {formatDistanceToNow(new Date(notif.created_at), {
                             addSuffix: true,
                           })}
@@ -297,25 +329,63 @@ export default function AppShellHeader() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Account control */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full h-9 w-9 p-0 hover:ring-2 hover:ring-primary/40 transition-all"
-              onClick={() => navigate("/settings?tab=general")}
-              aria-label={
-                accountName
-                  ? `${t("appShell.header.account")}: ${accountName}`
-                  : t("appShell.header.account")
-              }
-            >
-              <Avatar className="h-9 w-9 border border-border/80">
-                <AvatarImage src={profile?.avatar_url || ""} alt="" />
-                <AvatarFallback className="bg-primary/15 text-primary text-xs font-bold">
-                  {accountInitials || "U"}
-                </AvatarFallback>
-              </Avatar>
-            </Button>
+            {/* Account menu. Previously this avatar navigated straight to
+                settings, which left Sign Out reachable only from the sidebar
+                footer -- where it is hidden while the sidebar is collapsed and
+                absent entirely below 1024px, since the mobile Sheet renders nav
+                items only. Putting it here makes it reachable at every
+                breakpoint and in both nav states. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-full h-9 w-9 p-0 hover:ring-2 hover:ring-primary/40 transition-all"
+                  aria-label={
+                    accountName
+                      ? `${t("appShell.header.account")}: ${accountName}`
+                      : t("appShell.header.account")
+                  }
+                >
+                  <Avatar className="h-9 w-9 border border-border/80">
+                    <AvatarImage src={profile?.avatar_url || ""} alt="" />
+                    <AvatarFallback className="bg-primary/15 text-primary text-xs font-bold">
+                      {accountInitials || "U"}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-60">
+                <DropdownMenuLabel className="flex flex-col gap-0.5">
+                  <span className="text-body-sm font-semibold text-foreground">
+                    {accountName || t("appShell.sidebar.userFallback")}
+                  </span>
+                  {userRole ? (
+                    <span className="text-caption font-normal text-muted-foreground">
+                      {t(`appShell.roles.${userRole}`)}
+                    </span>
+                  ) : null}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer min-h-[44px]"
+                  onClick={() => navigate("/settings?tab=general")}
+                >
+                  <UserRound aria-hidden="true" className="me-2 h-4 w-4" />
+                  {t("appShell.header.pages.settings")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="cursor-pointer min-h-[44px] text-destructive focus:text-destructive"
+                  onClick={() => {
+                    void signOut();
+                  }}
+                >
+                  <LogOut aria-hidden="true" className="me-2 h-4 w-4" />
+                  {t("appShell.sidebar.signOut")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </>
         )}
       </div>

@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,6 +11,16 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AsyncBoundary } from "@/components/ui/async-boundary";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { LiveRegion } from "@/components/ui/live-region";
 import {
   Select,
@@ -29,14 +41,18 @@ import {
   AlertCircle,
   Trash2,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { format, formatDistanceToNow, isToday, isYesterday } from "date-fns";
+import { ar as arLocale } from "date-fns/locale";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { Notification } from "@/types/database";
 import type { ViewStatus } from "@/types/presentation";
 import { touchTargetClass, touchGapClass } from "@/lib/touch-target";
 import { cn } from "@/lib/utils";
 
-type NotificationType = "info" | "success" | "warning" | "error";
+// `escalation` is what create_notification in the WhatsApp backend writes for
+// the most common notifications. It had no entry here or in either locale, so
+// the badge rendered the raw key string "notifications.types.escalation".
+type NotificationType = "escalation" | "info" | "success" | "warning" | "error";
 
 /**
  * Notification type -> semantic status token + shape (icon) cue. Colors come
@@ -48,6 +64,10 @@ const typeMeta: Record<
   NotificationType,
   { icon: React.ElementType; className: string }
 > = {
+  escalation: {
+    icon: AlertTriangle,
+    className: "border-status-error/40 bg-status-error/10 text-status-error",
+  },
   info: {
     icon: Info,
     className: "border-status-info/40 bg-status-info/10 text-status-info",
@@ -142,13 +162,19 @@ function assertAffected(rows: unknown[] | null, action: string, id: string) {
 }
 
 export default function NotificationsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<"all" | "unread" | "read">("all");
   // Message announced to assistive technology when the read state changes
   // (Requirement 20.4). Changing this value re-announces via the LiveRegion.
   const [readStateAnnouncement, setReadStateAnnouncement] = useState("");
+  const navigate = useNavigate();
+  // Confirmation targets. These replace two native window.confirm() calls,
+  // which were unstyled, untranslated in their chrome, and rendered LTR in an
+  // Arabic-first product -- every other page already used AlertDialog.
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [confirmDeleteAllRead, setConfirmDeleteAllRead] = useState(false);
 
   const {
     data: notifications = [],
@@ -349,7 +375,10 @@ export default function NotificationsPage() {
       markAsReadMutation.mutate(notification.id);
     }
     if (notification.action_url) {
-      window.location.href = notification.action_url;
+      // `window.location.href` triggered a full document load: it tore down the
+      // SPA, re-ran auth, and discarded the whole react-query cache just to open
+      // a session or complaint.
+      navigate(notification.action_url);
     }
   };
 
@@ -363,6 +392,41 @@ export default function NotificationsPage() {
         ? "empty"
         : "loaded";
 
+  // Day buckets, in the order the query already returns (newest first). Today
+  // and yesterday get relative headings; everything older gets a locale date.
+  const groupedNotifications = useMemo(() => {
+    const groups: Array<{
+      key: string;
+      label: string;
+      items: Notification[];
+    }> = [];
+    const byKey = new Map<string, (typeof groups)[number]>();
+
+    for (const notification of notifications) {
+      const created = new Date(notification.created_at);
+      const key = format(created, "yyyy-MM-dd");
+      let group = byKey.get(key);
+      if (!group) {
+        group = {
+          key,
+          label: isToday(created)
+            ? t("notifications.groups.today")
+            : isYesterday(created)
+              ? t("notifications.groups.yesterday")
+              : format(created, "d MMMM yyyy", {
+                  locale: i18n.language.startsWith("ar") ? arLocale : undefined,
+                }),
+          items: [],
+        };
+        byKey.set(key, group);
+        groups.push(group);
+      }
+      group.items.push(notification);
+    }
+
+    return groups;
+  }, [notifications, t, i18n.language]);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -370,14 +434,10 @@ export default function NotificationsPage() {
         <LiveRegion message={readStateAnnouncement} politeness="polite" />
 
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-          <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-display font-bold tracking-tight text-foreground">
-              {t("notifications.title")}
-            </h1>
-            <p className="text-muted-foreground">
-              {t("notifications.subtitle")}
-            </p>
-          </div>
+          <PageHeader
+            title={t("notifications.title")}
+            description={t("notifications.subtitle")}
+          />
           <div className="flex flex-wrap items-center gap-2 touch-gap">
             <Select
               value={filter}
@@ -412,19 +472,6 @@ export default function NotificationsPage() {
                 {t("notifications.markAllRead")}
               </Button>
             )}
-            <Button
-              variant="outline"
-              className="text-destructive hover:text-destructive"
-              onClick={() => {
-                if (window.confirm(t("notifications.confirmDeleteAllRead"))) {
-                  deleteAllReadMutation.mutate();
-                }
-              }}
-              disabled={deleteAllReadMutation.isPending}
-            >
-              <Trash2 className="me-2 h-4 w-4" aria-hidden="true" />
-              {t("notifications.deleteAllRead")}
-            </Button>
           </div>
         </div>
 
@@ -438,117 +485,221 @@ export default function NotificationsPage() {
           errorTitle={t("notifications.loadErrorTitle")}
           errorDescription={t("notifications.loadErrorDescription")}
         >
-          <ul className="space-y-3">
-            {notifications.map((notification) => {
-              const type = (notification.type || "info") as NotificationType;
-              const meta = typeMeta[type] ?? typeMeta.info;
-              const TypeIcon = meta.icon;
-              const isRead = !!notification.is_read;
+          {/* Grouped by day. A flat list of cards gave no sense of when
+              anything arrived beyond a relative timestamp per row, so a
+              backlog read as one undifferentiated stack. */}
+          <div className="space-y-6">
+            {groupedNotifications.map((group) => (
+              <section key={group.key} aria-labelledby={`notif-${group.key}`}>
+                <h2
+                  id={`notif-${group.key}`}
+                  className="mb-3 text-overline uppercase text-muted-foreground"
+                >
+                  {group.label}
+                </h2>
+                <ul className="space-y-3">
+                  {group.items.map((notification) => {
+                    const type = (notification.type ||
+                      "info") as NotificationType;
+                    const meta = typeMeta[type] ?? typeMeta.info;
+                    const TypeIcon = meta.icon;
+                    const isRead = !!notification.is_read;
 
-              return (
-                <li key={notification.id}>
-                  <Card
-                    className={cn(
-                      "cursor-pointer shadow-card transition-shadow hover:shadow-md",
-                      !isRead && "border-primary/40 bg-primary/5",
-                    )}
-                    onClick={() => handleNotificationClick(notification)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Bell
-                              className={cn(
-                                "h-4 w-4",
-                                isRead
-                                  ? "text-muted-foreground"
-                                  : "text-primary",
-                              )}
-                              aria-hidden="true"
-                            />
-                            <h2
-                              className={cn(
-                                "text-base font-semibold",
-                                isRead
-                                  ? "font-medium text-muted-foreground"
-                                  : "text-foreground",
-                              )}
-                            >
-                              {notification.title}
-                            </h2>
-                            <ReadStateBadge isRead={isRead} />
-                          </div>
-                          {notification.message && (
-                            <p className="text-sm text-muted-foreground">
-                              {notification.message}
-                            </p>
+                    return (
+                      <li key={notification.id}>
+                        <Card
+                          className={cn(
+                            "cursor-pointer shadow-card transition-shadow hover:shadow-md",
+                            !isRead && "border-primary/40 bg-primary/5",
                           )}
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge
-                              variant="outline"
-                              className={cn("gap-1 text-xs", meta.className)}
-                            >
-                              <TypeIcon
-                                className="h-3 w-3"
-                                aria-hidden="true"
-                              />
-                              <span>{t(`notifications.types.${type}`)}</span>
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">
-                              {formatDistanceToNow(
-                                new Date(notification.created_at),
-                                { addSuffix: true },
-                              )}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 touch-gap">
-                          {!isRead && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label={t("notifications.markAsRead")}
-                              className={touchTargetClass(
-                                "grow",
-                                "text-muted-foreground hover:text-primary",
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                markAsReadMutation.mutate(notification.id);
-                              }}
-                            >
-                              <Check className="h-4 w-4" aria-hidden="true" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={t("notifications.delete")}
-                            className={touchTargetClass(
-                              "grow",
-                              "text-muted-foreground hover:text-destructive",
-                            )}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (
-                                window.confirm(t("notifications.confirmDelete"))
-                              ) {
-                                deleteMutation.mutate(notification.id);
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </li>
-              );
-            })}
-          </ul>
+                          onClick={() => handleNotificationClick(notification)}
+                        >
+                          <CardContent className="p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Bell
+                                    className={cn(
+                                      "h-4 w-4",
+                                      isRead
+                                        ? "text-muted-foreground"
+                                        : "text-primary",
+                                    )}
+                                    aria-hidden="true"
+                                  />
+                                  <h2
+                                    className={cn(
+                                      "text-base font-semibold",
+                                      isRead
+                                        ? "font-medium text-muted-foreground"
+                                        : "text-foreground",
+                                    )}
+                                  >
+                                    {notification.title}
+                                  </h2>
+                                  <ReadStateBadge isRead={isRead} />
+                                </div>
+                                {notification.message && (
+                                  <p className="text-sm text-muted-foreground">
+                                    {notification.message}
+                                  </p>
+                                )}
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className={cn(
+                                      "gap-1 text-xs",
+                                      meta.className,
+                                    )}
+                                  >
+                                    <TypeIcon
+                                      className="h-3 w-3"
+                                      aria-hidden="true"
+                                    />
+                                    <span>
+                                      {t(`notifications.types.${type}`)}
+                                    </span>
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatDistanceToNow(
+                                      new Date(notification.created_at),
+                                      { addSuffix: true },
+                                    )}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 touch-gap">
+                                {!isRead && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label={t("notifications.markAsRead")}
+                                    className={touchTargetClass(
+                                      "grow",
+                                      "text-muted-foreground hover:text-primary",
+                                    )}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      markAsReadMutation.mutate(
+                                        notification.id,
+                                      );
+                                    }}
+                                  >
+                                    <Check
+                                      className="h-4 w-4"
+                                      aria-hidden="true"
+                                    />
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  aria-label={t("notifications.delete")}
+                                  className={touchTargetClass(
+                                    "grow",
+                                    "text-muted-foreground hover:text-destructive",
+                                  )}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteTarget(notification.id);
+                                  }}
+                                >
+                                  <Trash2
+                                    className="h-4 w-4"
+                                    aria-hidden="true"
+                                  />
+                                </Button>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+
+            {/* Housekeeping. "Delete all read" is irreversible and bulk; it
+                used to sit in the header as a peer of "Mark all read", one
+                slip away from the safe action it looks like. It belongs at
+                the foot of the list, after everything it would delete. */}
+            <section
+              aria-labelledby="notif-housekeeping"
+              className="border-t border-border pt-4"
+            >
+              <h2
+                id="notif-housekeeping"
+                className="mb-3 text-overline uppercase text-muted-foreground"
+              >
+                {t("notifications.housekeeping")}
+              </h2>
+              <Button
+                variant="outline"
+                className="min-h-[44px] text-destructive hover:text-destructive"
+                onClick={() => setConfirmDeleteAllRead(true)}
+                disabled={deleteAllReadMutation.isPending}
+              >
+                <Trash2 className="me-2 h-4 w-4" aria-hidden="true" />
+                {t("notifications.deleteAllRead")}
+              </Button>
+            </section>
+          </div>
         </AsyncBoundary>
+
+        <AlertDialog
+          open={deleteTarget !== null}
+          onOpenChange={(open) => !open && setDeleteTarget(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("notifications.delete")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("notifications.confirmDelete")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (deleteTarget) deleteMutation.mutate(deleteTarget);
+                  setDeleteTarget(null);
+                }}
+              >
+                {t("notifications.delete")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog
+          open={confirmDeleteAllRead}
+          onOpenChange={setConfirmDeleteAllRead}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("notifications.deleteAllRead")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("notifications.confirmDeleteAllRead")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  deleteAllReadMutation.mutate();
+                  setConfirmDeleteAllRead(false);
+                }}
+              >
+                {t("notifications.deleteAllRead")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </DashboardLayout>
   );

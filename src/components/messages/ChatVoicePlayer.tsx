@@ -99,7 +99,7 @@ export const ChatVoicePlayer: React.FC<ChatVoicePlayerProps> = ({
         <div className="flex justify-between items-center">
           <span
             className={cn(
-              "text-[10px] font-medium",
+              "text-caption font-medium",
               isOutbound
                 ? "text-primary-foreground/80"
                 : "text-muted-foreground",
@@ -116,7 +116,7 @@ export const ChatVoicePlayer: React.FC<ChatVoicePlayerProps> = ({
             />
             <span
               className={cn(
-                "text-[10px]",
+                "text-caption",
                 isOutbound ? "text-white" : "text-primary",
               )}
             >

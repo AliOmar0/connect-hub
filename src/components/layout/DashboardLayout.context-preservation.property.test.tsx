@@ -210,8 +210,10 @@ describe("DashboardLayout – breakpoint change preserves context and data (prop
             // Sanity: the nav variant tracks the final active breakpoint, i.e.
             // adaptation actually happened as pure responsive state.
             const finalWidth = laterWidths[laterWidths.length - 1];
+            // A persistent sidebar from the tablet tier up (an icon rail at
+            // 768-1023px, full width from 1024px); the Sheet menu below it.
             const expectedVariant =
-              widthToBreakpoint(finalWidth) >= BREAKPOINTS.laptop
+              widthToBreakpoint(finalWidth) >= BREAKPOINTS.tablet
                 ? "sidebar"
                 : "menu";
             expect(screen.getByTestId("primary-nav")).toHaveAttribute(

@@ -283,6 +283,21 @@
     @apply border-border;
   }
 
+  html,
+  body {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: var(--font-body);
@@ -558,23 +573,27 @@
 }
 
 /* Custom scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.25) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: var(--radius-sm);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(var(--navy) / 0.3);
-  border-radius: var(--radius-sm);
+  background: hsl(var(--muted-foreground) / 0.25);
+  border-radius: var(--radius-full);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--navy) / 0.5);
+  background: hsl(var(--muted-foreground) / 0.45);
 }
 
 /* Chart customizations */

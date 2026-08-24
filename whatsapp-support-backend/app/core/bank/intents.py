@@ -27,25 +27,6 @@ from app.core.nlp.normalize import (
 # identity claim the same way extract_otp_code pulls out a 6-digit code.
 NATIONAL_ID_LENGTH = 9
 
-# Stripped off the start of an identity claim before whatever's left is taken
-# as the name, so "الاسم محمد احمد" and "محمد احمد" both yield "محمد احمد".
-# Order matters: longer/more specific phrases first, so a prefix match doesn't
-# eat part of a shorter one it also contains.
-_RAW_IDENTITY_LABELS = (
-    "رقم الهوية الوطنية",
-    "رقم الهوية",
-    "الهوية الوطنية",
-    "الهوية",
-    "اسمي",
-    "الاسم الكامل",
-    "الاسم",
-    "اسم",
-    "name",
-    "id number",
-    "national id",
-)
-
-
 class AccountField(str, Enum):
     """The only fields that may ever be disclosed to a verified customer.
 
@@ -264,14 +245,6 @@ _LIMIT_MARKERS = _canon_all(_RAW_LIMIT_MARKERS)
 _STRONG_PERSONAL = _canon_all(("حسابي", "رصيدي", "بطاقتي", "بطاقاتي", "تمويلي", "قرضي"))
 _CANCEL_KEYWORDS = _canon_all(("إلغاء", "الغاء", "cancel", "stop", "توقف"))
 
-# NOT run through _canon() like the other lexicons: _canon() strips clitics
-# and folds letters aggressively (built for matching short keywords against
-# normalised text), which would mangle a label before it's stripped back out
-# of a name. Matched case-sensitively-normalised-lowercase only, in
-# _strip_identity_labels below.
-_IDENTITY_LABELS = tuple(dict.fromkeys(_RAW_IDENTITY_LABELS))
-
-
 def match_account_intent(text: str) -> Tuple[AccountField, ...]:
     """Return the allowlisted fields this message is asking for.
 
@@ -354,48 +327,48 @@ def mentions_cancel(text: str) -> bool:
     return any(k in canon for k in _CANCEL_KEYWORDS)
 
 
-def _strip_identity_labels(text: str) -> str:
-    """Remove leading/embedded field labels ("الاسم:", "name:", ...) and
-    stray punctuation, leaving just the name text."""
-    stripped = text
-    for label in _IDENTITY_LABELS:
-        stripped = re.sub(re.escape(label), " ", stripped, flags=re.IGNORECASE)
-    # Labels are often followed by ":" or "："; digits are pulled out by the
-    # caller before this runs, so any leftover punctuation is just noise.
-    stripped = re.sub(r"[:：,،\-.]+", " ", stripped)
-    return re.sub(r"\s+", " ", stripped).strip()
+# Date of birth as written in a free-text message. Year-first (ISO) is tried
+# before day-first so "1990-05-15" isn't read as day 19. Both require
+# separators: a bare "15051990" is genuinely ambiguous about where the day
+# ends, so it is refused and re-prompted rather than guessed at.
+_ISO_DATE_IN_TEXT = re.compile(r"(?<!\d)(\d{4}[-/.]\d{1,2}[-/.]\d{1,2})(?!\d)")
+_DAY_FIRST_DATE_IN_TEXT = re.compile(r"(?<!\d)(\d{1,2}[-/.]\d{1,2}[-/.]\d{4})(?!\d)")
 
 
 def extract_identity_claim(text: str) -> Optional[Tuple[str, str]]:
-    """Pull a (full_name, national_id) pair out of a free-text reply.
+    """Pull a (national_id, date_of_birth) pair out of a free-text reply.
 
-    Mirrors extract_otp_code: looks for exactly NATIONAL_ID_LENGTH digits (not
-    part of a longer run) after Arabic-Indic normalisation, and treats
-    whatever text is left -- once known field labels and punctuation are
-    stripped -- as the name. Returns None when no plausible ID run is found,
-    or when nothing recognisable as a name is left; the caller re-prompts
-    rather than guessing, and does NOT count that as a failed attempt (only a
+    Returns the date as the RAW matched string -- parsing and validating it is
+    app.core.bank.identity_input.normalize_identity_input's job, so WhatsApp
+    and the voice agent (which receives the two values as separate tool
+    arguments) apply exactly the same rules.
+
+    Returns None when either half is missing; the caller re-prompts rather
+    than guessing, and does NOT count that as a failed attempt (only a
     resolved-but-not-found identity should).
     """
     if not text:
         return None
     digits_text = normalize_digits(text)
+
+    # The date is found FIRST, on separator-intact text, and cut out before
+    # the ID is looked for. Order matters both ways: the separator-collapsing
+    # below would turn "15-05-1990" into the 8-digit run "15051990", and a
+    # date left in place can donate digits to the ID search.
+    date_match = _ISO_DATE_IN_TEXT.search(digits_text) or _DAY_FIRST_DATE_IN_TEXT.search(
+        digits_text
+    )
+    if not date_match:
+        return None
+    date_of_birth = date_match.group(1)
+    id_source = digits_text[: date_match.start()] + " " + digits_text[date_match.end() :]
+
     # "123-456-789" / "123.456.789" are still one ID -- collapse a '-' or '.'
-    # only when BOTH neighbours are digits, so hyphens/periods elsewhere in the
-    # message (including inside the name) are left alone.
-    digits_text = re.sub(r"(?<=\d)[-.](?=\d)", "", digits_text)
-    matches = re.findall(rf"(?<!\d)(\d{{{NATIONAL_ID_LENGTH}}})(?!\d)", digits_text)
+    # only when BOTH neighbours are digits, so separators elsewhere in the
+    # message are left alone. Safe to do now that the date is out of the way.
+    id_source = re.sub(r"(?<=\d)[-.](?=\d)", "", id_source)
+    matches = re.findall(rf"(?<!\d)(\d{{{NATIONAL_ID_LENGTH}}})(?!\d)", id_source)
     if not matches:
         return None
-    national_id = matches[-1]
 
-    # Drop every run of NATIONAL_ID_LENGTH+ digits (not just the matched one)
-    # so a longer adjacent run -- which failed the exact-length match above --
-    # doesn't get left behind in the "name".
-    name_source = re.sub(rf"\d{{{NATIONAL_ID_LENGTH},}}", " ", digits_text)
-    name = _strip_identity_labels(name_source)
-    # A bare single word ("محمد") is too weak to treat as a full name claim --
-    # re-prompt instead of sending an RPC that is certain to miss.
-    if len(name) < 4 or " " not in name:
-        return None
-    return name, national_id
+    return matches[-1], date_of_birth

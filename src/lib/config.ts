@@ -33,6 +33,13 @@ export const SLA_OUT_OF_HOURS_SECONDS = Number(
   import.meta.env.VITE_SLA_OUT_OF_HOURS_SECONDS || 600,
 );
 
+// Below this many seconds remaining, a waiting session is "due soon": still
+// inside its SLA, but close enough that it needs an owner now. Presentation
+// only -- nothing is escalated or timed out on this threshold.
+export const SLA_DUE_SOON_SECONDS = Number(
+  import.meta.env.VITE_SLA_DUE_SOON_SECONDS || 30,
+);
+
 // Wrapper around fetch for calls to our own backends. When the target is an
 // ngrok tunnel (used for quick demos against a local backend), free ngrok shows
 // an HTML interstitial unless this header is present. The header is harmless on

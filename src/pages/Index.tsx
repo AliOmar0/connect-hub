@@ -1,7 +1,13 @@
 import { useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import StatsCard, { StatsCardSkeleton } from "@/components/dashboard/StatsCard";
+import { PageHeader } from "@/components/layout/PageHeader";
+import {
+  MetricCard,
+  MetricCardSkeleton,
+} from "@/components/dashboard/MetricCard";
 import ConversationsChart from "@/components/dashboard/ConversationsChart";
 import ChannelDistributionChart from "@/components/dashboard/ChannelDistributionChart";
 import ActiveSessionsPanel from "@/components/dashboard/ActiveSessionsPanel";
@@ -12,17 +18,17 @@ import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { ViewStatus } from "@/types/presentation";
 import {
-  MessageSquare,
-  Phone,
   Users,
   Headphones,
   Clock,
   CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { format, subDays, startOfMonth } from "date-fns";
 
 export default function Index() {
+  const { t, i18n } = useTranslation();
   const {
     data: stats,
     isLoading: statsLoading,
@@ -72,6 +78,14 @@ export default function Index() {
         .from("employees")
         .select("*", { count: "exact", head: true })
         .eq("is_active", true);
+
+      // Distinct customers seen this month. Counted from `customers` by
+      // creation date rather than from sessions: a session row per contact
+      // would count the same person once per conversation.
+      const { count: uniqueCustomers } = await supabase
+        .from("customers")
+        .select("*", { count: "exact", head: true })
+        .gte("created_at", monthStart.toISOString());
 
       // Avg Response Time (today)
       const todayStart = new Date();
@@ -129,6 +143,7 @@ export default function Index() {
           count: callsCount || 0,
           trend: callsTrend,
         },
+        uniqueCustomers: uniqueCustomers || 0,
         activeSessions: activeSessions || 0,
         activeAgents: activeAgents || 0,
         avgResponseTime: avgResponseTimeSeconds
@@ -145,7 +160,9 @@ export default function Index() {
     isError: channelError,
     refetch: refetchChannels,
   } = useQuery({
-    queryKey: ["dashboard-channels"],
+    // The language is part of the key: the slice labels are translated inside
+    // the query, so a cached result from another locale would show stale names.
+    queryKey: ["dashboard-channels", i18n.language],
     queryFn: async () => {
       const { data: sessions } = await supabase
         .from("sessions")
@@ -165,10 +182,10 @@ export default function Index() {
       return channelTypes.map((channel) => {
         const count = channelCounts[channel] || 0;
         return {
-          name:
-            channel === "voice"
-              ? "Phone Calls"
-              : channel.charAt(0).toUpperCase() + channel.slice(1),
+          // The shared channel catalogue rather than capitalising the raw key,
+          // which rendered "Whatsapp", and rather than a hard-coded English
+          // "Phone Calls" in an Arabic-first product.
+          name: t(`sessions.channels.${channel}`, { defaultValue: channel }),
           value: total > 0 ? Math.round((count / total) * 100) : 0,
           color:
             channel === "whatsapp"
@@ -186,6 +203,7 @@ export default function Index() {
   const {
     data: activeSessions,
     isLoading: activeSessionsLoading,
+    isError: activeSessionsError,
     refetch: refetchActiveSessions,
   } = useQuery({
     queryKey: ["dashboard-active-sessions"],
@@ -253,7 +271,12 @@ export default function Index() {
     };
   }, [refetchStats, refetchActiveSessions]);
 
-  const { data: employees } = useQuery({
+  const {
+    data: employees,
+    isLoading: employeesLoading,
+    isError: employeesError,
+    refetch: refetchEmployees,
+  } = useQuery({
     queryKey: ["dashboard-employees"],
     queryFn: async () => {
       const { data } = await supabase
@@ -267,7 +290,12 @@ export default function Index() {
     },
   });
 
-  const { data: integrations } = useQuery({
+  const {
+    data: integrations,
+    isLoading: integrationsLoading,
+    isError: integrationsError,
+    refetch: refetchIntegrations,
+  } = useQuery({
     queryKey: ["dashboard-integrations"],
     queryFn: async () => {
       const { data } = await supabase
@@ -294,67 +322,61 @@ export default function Index() {
   // Metric definitions. Each card renders through its own AsyncBoundary so a
   // load failure surfaces a per-card ErrorState with a retry action
   // (Requirements 12.2, 12.3), while sharing one set of color/spacing/
-  // typography/radius/elevation tokens via StatsCard (Requirement 12.1).
-  const metricCards = [
-    {
-      key: "messages",
-      title: "Total Messages",
-      value: formatNumber(stats?.messages.count || 0),
-      icon: MessageSquare,
-      trend: stats?.messages.trend
-        ? {
-            value: Math.abs(stats.messages.trend),
-            isPositive: stats.messages.trend > 0,
-          }
-        : undefined,
-      subtitle: "This month",
-      variant: "navy" as const,
-    },
-    {
-      key: "calls",
-      title: "Total Calls",
-      value: formatNumber(stats?.calls.count || 0),
-      icon: Phone,
-      trend: stats?.calls.trend
-        ? {
-            value: Math.abs(stats.calls.trend),
-            isPositive: stats.calls.trend > 0,
-          }
-        : undefined,
-      subtitle: "This month",
-      variant: "gold" as const,
-    },
-    {
-      key: "activeSessions",
-      title: "Active Sessions",
-      value: (stats?.activeSessions || 0).toString(),
-      icon: Headphones,
-      subtitle: "Right now",
-      variant: "success" as const,
-    },
+  // Metric hierarchy (Requirement 12.1). Six coequal cards meant nothing was
+  // primary, and two of them were month-to-date accounting figures sitting
+  // beside a live count. The one number a supervisor acts on is promoted; the
+  // accounting totals move to a subordinate strip below.
+  const primaryMetric = {
+    key: "activeSessions",
+    label: t("dashboard.metrics.activeSessions"),
+    value: (stats?.activeSessions || 0).toString(),
+    hint: t("dashboard.metrics.activeSessionsHint"),
+    icon: Headphones,
+    tone: "success" as const,
+  };
+
+  const supportingMetrics = [
     {
       key: "activeAgents",
-      title: "Active Agents",
+      label: t("dashboard.metrics.activeAgents"),
       value: (stats?.activeAgents || 0).toString(),
+      hint: t("dashboard.metrics.activeAgentsHint"),
       icon: Users,
-      subtitle: "Online",
-      variant: "info" as const,
+      tone: "info" as const,
     },
     {
       key: "avgResponse",
-      title: "Avg. Response",
+      label: t("dashboard.metrics.avgResponse"),
       value: stats?.avgResponseTime || "0m",
+      hint: t("dashboard.metrics.avgResponseHint"),
       icon: Clock,
-      subtitle: "Today",
-      variant: "warning" as const,
+      tone: "warning" as const,
     },
     {
       key: "resolutionRate",
-      title: "Resolution Rate",
+      label: t("dashboard.metrics.resolutionRate"),
       value: `${stats?.resolutionRate || 0}%`,
+      hint: t("dashboard.metrics.resolutionRateHint"),
       icon: CheckCircle2,
-      subtitle: "This week",
-      variant: "success" as const,
+      tone: "success" as const,
+    },
+  ];
+
+  const monthToDate = [
+    {
+      key: "messages",
+      label: t("dashboard.metrics.messages"),
+      value: formatNumber(stats?.messages.count || 0),
+    },
+    {
+      key: "calls",
+      label: t("dashboard.metrics.calls"),
+      value: formatNumber(stats?.calls.count || 0),
+    },
+    {
+      key: "uniqueCustomers",
+      label: t("dashboard.metrics.uniqueCustomers"),
+      value: formatNumber(stats?.uniqueCustomers || 0),
     },
   ];
 
@@ -362,11 +384,10 @@ export default function Index() {
     <DashboardLayout>
       <div className="space-y-6">
         {/* Page Header */}
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-display font-bold tracking-tight">
-            Dashboard
-          </h1>
-        </div>
+        <PageHeader
+          title={t("dashboard.title")}
+          description={t("dashboard.subtitle")}
+        />
 
         {/*
           Stats Grid. Single column below 768px per Requirement 12.6 (md = 768).
@@ -374,24 +395,75 @@ export default function Index() {
           the document direction, so metric-card order follows RTL reading order
           (Requirement 12.5).
         */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-          {metricCards.map((card) => (
-            <AsyncBoundary
-              key={card.key}
-              status={statsStatus}
-              skeleton={<StatsCardSkeleton />}
-              onRetry={() => refetchStats()}
-            >
-              <StatsCard
-                title={card.title}
-                value={card.value}
-                icon={card.icon}
-                trend={card.trend}
-                subtitle={card.subtitle}
-                variant={card.variant}
-              />
-            </AsyncBoundary>
+        {/* One hero figure and three supporting ones, not four coequal cards:
+            the hero is the number a supervisor acts on, and it is sized and
+            coloured to win. It holds a fixed 356px on a wide screen and drops
+            to full width below `lg`, where a row of four does not fit. */}
+        <div className="flex flex-col gap-4 lg:flex-row">
+          <AsyncBoundary
+            status={statsStatus}
+            skeleton={<MetricCardSkeleton variant="hero" />}
+            onRetry={() => refetchStats()}
+          >
+            <MetricCard
+              variant="hero"
+              overline={t("dashboard.metrics.liveNow")}
+              badge={t("dashboard.metrics.liveBadge")}
+              label={primaryMetric.label}
+              value={primaryMetric.value}
+              hint={primaryMetric.hint}
+              className="lg:w-[356px] lg:shrink-0"
+            />
+          </AsyncBoundary>
+
+          <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-3">
+            {supportingMetrics.map((card) => (
+              <AsyncBoundary
+                key={card.key}
+                status={statsStatus}
+                skeleton={<MetricCardSkeleton />}
+                onRetry={() => refetchStats()}
+              >
+                <MetricCard
+                  label={card.label}
+                  value={card.value}
+                  hint={card.hint}
+                  icon={card.icon}
+                  tone={card.tone}
+                />
+              </AsyncBoundary>
+            ))}
+          </div>
+        </div>
+
+        {/* Month-to-date accounting totals, deliberately subordinate: they are
+            not something anyone acts on during a shift. */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-border bg-secondary/40 px-5 py-3">
+          <span className="text-overline uppercase text-muted-foreground">
+            {t("dashboard.metrics.monthToDate")}
+          </span>
+          {monthToDate.map((item) => (
+            <span key={item.key} className="flex items-baseline gap-2">
+              <span className="text-body-sm text-muted-foreground">
+                {item.label}
+              </span>
+              <span className="font-display text-body font-bold tabular-nums text-foreground">
+                {item.value}
+              </span>
+            </span>
           ))}
+          {/* Where these totals can actually be interrogated. Without it the
+              strip is a dead end. */}
+          <Link
+            to="/analytics"
+            className="ms-auto inline-flex min-h-[44px] items-center gap-1 text-body-sm font-medium text-primary hover:underline"
+          >
+            {t("dashboard.metrics.viewAnalytics")}
+            <ArrowRight
+              className="h-4 w-4 rtl:-scale-x-100"
+              aria-hidden="true"
+            />
+          </Link>
         </div>
 
         {/* Main Charts Row */}
@@ -411,15 +483,33 @@ export default function Index() {
         {/* Active Sessions & Response Time */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
-            <ActiveSessionsPanel sessions={activeSessions || []} />
+            <AsyncBoundary
+              status={toStatus(activeSessionsLoading, activeSessionsError)}
+              skeleton={<Skeleton className="h-[360px] w-full rounded-lg" />}
+              onRetry={() => refetchActiveSessions()}
+            >
+              <ActiveSessionsPanel sessions={activeSessions || []} />
+            </AsyncBoundary>
           </div>
           <ResponseTimeChart />
         </div>
 
         {/* Team & Integrations */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <EmployeesTable employees={employees || []} />
-          <IntegrationStatus integrations={integrations || []} />
+          <AsyncBoundary
+            status={toStatus(employeesLoading, employeesError)}
+            skeleton={<Skeleton className="h-[360px] w-full rounded-lg" />}
+            onRetry={() => refetchEmployees()}
+          >
+            <EmployeesTable employees={employees || []} />
+          </AsyncBoundary>
+          <AsyncBoundary
+            status={toStatus(integrationsLoading, integrationsError)}
+            skeleton={<Skeleton className="h-[360px] w-full rounded-lg" />}
+            onRetry={() => refetchIntegrations()}
+          >
+            <IntegrationStatus integrations={integrations || []} />
+          </AsyncBoundary>
         </div>
       </div>
     </DashboardLayout>

@@ -17,10 +17,17 @@
 -- data itself still only flows through get_bank_account_by_phone, once the
 -- phone-on-file's OTP has been verified.
 --
--- NO BIRTHDAY: the live schema (verified over PostgREST) has no
--- date_of_birth/birthday column on public.customers. Matching is name +
--- national_id only. See scripts/sql/bank_db_oss_readonly.sql's header for the
--- full verified schema.
+-- SUPERSEDED by scripts/sql/bank_db_oss_identity_lookup_v3.sql, which matches
+-- on national_id + date_of_birth instead of national_id + full_name. This file
+-- is kept for history only; v3 DROPs the function it creates. Nothing in the
+-- app calls it -- app/database.py's BANK_IDENTITY_RPC points at v3.
+--
+-- Its original header claimed "the live schema (verified over PostgREST) has no
+-- date_of_birth/birthday column on public.customers". That was WRONG, and the
+-- claim is removed rather than left to mislead again: it misread
+-- bank_db_oss_readonly.sql's header ("SCHEMA THIS TARGETS" -- the columns those
+-- scripts use, not an exhaustive catalog). scripts/sql/bankdboss.sql:40, a real
+-- catalog export, defines date_of_birth as `date NOT NULL`.
 -- =============================================================================
 
 drop function if exists public.get_bank_customer_phone_by_identity(text, text);

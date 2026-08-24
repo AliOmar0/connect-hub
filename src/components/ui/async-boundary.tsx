@@ -10,6 +10,13 @@ export interface AsyncBoundaryProps {
   /** Lifecycle status of the wrapped data view. */
   status: ViewStatus;
   /**
+   * Applied to the wrapping div. Needed whenever the resolved content relies
+   * on a height/flex chain from its parent (e.g. an internally-scrolling
+   * list) -- without it this wrapper is a plain block that only takes its
+   * content's natural height, breaking that chain.
+   */
+  className?: string;
+  /**
    * Loading placeholder rendered while `status === "loading"`. Callers supply
    * a Skeleton (or equivalent) sized to the eventual content's footprint.
    */
@@ -62,6 +69,7 @@ const AsyncBoundary = React.forwardRef<HTMLDivElement, AsyncBoundaryProps>(
   (
     {
       status,
+      className,
       skeleton,
       children,
       onRetry,
@@ -125,7 +133,7 @@ const AsyncBoundary = React.forwardRef<HTMLDivElement, AsyncBoundaryProps>(
     }
 
     return (
-      <div ref={ref}>
+      <div ref={ref} className={className}>
         <LiveRegion
           message={announcement}
           politeness={politeness}

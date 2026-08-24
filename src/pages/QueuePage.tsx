@@ -15,6 +15,7 @@ import {
   TimerOff,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,7 +24,12 @@ import { AsyncBoundary } from "@/components/ui/async-boundary";
 import { BidiText } from "@/components/ui/bidi-text";
 import { notifySuccess, notifyError } from "@/lib/feedback";
 import { supabase } from "@/integrations/supabase/client";
-import { BACKEND_URL } from "@/lib/config";
+import {
+  BACKEND_URL,
+  SLA_BUSINESS_HOURS_SECONDS,
+  SLA_DUE_SOON_SECONDS,
+  SLA_OUT_OF_HOURS_SECONDS,
+} from "@/lib/config";
 
 // /api/v1/sessions* routes are protected by verify_jwt on the backend, so
 // every call needs the current Supabase access token attached (same pattern
@@ -40,11 +46,51 @@ import { maskText } from "@/lib/mask";
 import {
   useSlaTimer,
   formatCountdown,
+  isBusinessHours,
   type SlaState,
 } from "@/hooks/useSlaTimer";
 import type { ViewStatus } from "@/types/presentation";
 import { touchTargetClass } from "@/lib/touch-target";
 import { cn } from "@/lib/utils";
+
+/** Two initials for a queue card's avatar. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "—";
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? "") : "";
+  return (first + last).toUpperCase();
+}
+
+/**
+ * One bucket of the SLA summary strip. The count is paired with a text label
+ * and a token-backed dot, so the bucket is never identified by colour alone.
+ */
+function SlaTally({
+  tone,
+  label,
+  count,
+}: {
+  tone: "error" | "warning" | "success";
+  label: string;
+  count: number;
+}) {
+  const dot = {
+    error: "bg-status-error",
+    warning: "bg-status-warning",
+    success: "bg-status-success",
+  }[tone];
+
+  return (
+    <span className="flex items-center gap-2">
+      <span className={cn("h-2 w-2 rounded-full", dot)} aria-hidden="true" />
+      <span className="text-body-sm text-muted-foreground">{label}</span>
+      <span className="font-display text-body font-bold tabular-nums text-foreground">
+        {count}
+      </span>
+    </span>
+  );
+}
 
 interface QueueSession {
   id: string;
@@ -127,19 +173,25 @@ function QueueCard({
     <Card className="border-border/60 shadow-card">
       <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
         <div className="flex min-w-0 items-center gap-3">
+          {/* Initials, not a channel glyph. The channel is already named in
+              the line below, and who is waiting is what identifies the card. */}
           <div
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 font-display text-caption font-bold text-primary"
             aria-hidden="true"
           >
-            <ChannelIcon className="h-4 w-4" />
+            {initialsOf(customerName)}
           </div>
           <div className="min-w-0">
-            <p className="truncate font-medium text-foreground">
+            <p className="truncate text-body font-semibold text-foreground">
               {customerName}
             </p>
-            <p className="truncate text-xs text-muted-foreground">
-              <BidiText value={maskText(session.customer_phone) || "—"} /> ·{" "}
-              {session.channel}
+            <p className="flex items-center gap-1.5 truncate text-caption text-muted-foreground">
+              <ChannelIcon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              <BidiText value={maskText(session.customer_phone) || "—"} />
+              <span aria-hidden="true">·</span>
+              {t(`sessions.channels.${session.channel}`, {
+                defaultValue: session.channel,
+              })}
             </p>
           </div>
         </div>
@@ -161,7 +213,7 @@ function QueueCard({
         <p className="line-clamp-2 text-sm text-muted-foreground">
           {maskText(session.last_message) || "—"}
         </p>
-        <p className="text-[11px] text-muted-foreground/70">
+        <p className="text-caption text-muted-foreground/70">
           {t("queue.maskedNotice")}
         </p>
 
@@ -355,15 +407,72 @@ export default function QueuePage() {
         ? "empty"
         : "loaded";
 
+  // How the queue is doing against its SLA, at a glance. Each card carries its
+  // own countdown, but with more than a handful of cards the one number that
+  // decides whether to pull someone off another task -- how many have already
+  // breached -- had to be counted by eye.
+  //
+  // Recomputed on the same 5s tick as the query rather than per second: the
+  // buckets are a summary, and a whole page re-render every second to move one
+  // card between two of them is not worth it.
+  const slaSummary = useMemo(() => {
+    const window = isBusinessHours()
+      ? SLA_BUSINESS_HOURS_SECONDS
+      : SLA_OUT_OF_HOURS_SECONDS;
+    const now = Date.now();
+
+    let breached = 0;
+    let dueSoon = 0;
+    let withinSla = 0;
+
+    for (const session of visibleSessions) {
+      const started = session.started_at
+        ? new Date(session.started_at).getTime()
+        : now;
+      const remaining =
+        window - Math.max(0, Math.floor((now - started) / 1000));
+      if (remaining <= 0) breached += 1;
+      else if (remaining <= SLA_DUE_SOON_SECONDS) dueSoon += 1;
+      else withinSla += 1;
+    }
+
+    return { breached, dueSoon, withinSla };
+  }, [visibleSessions]);
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
-            {t("queue.title")}
-          </h1>
-          <p className="text-muted-foreground">{t("queue.subtitle")}</p>
-        </div>
+        <PageHeader
+          title={t("queue.title")}
+          description={t("queue.subtitle")}
+        />
+
+        {status === "loaded" && (
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-border bg-secondary/40 px-5 py-3">
+            <SlaTally
+              tone="error"
+              label={t("queue.summary.breached")}
+              count={slaSummary.breached}
+            />
+            <SlaTally
+              tone="warning"
+              label={t("queue.summary.dueSoon", {
+                seconds: SLA_DUE_SOON_SECONDS,
+              })}
+              count={slaSummary.dueSoon}
+            />
+            <SlaTally
+              tone="success"
+              label={t("queue.summary.withinSla")}
+              count={slaSummary.withinSla}
+            />
+            {/* The list moves on its own; say so rather than leaving a reader
+                wondering whether what they see is current. */}
+            <span className="ms-auto text-body-sm text-muted-foreground">
+              {t("queue.summary.refreshHint")}
+            </span>
+          </div>
+        )}
 
         <AsyncBoundary
           status={status}

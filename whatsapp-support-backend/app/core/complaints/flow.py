@@ -25,12 +25,6 @@ logger = logging.getLogger(__name__)
 # summary and has one clear chance to abandon before anything is written.
 SLOT_CATEGORY = "category"
 SLOT_DESCRIPTION = "description"
-# Asked right after the problem is understood, before contact preference: the
-# record must identify who filed it, not just how to reach them. Reuses
-# app.core.bank.intents.extract_identity_claim -- same (name, national ID)
-# free-text parser the account-verification flow already uses -- so the
-# customer sees one familiar format instead of two different ones.
-SLOT_IDENTITY = "identity"
 # Where it happened. Asked only for the categories where a location is what makes
 # the report actionable -- staff cannot chase a captured card without knowing
 # which machine ate it. Skipped entirely for the rest, and skipped whenever
@@ -39,11 +33,16 @@ SLOT_LOCATION = "location"
 SLOT_CONTACT = "contact"
 SLOT_CONFIRM = "confirm"
 
+# There is no identity slot. Who filed the complaint is no longer something
+# the customer types: the form now ends in the same national-ID + date-of-birth
+# + OTP gate an account question goes through (app/api/v1/webhook.py's
+# _advance_or_submit), and the name on the record comes from Bank_db_oss's own
+# owner_name. Asking for a name here would only invite a second, unverified
+# answer that contradicts it.
 SLOT_ORDER = (
     SLOT_CATEGORY,
     SLOT_DESCRIPTION,
     SLOT_LOCATION,
-    SLOT_IDENTITY,
     SLOT_CONTACT,
     SLOT_CONFIRM,
 )
@@ -65,8 +64,6 @@ class PendingComplaint:
     retries: int = 0
     category: Optional[str] = None
     description: Optional[str] = None
-    full_name: Optional[str] = None
-    national_id: Optional[str] = None
     preferred_contact: Optional[str] = None
 
     # Filled by app/core/triage before the first question is asked, so the form
@@ -91,11 +88,6 @@ class PendingComplaint:
             if self.category not in LOCATION_RELEVANT_CATEGORIES:
                 return True
             return bool(self.location or self.atm_identifier)
-        if slot == SLOT_IDENTITY:
-            # Identity needs BOTH halves. Triage can read a name out of free text
-            # but never a national ID, so a name alone must still be asked --
-            # the record has to identify who filed it.
-            return bool(self.full_name and self.national_id)
         if slot == SLOT_CONTACT:
             return bool(self.preferred_contact)
         return False  # SLOT_CONFIRM is always asked: nothing is written unseen.
@@ -135,7 +127,6 @@ class ComplaintStore:
         *,
         category: Optional[str] = None,
         description: Optional[str] = None,
-        full_name: Optional[str] = None,
         location: Optional[str] = None,
         atm_identifier: Optional[str] = None,
         incident_at_text: Optional[str] = None,
@@ -157,7 +148,6 @@ class ComplaintStore:
             expires_at=time.monotonic() + ttl,
             category=category,
             description=description,
-            full_name=full_name,
             location=location,
             atm_identifier=atm_identifier,
             incident_at_text=incident_at_text,

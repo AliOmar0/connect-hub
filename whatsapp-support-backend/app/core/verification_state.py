@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Dict, Literal, Optional, Tuple
 
 from app.api.middleware.rate_limit import SlidingWindowCounter
 from app.core.config import settings
@@ -29,13 +29,22 @@ from app.core.nlp.normalize import mask_identifier, normalize_msisdn
 logger = logging.getLogger(__name__)
 
 
+# What the caller should DO once the code checks out. Not the same axis as
+# otp_client's own `intent`, which is only about how the message is worded.
+VerificationIntent = Literal["ACCOUNT_INFO", "COMPLAINT"]
+
+
 @dataclass
 class PendingVerification:
     phone: str
-    intent: str  # "ACCOUNT_INFO"
+    intent: VerificationIntent
     fields: Tuple[str, ...]  # AccountField values, allowlisted upstream
     expires_at: float  # time.monotonic() deadline
     attempts: int = 0
+    # Carried so a COMPLAINT verification can name who filed it: by the time
+    # the code arrives the customer stated this several turns ago, and the
+    # complaint record must not fall back to asking again.
+    national_id: str = ""
 
 
 @dataclass
@@ -47,9 +56,10 @@ class VerificationStore:
         session_id: str,
         *,
         phone: str,
-        intent: str,
+        intent: VerificationIntent,
         fields: Tuple[str, ...],
         ttl: Optional[float] = None,
+        national_id: str = "",
     ) -> PendingVerification:
         ttl = settings.OTP_SESSION_TTL_SECONDS if ttl is None else ttl
         entry = PendingVerification(
@@ -57,6 +67,7 @@ class VerificationStore:
             intent=intent,
             fields=fields,
             expires_at=time.monotonic() + ttl,
+            national_id=national_id,
         )
         self._pending[session_id] = entry
         return entry
@@ -106,8 +117,9 @@ verification_store = VerificationStore()
 @dataclass
 class PendingIdentity:
     """State for a customer mid-way through the identity-first verification
-    flow: they've asked an account question but have not yet stated a
-    (name, national_id) pair that resolves to a Bank_db_oss phone.
+    flow: they've asked an account question (or finished describing a
+    complaint) but have not yet stated a (national_id, date_of_birth) pair
+    that resolves to a Bank_db_oss phone.
 
     Deliberately does NOT hold the phone -- there isn't one yet, that's the
     point of this state. Once identity resolves, this is cleared and a
@@ -117,6 +129,11 @@ class PendingIdentity:
     fields: Tuple[str, ...]  # AccountField values the customer originally asked for
     expires_at: float
     attempts: int = 0
+    # What the customer was doing when identity was demanded, so the OTP that
+    # follows unlocks the right thing. "COMPLAINT" carries an empty `fields`:
+    # a complaint discloses no account data, it just has to be filed by a
+    # verified person.
+    intent: VerificationIntent = "ACCOUNT_INFO"
 
 
 @dataclass
@@ -127,10 +144,17 @@ class IdentityVerificationStore:
     _pending: Dict[str, PendingIdentity] = field(default_factory=dict)
 
     def start(
-        self, session_id: str, *, fields: Tuple[str, ...], ttl: Optional[float] = None
+        self,
+        session_id: str,
+        *,
+        fields: Tuple[str, ...],
+        ttl: Optional[float] = None,
+        intent: VerificationIntent = "ACCOUNT_INFO",
     ) -> PendingIdentity:
         ttl = settings.OTP_SESSION_TTL_SECONDS if ttl is None else ttl
-        entry = PendingIdentity(fields=fields, expires_at=time.monotonic() + ttl)
+        entry = PendingIdentity(
+            fields=fields, expires_at=time.monotonic() + ttl, intent=intent
+        )
         self._pending[session_id] = entry
         return entry
 

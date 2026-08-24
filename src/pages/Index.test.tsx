@@ -59,14 +59,18 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 // --- Fixtures & helpers ------------------------------------------------------
 
-const METRIC_TITLES = [
-  "Total Messages",
-  "Total Calls",
-  "Active Sessions",
-  "Active Agents",
-  "Avg. Response",
-  "Resolution Rate",
+// The dashboard no longer shows six coequal KPIs. One live figure is primary,
+// three support it, and the month-to-date accounting totals moved to a
+// subordinate strip that is deliberately NOT a metric card.
+// "Active sessions" is the hero figure; the rest are the supporting cards
+// beside it, and only those are required to look identical to one another.
+const HERO_METRIC_TITLE = "Active sessions";
+const SUPPORTING_METRIC_TITLES = [
+  "Agents online",
+  "Avg. response",
+  "Resolution rate",
 ];
+const METRIC_TITLES = [HERO_METRIC_TITLE, ...SUPPORTING_METRIC_TITLES];
 
 const statsFixture = {
   messages: { count: 1200, trend: 5 },
@@ -125,24 +129,40 @@ describe("Index (dashboard home)", () => {
 
   // Requirement 12.1 — metric cards share the same color, spacing, typography,
   // radius, and elevation token values.
-  it("renders all metric cards with a uniform token-driven container", () => {
+  //
+  // Scoped to the three SUPPORTING cards. The hero card is deliberately not one
+  // of them: four coequal cards meant nothing on the page was primary, so the
+  // one figure a supervisor acts on now carries its own navy treatment. What
+  // must stay uniform is everything beside it.
+  it("renders the supporting metric cards with a uniform token-driven container", () => {
     render(<Index />);
 
-    const classNames = METRIC_TITLES.map((title) => {
+    const classNames = SUPPORTING_METRIC_TITLES.map((title) => {
       const card = screen.getByText(title).closest("div.rounded-xl");
       expect(card).not.toBeNull();
       return card!.className;
     });
 
-    // Every card carries the same design-token utility classes...
+    // Every supporting card carries the same design-token utility classes...
     classNames.forEach((cls) => {
       expect(cls).toContain("rounded-xl"); // radius token
       expect(cls).toContain("border-border"); // color token
-      expect(cls).toContain("p-5"); // spacing token
       expect(cls).toContain("shadow-card"); // elevation token
     });
-    // ...and the container styling is identical across all six cards.
+    // ...and the container styling is identical across all of them.
     expect(new Set(classNames).size).toBe(1);
+  });
+
+  // The hero card is the exception, and it is one: exactly one navy panel.
+  it("gives the primary metric its own hero treatment", () => {
+    const { container } = render(<Index />);
+
+    const heroes = container.querySelectorAll("div.bg-navy.rounded-xl");
+    expect(heroes).toHaveLength(1);
+    expect(heroes[0].className).toContain("shadow-card");
+    // The gold eyebrow names what the figure is.
+    expect(screen.getByText("Live right now")).toBeInTheDocument();
+    expect(screen.getByText("Live")).toBeInTheDocument();
   });
 
   // Requirement 12.2 — while metric data is loading, each card shows a Skeleton
@@ -164,8 +184,12 @@ describe("Index (dashboard home)", () => {
     expect(skeletons).toHaveLength(METRIC_TITLES.length);
     skeletons.forEach((el) => {
       expect(el.className).toContain("rounded-xl");
-      expect(el.className).toContain("p-5");
     });
+    // One of them reproduces the hero footprint rather than a supporting one.
+    const heroSkeletons = [...skeletons].filter((el) =>
+      el.className.includes("bg-navy"),
+    );
+    expect(heroSkeletons).toHaveLength(1);
   });
 
   // Requirement 12.3 — if metric retrieval fails, each affected card shows an
@@ -194,34 +218,47 @@ describe("Index (dashboard home)", () => {
   // horizontal overflow. Verified structurally via the mobile-first grid
   // classes (single column at base, multi-column only at md+ breakpoints).
   it("arranges metric cards in a single column below 768px", () => {
-    render(<Index />);
+    const { container } = render(<Index />);
 
-    const grid = screen.getByText("Total Messages").closest("div.grid");
+    // The hero sits beside the supporting grid only from `lg`; below that the
+    // row stacks, so the whole metric block is one column on a phone.
+    const row = [...container.querySelectorAll("div")].find((el) =>
+      el.classList.contains("lg:flex-row"),
+    );
+    expect(row).toBeDefined();
+    expect(row!.className).toContain("flex-col");
+
+    const grid = screen.getByText("Agents online").closest("div.grid");
     expect(grid).not.toBeNull();
     // Base (mobile, <768px) is a single column.
     expect(grid!.className).toContain("grid-cols-1");
-    // Multiple columns only kick in at md (768px) and larger.
-    expect(grid!.className).toContain("md:grid-cols-2");
+    // Multiple columns only kick in at sm and larger.
+    expect(grid!.className).toContain("sm:grid-cols-3");
   });
 
   // Requirement 12.5 — under RTL the document mirrors so metric-card order
   // follows RTL reading order (the grid inherits document direction).
   it("mirrors to RTL when the active language is Arabic", async () => {
     await i18n.changeLanguage("ar");
-    render(<Index />);
+    const { container } = render(<Index />);
 
     expect(document.documentElement.dir).toBe("rtl");
     // Cards still render (order mirrors automatically via inherited direction).
-    const grid = screen.getByText("Total Messages").closest("div.grid");
+    // Anchored structurally rather than on a label: the metric labels are now
+    // translated, so an English string would not be present under `ar`.
+    // One hero panel plus the supporting grid together account for every
+    // metric card.
+    expect(container.querySelectorAll("div.bg-navy.rounded-xl").length).toBe(1);
+    const grid = container.querySelector("div.grid");
     expect(grid).not.toBeNull();
-    METRIC_TITLES.forEach((title) => {
-      expect(screen.getByText(title)).toBeInTheDocument();
-    });
+    expect(grid!.querySelectorAll("div.rounded-xl.shadow-card").length).toBe(
+      METRIC_TITLES.length - 1,
+    );
   });
 
   // Accessibility — the loaded dashboard has no detectable axe violations.
-  // The `heading-order` rule is scoped out here: StatsCard renders each metric
-  // value as an <h3>, which is a component-level heading-semantics choice.
+  // The `heading-order` rule is scoped out here: panel headings inside the
+  // dashboard are component-level heading-semantics choices.
   // Page-wide heading structure is validated separately (Property 5, task 18.4).
   it("has no axe-detectable accessibility violations when loaded", async () => {
     const { container } = render(<Index />);

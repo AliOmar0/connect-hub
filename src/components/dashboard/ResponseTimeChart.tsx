@@ -100,7 +100,7 @@ const CustomTooltip = ({ active, payload, label }: TooltipProps) => {
       </div>
       <p className="text-xs text-muted-foreground">{status}</p>
       {data.count > 0 && (
-        <p className="text-[10px] text-muted-foreground mt-1 pt-1 border-t border-border">
+        <p className="text-caption text-muted-foreground mt-1 pt-1 border-t border-border">
           {data.count} conversation{data.count !== 1 ? "s" : ""}
         </p>
       )}
@@ -255,7 +255,7 @@ export default function ResponseTimeChart() {
               variant={dateRange === r.value ? "default" : "ghost"}
               size="sm"
               className={cn(
-                "h-6 px-2.5 text-[11px] font-medium rounded-full",
+                "h-6 px-2.5 text-caption font-medium rounded-full",
                 dateRange === r.value
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -278,7 +278,7 @@ export default function ResponseTimeChart() {
               variant="ghost"
               size="sm"
               className={cn(
-                "h-5 px-2 text-[10px] font-medium rounded-full capitalize",
+                "h-5 px-2 text-overline font-medium rounded-full capitalize",
                 channel === ch
                   ? "bg-secondary text-secondary-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -316,7 +316,7 @@ export default function ResponseTimeChart() {
           <div className="flex items-center gap-2 mb-3 flex-wrap">
             <Badge
               variant="outline"
-              className="text-[10px] gap-1 font-normal py-0.5"
+              className="text-caption gap-1 font-normal py-0.5"
             >
               <Clock className="h-2.5 w-2.5" />
               Avg {avgAll.toFixed(1)}m
@@ -324,7 +324,7 @@ export default function ResponseTimeChart() {
             {bestHour && (
               <Badge
                 variant="outline"
-                className="text-[10px] gap-1 font-normal py-0.5 text-emerald-600 border-emerald-500/30"
+                className="text-caption gap-1 font-normal py-0.5 text-emerald-600 border-emerald-500/30"
               >
                 <TrendingDown className="h-2.5 w-2.5" />
                 Best: {bestHour.hour} ({bestHour.time.toFixed(1)}m)
@@ -333,7 +333,7 @@ export default function ResponseTimeChart() {
             {worstHour && (
               <Badge
                 variant="outline"
-                className="text-[10px] gap-1 font-normal py-0.5 text-rose-600 border-rose-500/30"
+                className="text-caption gap-1 font-normal py-0.5 text-rose-600 border-rose-500/30"
               >
                 <TrendingUp className="h-2.5 w-2.5" />
                 Peak: {worstHour.hour} ({worstHour.time.toFixed(1)}m)
@@ -362,7 +362,7 @@ export default function ResponseTimeChart() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-5 px-2 text-[10px] text-muted-foreground"
+                  className="h-5 px-2 text-caption text-muted-foreground"
                   onClick={() => setSelectedHour(null)}
                 >
                   Clear
@@ -483,7 +483,7 @@ export default function ResponseTimeChart() {
 
         {/* Click hint */}
         {hasData && !selectedHour && (
-          <p className="text-center text-[10px] text-muted-foreground mt-2">
+          <p className="text-center text-caption text-muted-foreground mt-2">
             Click a bar to inspect that hour
           </p>
         )}

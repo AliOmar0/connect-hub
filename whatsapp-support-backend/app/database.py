@@ -43,10 +43,14 @@ except Exception as e:
 # ---------------------------------------------------------------------------
 
 BANK_ACCOUNT_RPC = "get_bank_account_by_phone"
-# Resolves (full_name, national_id) -> phone-on-file. Backs the identity-first
-# verification flow in app/core/bank/verification_flow.py -- see
-# scripts/sql/bank_db_oss_identity_lookup.sql.
-BANK_IDENTITY_RPC = "get_bank_customer_phone_by_identity"
+# Resolves (national_id, date_of_birth) -> phone-on-file. Backs the
+# identity-first verification flow in app/core/bank/verification_flow.py --
+# see scripts/sql/bank_db_oss_identity_lookup_v3.sql. v3 dropped full_name as
+# a factor: it was the one field arriving through speech-to-text, and Arabic
+# names vary in hamza/alef/ta-marbuta forms constantly, so matching it needed
+# a deliberately loosened comparison. A date is exact and has no spelling.
+# Both WhatsApp and voice share this one constant.
+BANK_IDENTITY_RPC = "get_bank_customer_phone_by_identity_dob"
 
 # The wider account surface, added in scripts/sql/bank_db_oss_account_details.sql.
 # Each answers one question with a fixed column set and its own row cap; none of

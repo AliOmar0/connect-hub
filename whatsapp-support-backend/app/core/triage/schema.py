@@ -165,6 +165,7 @@ class TriageResult(BaseModel):
             missing.append("category")
         if not self.description:
             missing.append("description")
-        if not self.full_name:
-            missing.append("identity")
+        # No "identity" entry: the complaint form has no identity slot any
+        # more -- who filed it is settled by the national-ID + date-of-birth +
+        # OTP gate at the end of intake, not by a field triage could guess at.
         return missing

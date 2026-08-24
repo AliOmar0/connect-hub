@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@/test-utils/render";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@/test-utils/render";
 import { axe, toHaveNoViolations } from "jest-axe";
 import { toast } from "sonner";
 import NotificationsPage from "./NotificationsPage";
@@ -250,15 +256,19 @@ describe("NotificationsPage", () => {
   // Same defect on the delete path: the success toast used to fire for a row
   // that was never removed.
   it("does not report success when a delete affects zero rows", async () => {
-    const confirmSpy = vi
-      .spyOn(window, "confirm")
-      .mockImplementation(() => true);
     selectResult = { data: [readNotification], error: null };
     deleteResult = { data: [], error: null };
     render(<NotificationsPage />);
 
+    // Deleting is now a two-step gesture: the row button opens the standard
+    // AlertDialog (it used to be a native window.confirm), and the dialog's
+    // action performs the delete.
     fireEvent.click(
       await screen.findByRole("button", { name: "notifications.delete" }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "notifications.delete" }),
     );
 
     await waitFor(() => {
@@ -270,7 +280,6 @@ describe("NotificationsPage", () => {
       );
     });
     expect(toast.success).not.toHaveBeenCalled();
-    confirmSpy.mockRestore();
   });
 
   it("has no axe-detectable accessibility violations when loaded", async () => {

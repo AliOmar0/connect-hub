@@ -1,5 +1,10 @@
 """Deterministic bank-account question handling (no LLM in this path)."""
 
+from app.core.bank.identity_input import (
+    IdentityProblem,
+    normalize_identity_input,
+)
+
 from app.core.bank.intents import (
     ALLOWED_FIELDS,
     MAX_FIELDS_PER_REQUEST,
@@ -42,6 +47,8 @@ from app.core.bank.verification_flow import (
 )
 
 __all__ = [
+    "IdentityProblem",
+    "normalize_identity_input",
     "ALLOWED_FIELDS",
     "MAX_FIELDS_PER_REQUEST",
     "NATIONAL_ID_LENGTH",

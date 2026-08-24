@@ -106,7 +106,7 @@ export default function AuthPage() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="h-full min-h-screen flex items-center justify-center bg-background">
         <Loader2
           className="h-8 w-8 animate-spin text-primary"
           aria-hidden="true"
@@ -117,7 +117,7 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-background lg:grid lg:grid-cols-2">
+    <div className="h-full min-h-screen w-full overflow-y-auto overflow-x-hidden bg-background lg:grid lg:grid-cols-2">
       {/* Brand panel — hidden on small screens, full banking identity on large */}
       <aside className="relative hidden overflow-hidden gradient-navy p-12 text-white lg:flex lg:flex-col lg:justify-between">
         {/* Decorative gold glow accents (constrained; no text overlaps them) */}

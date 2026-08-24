@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, List, Optional, Sequence
 from uuid import UUID
 
@@ -106,14 +106,16 @@ async def get_bank_account_fields(phone: str, fields: Sequence[str]) -> Optional
     return result
 
 
-async def get_bank_customer_phone_by_identity(full_name: str, national_id: str) -> Optional[str]:
-    """Resolve a customer-stated (full_name, national_id) pair to their phone-on-file.
+async def get_bank_customer_phone_by_identity(
+    national_id: str, date_of_birth: date
+) -> Optional[str]:
+    """Resolve a customer-stated (national_id, date_of_birth) pair to their phone-on-file.
 
     Backs the identity-first verification flow: the OTP goes to whatever phone
     Bank_db_oss has on record, not necessarily the number the customer is
     chatting from. Returns None on no match -- caller must not distinguish
-    "wrong name" from "wrong national ID" in its reply, or this becomes an
-    enumeration oracle for national ID numbers.
+    "wrong national ID" from "wrong date of birth" in its reply, or this
+    becomes an enumeration oracle for national ID numbers.
 
     Raises BankDbUnavailable when Bank_db_oss is unconfigured, same as
     get_bank_account_fields.
@@ -121,7 +123,9 @@ async def get_bank_customer_phone_by_identity(full_name: str, national_id: str) 
     client = database.get_bank_db_oss_or_raise()
     response = client.rpc(
         database.BANK_IDENTITY_RPC,
-        {"p_full_name": full_name, "p_national_id": national_id},
+        # isoformat(), not the date object: this is serialised to JSON for
+        # PostgREST, which casts the string to the RPC's `date` parameter.
+        {"p_national_id": national_id, "p_date_of_birth": date_of_birth.isoformat()},
     ).execute()
 
     rows = response.data or []
@@ -222,15 +226,20 @@ async def get_active_session_by_customer(db: Any, customer_id: UUID) -> Optional
 
 async def create_session(
     db: Any,
-    customer_id: UUID,
+    customer_id: Optional[UUID],
     channel: ChannelType = ChannelType.whatsapp,
     external_conversation_id: Optional[str] = None,
 ) -> Session:
     data = {
-        "customer_id": str(customer_id),
         "channel": channel.value,
         "status": SessionStatus.active.value,
     }
+    # customer_id is omitted (rather than sent as null) when the caller has no
+    # customer yet -- the voice channel now creates the session before the
+    # caller's identity resolves (app/api/v1/voice_agent.py's verify_identity),
+    # so a failed verification still produces a loggable, escalatable session.
+    if customer_id is not None:
+        data["customer_id"] = str(customer_id)
     if external_conversation_id is not None:
         data["external_conversation_id"] = external_conversation_id
     try:
@@ -240,6 +249,21 @@ async def create_session(
     if response.data:
         return Session(**response.data[0])
     raise Exception("Failed to create session")
+
+
+async def update_session_customer(db: Any, session_id: UUID, customer_id: UUID) -> Session:
+    try:
+        response = (
+            supabase.table("sessions")
+            .update({"customer_id": str(customer_id)})
+            .eq("id", str(session_id))
+            .execute()
+        )
+    except Exception as e:
+        raise Exception(f"Failed to update session customer: {e}") from e
+    if response.data:
+        return Session(**response.data[0])
+    raise Exception("Failed to update session customer")
 
 
 async def update_session_status(db: Any, session_id: UUID, status: SessionStatus) -> Session:
@@ -556,12 +580,49 @@ async def create_complaint(
     raise Exception("Failed to create complaint")
 
 
+def _apply_complaint_filters(
+    query: Any,
+    status: Optional[str],
+    severity: Optional[str],
+    channel: Optional[str],
+    search: Optional[str],
+) -> Any:
+    """The one place the four list filters are expressed.
+
+    Shared by the page query and the count query so a filter can never apply to
+    one and not the other -- which would make the pager say "of 1,284" over a
+    filtered table of nine.
+    """
+    if status:
+        query = query.eq("status", status)
+    if severity:
+        query = query.eq("severity", severity)
+    if channel:
+        query = query.eq("channel", channel)
+    if search:
+        # Reference number, customer name, or the complaint text itself. PostgREST
+        # `or` takes a comma-separated filter list; commas and parentheses inside
+        # the term would be read as syntax, so they are dropped rather than escaped.
+        term = search.replace(",", " ").replace("(", " ").replace(")", " ").strip()
+        if term:
+            pattern = f"*{term}*"
+            query = query.or_(
+                f"reference_number.ilike.{pattern},"
+                f"customer_name.ilike.{pattern},"
+                f"description.ilike.{pattern}"
+            )
+    return query
+
+
 async def list_complaints(
     db: Any,
     status: Optional[str] = None,
     limit: int = 100,
     offset: int = 0,
     severity: Optional[str] = None,
+    channel: Optional[str] = None,
+    search: Optional[str] = None,
+    sort: str = "severity",
 ) -> List[Complaint]:
     """Most urgent complaints first, then newest.
 
@@ -569,6 +630,11 @@ async def list_complaints(
     grumbles. Postgres has no natural ordering for the severity strings -- 'low'
     sorts before 'medium' alphabetically -- so the sort is done in Python over
     the fetched page using the declared _COMPLAINT_SEVERITIES order.
+
+    That per-page sort is why `sort` exists: worst-first is only worst-first
+    *within* the page, so on page 3 of a paginated table it is not a global
+    ordering. `sort="newest"` skips the re-sort and leaves the query's own
+    created_at ordering intact, which does hold across pages.
 
     Degrades to [] so the dashboard shows an empty state rather than an error
     page when the table is unreachable.
@@ -579,11 +645,9 @@ async def list_complaints(
         raise ValueError(f"Unknown complaint severity: {severity}")
 
     try:
-        query = supabase.table("complaints").select("*")
-        if status:
-            query = query.eq("status", status)
-        if severity:
-            query = query.eq("severity", severity)
+        query = _apply_complaint_filters(
+            supabase.table("complaints").select("*"), status, severity, channel, search
+        )
         response = query.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
     except Exception as e:
         logger.error(f"Failed to list complaints: {e}")
@@ -591,12 +655,43 @@ async def list_complaints(
 
     complaints = [Complaint(**row) for row in (response.data or [])]
 
-    # Worst-first within the page already ordered newest-first, so equal
-    # severities keep their recency order (Python's sort is stable). An
-    # unrecognised severity sorts last rather than crashing the listing.
-    rank = {s: i for i, s in enumerate(_COMPLAINT_SEVERITIES)}
-    complaints.sort(key=lambda c: rank.get(c.severity, len(rank)))
+    if sort == "severity":
+        # Worst-first within the page already ordered newest-first, so equal
+        # severities keep their recency order (Python's sort is stable). An
+        # unrecognised severity sorts last rather than crashing the listing.
+        rank = {s: i for i, s in enumerate(_COMPLAINT_SEVERITIES)}
+        complaints.sort(key=lambda c: rank.get(c.severity, len(rank)))
     return complaints
+
+
+async def count_complaints(
+    db: Any,
+    status: Optional[str] = None,
+    severity: Optional[str] = None,
+    channel: Optional[str] = None,
+    search: Optional[str] = None,
+) -> Optional[int]:
+    """How many complaints match the filters, ignoring limit/offset.
+
+    Exists so the table can say which slice of the whole it is showing. Returns
+    None when the count is unavailable, which the caller renders as a pager
+    without a total rather than as "of 0".
+    """
+    try:
+        query = _apply_complaint_filters(
+            supabase.table("complaints").select("id", count="exact"),
+            status,
+            severity,
+            channel,
+            search,
+        )
+        # limit(1) because only the count header is wanted, not the rows.
+        response = query.limit(1).execute()
+    except Exception as e:
+        logger.error(f"Failed to count complaints: {e}")
+        return None
+
+    return getattr(response, "count", None)
 
 
 async def get_complaint_by_id(db: Any, complaint_id: UUID) -> Optional[Complaint]:
@@ -610,9 +705,7 @@ async def get_complaint_by_id(db: Any, complaint_id: UUID) -> Optional[Complaint
     return Complaint(**rows[0]) if rows else None
 
 
-async def update_complaint_status(
-    db: Any, complaint_id: UUID, status: str
-) -> Optional[Complaint]:
+async def update_complaint_status(db: Any, complaint_id: UUID, status: str) -> Optional[Complaint]:
     """Move a complaint to another status. Returns None if the row is gone.
 
     The status is checked against _COMPLAINT_STATUSES here rather than left to
@@ -779,17 +872,11 @@ async def close_inactive_sessions(
             started_at_raw = item.get("started_at")
             if started_at_raw:
                 try:
-                    started_at = datetime.fromisoformat(
-                        started_at_raw.replace("Z", "+00:00")
-                    )
-                    close_data["duration_seconds"] = int(
-                        (ended_at - started_at).total_seconds()
-                    )
+                    started_at = datetime.fromisoformat(started_at_raw.replace("Z", "+00:00"))
+                    close_data["duration_seconds"] = int((ended_at - started_at).total_seconds())
                 except Exception as e:
                     # A missing duration is cosmetic; never let it block the close.
-                    logger.warning(
-                        f"Could not compute duration for session {session_id}: {e}"
-                    )
+                    logger.warning(f"Could not compute duration for session {session_id}: {e}")
 
             update_res = (
                 supabase.table("sessions")
@@ -824,9 +911,7 @@ async def close_inactive_sessions(
                     await create_notification(
                         db,
                         title=(
-                            "Escalation Timed Out"
-                            if auto_closed
-                            else "Session Completed (Auto)"
+                            "Escalation Timed Out" if auto_closed else "Session Completed (Auto)"
                         ),
                         message=(
                             f"Escalated session {session_id} was closed after "

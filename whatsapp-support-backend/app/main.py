@@ -317,6 +317,9 @@ if settings.BACKEND_CORS_ORIGINS:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # The complaints listing returns its total match count in a custom
+        # header; without this a browser cannot read it cross-origin.
+        expose_headers=["X-Total-Count"],
     )
 else:
     logger.warning(

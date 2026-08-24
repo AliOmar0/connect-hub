@@ -115,14 +115,17 @@ function resolveEffectiveGridCols(
   return bestCols;
 }
 
-// Locate the records grid: the nearest `grid` ancestor of a rendered employee
-// record card.
-function getRecordsGridClassName(): string {
+// Locate the records container: the nearest layout ancestor of a rendered
+// employee record card. The roster is a vertical stack of full-width rows
+// rather than a card grid, so the container is a flex column; the older grid
+// form is still accepted so the property describes the invariant, not one
+// particular implementation of it.
+function getRecordsContainerClassName(): string {
   // mockProfiles[0] => first_name "Agent", last_name "One".
   const recordName = screen.getByText("Agent One");
-  const grid = recordName.closest(".grid");
-  expect(grid).not.toBeNull();
-  return (grid as HTMLElement).className;
+  const container = recordName.closest(".grid, .flex-col");
+  expect(container).not.toBeNull();
+  return (container as HTMLElement).className;
 }
 
 beforeEach(() => {
@@ -156,17 +159,23 @@ describe("EmployeesPage – tabular field reachability below 768px (property-bas
   it("presents each record in a single column at every width below 768px", () => {
     render(<EmployeesPage />);
 
-    const gridClassName = getRecordsGridClassName();
+    const containerClassName = getRecordsContainerClassName();
 
-    // Sanity: the records grid is mobile-first single-column.
-    expect(gridClassName).toContain("grid-cols-1");
+    // A flex column is single-column at every width by construction; a grid
+    // has to declare it.
+    const isStack = containerClassName.includes("flex-col");
+    if (!isStack) {
+      expect(containerClassName).toContain("grid-cols-1");
+    }
 
     // Widths strictly below the 768px tablet breakpoint.
     const widthBelow768 = fc.integer({ min: 240, max: 767 });
 
     fc.assert(
       fc.property(widthBelow768, (width) => {
-        const cols = resolveEffectiveGridCols(gridClassName, width);
+        const cols = isStack
+          ? 1
+          : resolveEffectiveGridCols(containerClassName, width);
         // Exactly one column below 768px => each record spans the full row and
         // all of its fields stack vertically, so no field requires horizontal
         // scrolling of the surrounding layout.

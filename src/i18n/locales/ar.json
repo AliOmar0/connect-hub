@@ -282,6 +282,27 @@
       "photoFailed": "فشل تحديث الصورة"
     }
   },
+  "dashboard": {
+    "metrics": {
+      "activeSessions": "الجلسات النشطة",
+      "activeSessionsHint": "الآن",
+      "activeAgents": "الموظفون المتصلون",
+      "activeAgentsHint": "جاهزون لاستلام المحادثات",
+      "avgResponse": "متوسط الاستجابة",
+      "avgResponseHint": "اليوم",
+      "resolutionRate": "معدل الحل",
+      "resolutionRateHint": "هذا الأسبوع",
+      "monthToDate": "منذ بداية الشهر",
+      "messages": "الرسائل",
+      "calls": "المكالمات",
+      "liveNow": "الوضع الآن",
+      "uniqueCustomers": "عملاء مميّزون",
+      "viewAnalytics": "عرض التحليلات",
+      "liveBadge": "مباشر"
+    },
+    "title": "لوحة التحكم",
+    "subtitle": "نظرة سريعة على عمليات الدعم — تُحدَّث لحظياً."
+  },
   "sessions": {
     "title": "جلسات الذكاء الاصطناعي النشطة",
     "subtitle": "راقب وأدِر جميع الجلسات النشطة.",
@@ -318,7 +339,8 @@
       "activeSessions": "الجلسات النشطة",
       "escalated": "المُصعّدة",
       "completed": "المكتملة (24 ساعة)",
-      "totalAgents": "إجمالي الموظفين"
+      "totalAgents": "إجمالي الموظفين",
+      "closedToday": "أُغلقت اليوم"
     },
     "overviewTitle": "نظرة عامة على الجلسات",
     "conversationDetails": "تفاصيل المحادثة",
@@ -333,7 +355,9 @@
       "outboundCall": "مكالمة صادرة",
       "status": "الحالة",
       "duration": "المدة",
-      "id": "المعرّف"
+      "id": "المعرّف",
+      "viewLink": "عرض الجدول الزمني للنشاط",
+      "backToSession": "العودة إلى الجلسة"
     },
     "table": {
       "channel": "القناة",
@@ -367,6 +391,9 @@
       "noType": "بدون نوع",
       "joinConversation": "الانضمام إلى المحادثة",
       "completeSession": "إنهاء الجلسة",
+      "assign": "إسناد",
+      "escalate": "تصعيد",
+      "moreOptions": "خيارات إضافية",
       "messagePlaceholder": "اكتب رسالة هنا... (استخدم \\ للاختصارات)",
       "quickShortcuts": "اختصارات سريعة",
       "noMessagesTitle": "لا توجد رسائل بعد",
@@ -411,6 +438,15 @@
       "waiting": "في انتظار بدء المكالمة…",
       "caller": "المتصل:",
       "agent": "المساعد:"
+    },
+    "list": {
+      "count": "جلسة واحدة",
+      "count_other": "{{count}} جلسات",
+      "assignedTo": "مُسندة إلى {{name}}",
+      "unassigned": "غير مُسندة",
+      "sortLabel": "ترتيب الجلسات",
+      "sortNewest": "الأحدث",
+      "sortOldest": "الأقدم"
     }
   },
   "nav": {
@@ -472,9 +508,62 @@
     "callbackToast": "تم عرض معاودة الاتصال على العميل.",
     "callbackFailed": "تعذّر عرض معاودة الاتصال. يرجى المحاولة مرة أخرى.",
     "loadErrorTitle": "تعذّر تحميل قائمة الانتظار",
-    "loadErrorDescription": "تعذّر تحميل التحويلات التي تنتظر المعالجة. يرجى المحاولة مرة أخرى."
+    "loadErrorDescription": "تعذّر تحميل التحويلات التي تنتظر المعالجة. يرجى المحاولة مرة أخرى.",
+    "summary": {
+      "breached": "تجاوز مستوى الخدمة",
+      "dueSoon": "أقل من {{seconds}} ثانية",
+      "withinSla": "ضمن مستوى الخدمة",
+      "refreshHint": "تُحدَّث كل ٥ ثوانٍ"
+    }
   },
   "shortcutsPage": {
+    "quickReplies": {
+      "title": "اختصارات الردود السريعة",
+      "subtitle": "اختصارات شخصية يمكنك إدراجها في رسائل المحادثة. اكتب \\ في مربع الرسالة أو استخدم زر الاختصارات لإدراج أحدها.",
+      "add": "إضافة اختصار",
+      "searchPlaceholder": "ابحث في الاختصارات…",
+      "searchLabel": "ابحث في اختصاراتك",
+      "emptyTitle": "لا توجد اختصارات بعد",
+      "emptyDescription": "أنشئ اختصارات لتسريع ردودك في جلسات المحادثة.",
+      "emptyAction": "أضف أول اختصار",
+      "noMatchTitle": "لا توجد اختصارات مطابقة لبحثك",
+      "noMatchDescription": "جرّب كلمة أخرى من العنوان أو من نص الرد.",
+      "errorTitle": "تعذّر تحميل اختصاراتك",
+      "errorDescription": "قائمة الاختصارات غير متاحة حالياً. لم تتغيّر اختصاراتك المحفوظة.",
+      "editAction": "تعديل الاختصار \"{{title}}\"",
+      "deleteAction": "حذف الاختصار \"{{title}}\"",
+      "dialog": {
+        "newTitle": "اختصار محادثة جديد",
+        "editTitle": "تعديل الاختصار",
+        "newDescription": "أنشئ اختصاراً لإدراج رد متكرر في رسائلك بسرعة.",
+        "editDescription": "حدّث عنوان الاختصار أو نص الرد.",
+        "titleLabel": "عنوان الاختصار",
+        "titlePlaceholder": "مثال: ترحيب، وداع، معلومات الاسترداد",
+        "titleHelp": "يُستخدم للبحث عن هذا الاختصار وتمييزه.",
+        "contentLabel": "نص الرد",
+        "contentPlaceholder": "اكتب الرسالة التي ستُدرَج في المحادثة…",
+        "contentHelp": "يُدرَج هذا النص في مربع المحادثة عند اختيارك للاختصار.",
+        "saving": "جارٍ الحفظ…",
+        "saveChanges": "حفظ التغييرات"
+      },
+      "delete": {
+        "title": "حذف الاختصار",
+        "description": "هل تريد حذف \"{{title}}\"؟ لا يمكن التراجع عن هذا الإجراء.",
+        "confirm": "حذف",
+        "deleting": "جارٍ الحذف…"
+      },
+      "toasts": {
+        "added": "تمت إضافة الاختصار",
+        "updated": "تم تحديث الاختصار",
+        "deleted": "تم حذف الاختصار"
+      },
+      "errors": {
+        "notAuthenticated": "لم تسجّل الدخول.",
+        "required": "العنوان ونص الرد مطلوبان معاً."
+      },
+      "count": "اختصار واحد",
+      "count_other": "{{count}} اختصارات"
+    },
     "title": "اختصارات المحادثة",
     "subtitle": "اختصارات لوحة المفاتيح لكتابة المحادثات وإدارتها.",
     "emptyTitle": "لا توجد اختصارات متاحة",
@@ -527,6 +616,12 @@
     }
   },
   "employees": {
+    "presence": {
+      "online": "متصل",
+      "busy": "مشغول",
+      "away": "بعيد",
+      "offline": "غير متصل"
+    },
     "title": "إدارة الموظفين",
     "subtitle": "إدارة فريقك والأدوار والصلاحيات الفردية.",
     "addEmployee": "إضافة موظف",
@@ -537,7 +632,10 @@
       "totalTeam": "إجمالي الفريق",
       "activeNow": "نشط الآن",
       "avgPerformance": "متوسط الأداء",
-      "activeDepts": "الأقسام النشطة"
+      "activeDepts": "الأقسام النشطة",
+      "acrossDepartments": "في قسم واحد",
+      "acrossDepartments_other": "في {{count}} أقسام",
+      "ofTotal": "من أصل {{count}} في الفريق"
     },
     "emptyTitle": "لا يوجد موظفون",
     "emptyDescription": "لا يوجد أعضاء فريق يطابقون بحثك بعد.",
@@ -545,7 +643,19 @@
     "errorDescription": "تعذّر تحميل قائمة الفريق. يرجى المحاولة مرة أخرى.",
     "roleLabel": "الدور",
     "card": {
-      "actions": "إجراءات {{name}}"
+      "actions": "إجراءات {{name}}",
+      "edit": "تعديل",
+      "delete": "حذف",
+      "channels": "القنوات",
+      "noChannels": "لا توجد قنوات",
+      "languages": "اللغات",
+      "noShift": "لم تُسنَد وردية",
+      "performance": "الأداء العام",
+      "active": "نشط",
+      "inactive": "غير نشط",
+      "unknownName": "غير معروف",
+      "noCode": "بدون رقم وظيفي",
+      "noDepartment": "بدون قسم"
     },
     "form": {
       "addTitle": "إضافة موظف",
@@ -602,7 +712,12 @@
       "confirm": "حذف",
       "cancel": "إلغاء",
       "deleting": "جارٍ الحذف..."
-    }
+    },
+    "moreActions": "إجراءات إضافية للموظفين",
+    "filterDepartment": "القسم",
+    "allDepartments": "كل الأقسام",
+    "filterStatus": "الحالة",
+    "anyStatus": "أي حالة"
   },
   "notifications": {
     "title": "الإشعارات",
@@ -635,13 +750,28 @@
     "loadErrorTitle": "تعذّر تحميل الإشعارات",
     "loadErrorDescription": "تعذّر تحميل إشعاراتك. يرجى المحاولة مرة أخرى.",
     "types": {
+      "escalation": "تصعيد",
       "info": "معلومة",
       "success": "نجاح",
       "warning": "تحذير",
       "error": "خطأ"
-    }
+    },
+    "groups": {
+      "today": "اليوم",
+      "yesterday": "أمس"
+    },
+    "moreActions": "إجراءات إضافية للإشعارات",
+    "housekeeping": "التنظيم"
   },
   "kb": {
+    "documentDetail": "تفاصيل المستند",
+    "documentDetailDescription": "كل ما هو مسجل عن هذا المستند وإصداراته المفهرسة.",
+    "totalVersions": "إجمالي الإصدارات",
+    "created": "تاريخ الإنشاء",
+    "description": "الوصف",
+    "versions": "الإصدارات",
+    "chunks": "مقاطع",
+    "documentNotFound": "تعذر العثور على هذا المستند.",
     "title": "قاعدة المعرفة",
     "subtitle": "إدارة المستندات التي يستخدمها المساعد للإجابة على الأسئلة",
     "upload": "رفع مستند",
@@ -704,6 +834,11 @@
       "deleteFailed": "فشل حذف نوع الجلسة",
       "cancel": "إلغاء",
       "save": "حفظ التغييرات"
+    },
+    "tabs": {
+      "documents": "المستندات",
+      "scraper": "زاحف الموقع",
+      "sessionTypes": "أنواع الجلسات"
     }
   },
   "complaints": {
@@ -758,7 +893,25 @@
       "financing": "التمويل والأقساط",
       "digital": "التطبيق والخدمات الرقمية",
       "other": "أخرى"
-    }
+    },
+    "searchPlaceholder": "ابحث بالرقم المرجعي أو العميل أو النص",
+    "searchLabel": "البحث في الشكاوى",
+    "filterChannel": "القناة",
+    "filterAllChannels": "كل القنوات",
+    "sortLabel": "ترتيب الشكاوى",
+    "sort": {
+      "severity": "مرتّبة حسب الخطورة",
+      "newest": "مرتّبة حسب الأحدث"
+    },
+    "pagination": {
+      "label": "صفحات الشكاوى",
+      "range": "عرض {{first}}–{{last}}",
+      "rangeOfTotal": "عرض {{first}}–{{last}} من {{total}}",
+      "previous": "السابق",
+      "next": "التالي"
+    },
+    "actions": "إجراءات",
+    "resolve": "حل"
   },
   "scraper": {
     "title": "جامع بيانات الموقع",
@@ -822,16 +975,21 @@
       "sessions": "الجلسات",
       "messages": "الرسائل",
       "calls": "المكالمات",
-      "satisfaction": "الرضا"
+      "satisfaction": "الرضا",
+      "date": "التاريخ"
     },
     "total": "الإجمالي",
     "empty": "لا توجد بيانات متاحة",
     "emptyDescription": "لا توجد بيانات للنطاق المحدد بعد.",
     "loadErrorTitle": "تعذّر تحميل التحليلات",
-    "loadErrorDescription": "تعذّر تحميل هذه العرض المرئي. يرجى المحاولة مرة أخرى."
+    "loadErrorDescription": "تعذّر تحميل هذه العرض المرئي. يرجى المحاولة مرة أخرى.",
+    "exportSuccess": "تم تصدير بيانات {{count}} يوم.",
+    "exportSuccess_other": "تم تصدير بيانات {{count}} أيام."
   },
   "appShell": {
     "header": {
+      "commandEmpty": "لا توجد وجهة مطابقة.",
+      "commandHint": "ابحث أو انتقل إلى صفحة",
       "searchPlaceholder": "ابحث في المحادثات والموظفين...",
       "activeSessions": "جلسات الذكاء الاصطناعي النشطة",
       "notifications": "الإشعارات",
@@ -869,9 +1027,16 @@
       "collapse": "طي",
       "collapseSidebar": "طي الشريط الجانبي",
       "expandSidebar": "توسيع الشريط الجانبي",
-      "userFallback": "مستخدم"
+      "userFallback": "مستخدم",
+      "brandName": "بنك فلسطين الإسلامي",
+      "brandEyebrow": "مركز العمليات"
     },
     "nav": {
+      "groups": {
+        "operations": "العمليات",
+        "insight": "الرؤى",
+        "manage": "الإدارة"
+      },
       "dashboard": "لوحة التحكم",
       "sessions": "جلسات الذكاء الاصطناعي النشطة",
       "queue": "قائمة انتظار التحويل",

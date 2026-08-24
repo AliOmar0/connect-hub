@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -9,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query";
 const EscalationListener = () => {
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!session) return;
@@ -33,13 +35,15 @@ const EscalationListener = () => {
               queryKey: ["header-notifications"],
             });
 
-            toast.error(`⚠️ ${newNotif.title || "New Escalation"}`, {
+            // No decorative emoji in notification copy (Requirement 2.4);
+            // the toast already carries an error icon and colour.
+            toast.error(newNotif.title || "New Escalation", {
               description:
                 newNotif.message || "A customer requires human assistance.",
               action: newNotif.action_url
                 ? {
                     label: "View",
-                    onClick: () => (window.location.href = newNotif.action_url),
+                    onClick: () => navigate(newNotif.action_url),
                   }
                 : undefined,
               duration: 8000,
@@ -52,7 +56,7 @@ const EscalationListener = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [session, queryClient]);
+  }, [session, queryClient, navigate]);
 
   return null;
 };

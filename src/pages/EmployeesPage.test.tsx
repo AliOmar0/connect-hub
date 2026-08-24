@@ -125,7 +125,7 @@ describe("EmployeesPage", () => {
     expect(screen.getByText("Employee Management")).toBeInTheDocument();
   });
 
-  it("shows create user button for managers", () => {
+  it("offers create-user in the overflow menu for managers", async () => {
     const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
     mockedUseAuth.mockReturnValue({
       userRole: "manager",
@@ -146,10 +146,16 @@ describe("EmployeesPage", () => {
 
     render(<EmployeesPage />, { queryClient });
 
-    expect(screen.getByText("Create User")).toBeInTheDocument();
+    // Only one primary action sits in the header; creating a login account is
+    // a rarer job and lives behind the overflow.
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: /More employee actions/i }),
+      { key: "Enter" },
+    );
+    expect(await screen.findByText("Create User")).toBeInTheDocument();
   });
 
-  it("shows create user button for admins", () => {
+  it("offers create-user in the overflow menu for admins", async () => {
     const mockedUseAuth = useAuth as unknown as ReturnType<typeof vi.fn>;
     mockedUseAuth.mockReturnValue({
       userRole: "admin",
@@ -170,7 +176,13 @@ describe("EmployeesPage", () => {
 
     render(<EmployeesPage />, { queryClient });
 
-    expect(screen.getByText("Create User")).toBeInTheDocument();
+    // Only one primary action sits in the header; creating a login account is
+    // a rarer job and lives behind the overflow.
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: /More employee actions/i }),
+      { key: "Enter" },
+    );
+    expect(await screen.findByText("Create User")).toBeInTheDocument();
   });
 
   it("does not show create user button for agents", () => {
@@ -194,6 +206,9 @@ describe("EmployeesPage", () => {
 
     render(<EmployeesPage />, { queryClient });
 
+    expect(
+      screen.queryByRole("button", { name: /More employee actions/i }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Create User")).not.toBeInTheDocument();
   });
 
@@ -395,7 +410,11 @@ describe("EmployeesPage - accessibility and management flows", () => {
 
     render(<EmployeesPage />, { queryClient: createTestQueryClient() });
 
-    fireEvent.click(screen.getByText("Create User"));
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: /More employee actions/i }),
+      { key: "Enter" },
+    );
+    fireEvent.click(await screen.findByText("Create User"));
 
     const dialog = await screen.findByRole("dialog");
     // The role field is labelled with readable text ("Role"), not a color cue.

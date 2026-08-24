@@ -24,15 +24,32 @@ import {
   X,
   Loader2,
   RefreshCw,
+  AlertTriangle,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 type ApiConfigRow = Tables<"api_configurations">;
 
+/**
+ * What this viewer can currently know and do about the channel. The card used
+ * to show one blank "not configured" body for three different situations.
+ *
+ * - `editable`    — configuration was read successfully and may be changed.
+ * - `restricted`  — read successfully, but this role may not change it.
+ * - `unverified`  — the configuration service did not answer, so nothing is
+ *                   known: absent credentials and unreachable service look
+ *                   identical from here, and only this state says so.
+ */
+export type ApiKeyCardState = "editable" | "restricted" | "unverified";
+
 interface ApiKeyCardProps {
   channel: ChannelType;
   config: ApiConfigRow | null;
+  state?: ApiKeyCardState;
+  /** Re-attempt the configuration read. Offered in the `unverified` state. */
+  onRetry?: () => void;
   onSave: (data: Record<string, unknown>) => Promise<void>;
   onTest?: () => Promise<boolean>;
 }
@@ -170,11 +187,15 @@ const channelInfo: Record<
 export default function ApiKeyCard({
   channel,
   config,
+  state = "editable",
+  onRetry,
   onSave,
   onTest,
 }: ApiKeyCardProps) {
   const info = channelInfo[channel];
   const Icon = info.icon;
+  const isUnverified = state === "unverified";
+  const isRestricted = state === "restricted";
 
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -255,12 +276,30 @@ export default function ApiKeyCard({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {config?.is_active ? (
+            {/* Four distinct badges, one per situation. "Not configured" used
+                to stand in for all of them. */}
+            {isUnverified ? (
               <Badge
                 variant="outline"
-                className="bg-green-500/10 text-green-600 border-green-500/20"
+                className="border-status-warning/30 bg-status-warning/10 text-status-warning-foreground"
               >
-                <Check className="h-3 w-3 mr-1" />
+                <AlertTriangle className="h-3 w-3 me-1" aria-hidden="true" />
+                Cannot verify
+              </Badge>
+            ) : isRestricted ? (
+              <Badge
+                variant="outline"
+                className="border-border bg-muted text-muted-foreground"
+              >
+                <Lock className="h-3 w-3 me-1" aria-hidden="true" />
+                Not permitted
+              </Badge>
+            ) : config?.is_active ? (
+              <Badge
+                variant="outline"
+                className="border-status-success/30 bg-status-success/10 text-status-success"
+              >
+                <Check className="h-3 w-3 me-1" aria-hidden="true" />
                 Connected
               </Badge>
             ) : (
@@ -268,7 +307,7 @@ export default function ApiKeyCard({
                 variant="outline"
                 className="bg-muted text-muted-foreground"
               >
-                <X className="h-3 w-3 mr-1" />
+                <X className="h-3 w-3 me-1" aria-hidden="true" />
                 Not configured
               </Badge>
             )}
@@ -286,7 +325,56 @@ export default function ApiKeyCard({
       </CardHeader>
 
       <CardContent>
-        {isEditing ? (
+        {isUnverified ? (
+          // Says plainly that this is a connectivity problem, not a missing
+          // configuration -- the distinction the old blank card erased.
+          <div className="space-y-3" role="status">
+            <p className="text-sm text-muted-foreground">
+              The configuration service did not respond, so the saved
+              credentials could not be checked. This is a connectivity problem,
+              not a missing configuration — nothing has been changed.
+            </p>
+            {onRetry && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="min-h-[44px]"
+                onClick={onRetry}
+              >
+                <RefreshCw className="h-4 w-4 me-2" aria-hidden="true" />
+                Retry
+              </Button>
+            )}
+          </div>
+        ) : isRestricted ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Your role can view this integration but cannot change it. Ask an
+              administrator to update the credentials.
+            </p>
+            {config && (
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                {config.phone_number_id && (
+                  <div>
+                    <p className="text-muted-foreground">Phone/Sender ID</p>
+                    <p className="font-medium">{config.phone_number_id}</p>
+                  </div>
+                )}
+                {config.last_verified_at && (
+                  <div>
+                    <p className="text-muted-foreground">Last Verified</p>
+                    <p className="font-medium">
+                      {format(
+                        new Date(config.last_verified_at),
+                        "MMM d, yyyy HH:mm",
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : isEditing ? (
           <div className="space-y-4">
             {info.fields.map((field) => (
               <div key={field.key} className="space-y-2">

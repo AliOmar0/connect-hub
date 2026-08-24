@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   Message,
   Session,
@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import {
   Select,
   SelectContent,
@@ -23,14 +23,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Send,
   Paperclip,
   Phone,
-  Video,
-  MoreVertical,
   CheckCheck,
   Check,
   CheckCircle,
+  CircleDot,
+  Hourglass,
+  AlertTriangle,
+  TimerOff,
+  XCircle,
   MessageCircle,
   MessageSquare,
   Mail,
@@ -38,9 +47,14 @@ import {
   User,
   Headset,
   Bot,
+  UserPlus,
+  MoreVertical,
+  Clock,
+  type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, isToday, isYesterday } from "date-fns";
+import { ar as arLocale } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
 import { BidiText } from "@/components/ui/bidi-text";
 import { ErrorState } from "@/components/ui/error-state";
@@ -49,6 +63,26 @@ import ChatShortcuts from "./ChatShortcuts";
 import { ChatVoicePlayer } from "./ChatVoicePlayer";
 import CallRecordingPlayer from "./CallRecordingPlayer";
 import LiveVoiceTranscript from "@/components/sessions/LiveVoiceTranscript";
+
+// Same status vocabulary as SessionList/SessionsTable: one tone plus one
+// shape per status, so state is never carried by colour alone.
+const statusTones: Record<string, StatusTone> = {
+  active: "success",
+  waiting: "warning",
+  completed: "info",
+  escalated: "error",
+  auto_closed: "neutral",
+  missed: "neutral",
+};
+
+const statusIcons: Record<string, LucideIcon> = {
+  active: CircleDot,
+  waiting: Hourglass,
+  completed: CheckCircle,
+  escalated: AlertTriangle,
+  auto_closed: TimerOff,
+  missed: XCircle,
+};
 
 // A voice call only has a recording once it is over, and only has a live
 // transcript while it is not. These are the statuses that mean "over".
@@ -94,7 +128,22 @@ interface ChatViewProps {
   error?: boolean;
   /** Recovery action for a failed transcript load (Requirement 14.5). */
   onRetryMessages?: () => void;
+  /** Opens the assign-agent dialog for this session. Omitted when the
+   *  current user lacks permission to assign. */
+  onAssignAgent?: () => void;
+  /** Marks the session escalated. Only offered while it is still open. */
+  onEscalate?: () => void;
+  /** Navigates to the session's activity timeline. */
+  onViewActivity?: () => void;
 }
+
+// Statuses from which a session can still be escalated -- once it has ended
+// (completed/auto-closed/missed) or is already escalated, the action no
+// longer applies.
+const ESCALATABLE_STATUSES: ReadonlySet<string> = new Set([
+  "active",
+  "waiting",
+]);
 
 const channelLabelKeys: Record<ChannelType, string> = {
   whatsapp: "sessions.channels.whatsapp",
@@ -123,11 +172,14 @@ export default function ChatView({
   loading,
   error,
   onRetryMessages,
+  onAssignAgent,
+  onEscalate,
+  onViewActivity,
 }: ChatViewProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [newMessage, setNewMessage] = useState("");
   const [showShortcutMenu, setShowShortcutMenu] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const { user } = useAuth();
 
   // ---- Customer Typing Indicator ----
@@ -188,11 +240,11 @@ export default function ChatView({
   });
 
   useEffect(() => {
-    // Scroll to bottom when messages change
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    // Jump to the latest message whenever the transcript changes -- including
+    // right after picking a different session, so opening a conversation
+    // lands on its messages instead of wherever the previous scroll sat.
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [session?.id, messages]);
 
   const handleSend = () => {
     if (!newMessage.trim()) return;
@@ -257,6 +309,63 @@ export default function ChatView({
       s.content.toLowerCase().includes(shortcutQuery),
   );
 
+  // Turns the flat transcript into day separators plus a `showAuthor` flag
+  // per message, so consecutive messages from the same author (a common
+  // back-and-forth burst) read as one visual group instead of repeating the
+  // same avatar/label over and over -- the thing that made a busy transcript
+  // hard to scan at a glance.
+  type TranscriptItem =
+    | { kind: "separator"; key: string; label: string }
+    | {
+        kind: "message";
+        message: Message;
+        author: MessageAuthor;
+        showAuthor: boolean;
+      };
+
+  const transcript = useMemo<TranscriptItem[]>(() => {
+    const items: TranscriptItem[] = [];
+    let lastDayKey: string | null = null;
+    let lastAuthor: MessageAuthor | null = null;
+
+    for (const message of messages) {
+      const sentAt = new Date(message.sent_at);
+      const dayKey = format(sentAt, "yyyy-MM-dd");
+      const author: MessageAuthor =
+        message.direction === "outbound"
+          ? session?.employee_id
+            ? "agent"
+            : "bot"
+          : "customer";
+
+      if (dayKey !== lastDayKey) {
+        items.push({
+          kind: "separator",
+          key: dayKey,
+          label: isToday(sentAt)
+            ? t("notifications.groups.today")
+            : isYesterday(sentAt)
+              ? t("notifications.groups.yesterday")
+              : format(sentAt, "d MMMM yyyy", {
+                  locale: i18n.language.startsWith("ar") ? arLocale : undefined,
+                }),
+        });
+        lastDayKey = dayKey;
+        lastAuthor = null;
+      }
+
+      items.push({
+        kind: "message",
+        message,
+        author,
+        showAuthor: author !== lastAuthor,
+      });
+      lastAuthor = author;
+    }
+
+    return items;
+  }, [messages, session?.employee_id, t, i18n.language]);
+
   if (!session) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center bg-muted/10 text-muted-foreground p-8 text-center">
@@ -312,54 +421,9 @@ export default function ChatView({
           </div>
         </div>
 
-        {/* Actionable Metrics */}
-        {/* <div className="hidden lg:flex items-center gap-6 border-x border-border px-6 mx-6 h-10">
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
-              Wait Time
-            </span>
-            <div className="flex items-center gap-1.5">
-              <Clock className="h-3 w-3 text-yellow-500" />
-              <span className="text-sm font-medium">
-                {session.wait_time_seconds
-                  ? `${session.wait_time_seconds}s`
-                  : "-"}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
-              Duration
-            </span>
-            <div className="flex items-center gap-1.5">
-              <Hourglass className="h-3 w-3 text-blue-500" />
-              <span className="text-sm font-medium">
-                {formatSessionDuration(session.duration_seconds)}
-              </span>
-            </div>
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">
-              Satisfaction
-            </span>
-            <div className="flex items-center gap-1.5">
-              {session.satisfaction_score ? (
-                <>
-                  <Star className="h-3 w-3 text-orange-500 fill-orange-500" />
-                  <span className="text-sm font-medium">
-                    {session.satisfaction_score}/5
-                  </span>
-                </>
-              ) : (
-                <span className="text-sm text-muted-foreground">-</span>
-              )}
-            </div>
-          </div>
-        </div> */}
-
         <div className="flex items-center gap-2">
           {sessionTypes && onUpdateType && (
-            <div className="flex items-center gap-1.5 mr-2">
+            <div className="flex items-center gap-1.5 me-2">
               <Tag className="h-3.5 w-3.5 text-muted-foreground" />
               <Select
                 value={session.main_type_id || "none"}
@@ -398,24 +462,57 @@ export default function ChatView({
               onClick={() => onUpdateStatus("completed")}
               className="bg-status-info/10 text-status-info hover:bg-status-info/20 border-status-info/20"
             >
-              <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+              <CheckCircle className="h-3.5 w-3.5 me-1.5" />
               {t("sessions.detail.completeSession")}
             </Button>
           )}
-          <Badge
-            variant={session.status === "active" ? "default" : "secondary"}
-          >
-            {t(`sessions.status.${session.status}`)}
-          </Badge>
-          <Button variant="ghost" size="icon">
-            <Phone className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon">
-            <Video className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon">
-            <MoreVertical className="h-4 w-4" />
-          </Button>
+          {onAssignAgent && (
+            <Button variant="outline" size="sm" onClick={onAssignAgent}>
+              <UserPlus className="h-3.5 w-3.5 me-1.5" aria-hidden="true" />
+              {t("sessions.detail.assign")}
+            </Button>
+          )}
+          {onEscalate && ESCALATABLE_STATUSES.has(session.status) && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onEscalate}
+              className="bg-status-error/10 text-status-error hover:bg-status-error/20 border-status-error/20"
+            >
+              <AlertTriangle
+                className="h-3.5 w-3.5 me-1.5"
+                aria-hidden="true"
+              />
+              {t("sessions.detail.escalate")}
+            </Button>
+          )}
+          <StatusBadge
+            tone={statusTones[session.status] ?? "neutral"}
+            icon={statusIcons[session.status]}
+            label={t(`sessions.status.${session.status}`, {
+              defaultValue: session.status,
+            })}
+          />
+          {onViewActivity && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  aria-label={t("sessions.detail.moreOptions")}
+                >
+                  <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onViewActivity}>
+                  <Clock className="h-4 w-4 me-2" aria-hidden="true" />
+                  {t("sessions.activity.viewLink")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
@@ -436,10 +533,7 @@ export default function ChatView({
         )}
 
       {/* Messages Area */}
-      <ScrollArea
-        className="flex-1 p-6 min-h-0 custom-scrollbar"
-        ref={scrollRef}
-      >
+      <ScrollArea className="flex-1 p-6 min-h-0 custom-scrollbar">
         {loading ? (
           <div className="space-y-4">
             {[...Array(5)].map((_, i) => (
@@ -481,17 +575,27 @@ export default function ChatView({
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {messages.map((message) => {
+          <div className="space-y-1">
+            {transcript.map((item) => {
+              if (item.kind === "separator") {
+                return (
+                  <div
+                    key={item.key}
+                    role="separator"
+                    className="flex items-center justify-center py-3 first:pt-0"
+                  >
+                    <span className="rounded-full bg-muted px-3 py-1 text-caption font-medium text-muted-foreground">
+                      {item.label}
+                    </span>
+                  </div>
+                );
+              }
+
+              const { message, author, showAuthor } = item;
               const isOutbound = message.direction === "outbound";
               // Authorship non-color cue (Requirement 14.7): inbound is the
               // customer; an outbound message is attributed to the assigned
               // agent when one is present, otherwise to the automated bot.
-              const author: MessageAuthor = isOutbound
-                ? session.employee_id
-                  ? "agent"
-                  : "bot"
-                : "customer";
               const cue = resolveStatusCue({
                 kind: "authorship",
                 value: author,
@@ -504,16 +608,18 @@ export default function ChatView({
                   className={cn(
                     "flex flex-col gap-1",
                     isOutbound ? "items-end" : "items-start",
+                    // Grouped messages from the same author sit close
+                    // together; a new author (or the first message of the
+                    // day) gets breathing room above it.
+                    showAuthor ? "mt-3 first:mt-0" : "mt-0.5",
                   )}
                 >
-                  <span
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] font-medium text-muted-foreground",
-                    )}
-                  >
-                    <AuthorIcon className="h-3 w-3" aria-hidden="true" />
-                    {t(cue.label)}
-                  </span>
+                  {showAuthor && (
+                    <span className="flex items-center gap-1 text-caption font-medium text-muted-foreground">
+                      <AuthorIcon className="h-3 w-3" aria-hidden="true" />
+                      {t(cue.label)}
+                    </span>
+                  )}
                   <div
                     className={cn(
                       "max-w-[70%] rounded-2xl px-4 py-2.5",
@@ -557,7 +663,7 @@ export default function ChatView({
                           : "text-muted-foreground",
                       )}
                     >
-                      <span className="text-[10px]">
+                      <span className="text-caption">
                         {format(new Date(message.sent_at), "HH:mm")}
                       </span>
                       {isOutbound &&
@@ -573,6 +679,7 @@ export default function ChatView({
                 </div>
               );
             })}
+            <div ref={bottomRef} />
           </div>
         )}
       </ScrollArea>
@@ -595,7 +702,7 @@ export default function ChatView({
                 style={{ animationDelay: "300ms" }}
               />
             </div>
-            <span className="text-[11px] font-semibold text-primary/80 uppercase tracking-tighter">
+            <span className="text-overline font-semibold text-primary/80 uppercase tracking-tighter">
               {bufferedCount > 1
                 ? t("sessions.detail.customerTypingCount", {
                     count: bufferedCount,
@@ -611,16 +718,16 @@ export default function ChatView({
         {showShortcutMenu &&
           filteredShortcuts &&
           filteredShortcuts.length > 0 && (
-            <div className="absolute bottom-full left-4 mb-2 w-64 max-h-48 bg-popover border border-border rounded-lg shadow-xl overflow-y-auto z-50">
+            <div className="absolute bottom-full start-4 mb-2 w-64 max-h-48 bg-popover border border-border rounded-lg shadow-xl overflow-y-auto z-50">
               <div className="p-2 border-b border-border bg-muted/50">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Quick Shortcuts
+                <span className="text-overline font-bold uppercase tracking-wider text-muted-foreground">
+                  {t("sessions.detail.quickShortcuts")}
                 </span>
               </div>
               {filteredShortcuts.map((shortcut) => (
                 <button
                   key={shortcut.id}
-                  className="w-full text-left px-3 py-2 hover:bg-accent hover:text-accent-foreground transition-colors flex flex-col gap-0.5 border-b border-border/50 last:border-0"
+                  className="w-full text-start px-3 py-2 hover:bg-accent hover:text-accent-foreground transition-colors flex flex-col gap-0.5 border-b border-border/50 last:border-0"
                   onClick={() => selectShortcut(shortcut.content)}
                 >
                   <span className="text-sm font-medium">{shortcut.title}</span>
@@ -643,7 +750,7 @@ export default function ChatView({
             <Paperclip className="h-5 w-5" />
           </Button>
           <Input
-            placeholder="اكتب رسالة هنا... (استخدم \ للاختصارات)"
+            placeholder={t("sessions.detail.messagePlaceholder")}
             value={newMessage}
             onChange={handleInputChange}
             onKeyPress={handleKeyPress}

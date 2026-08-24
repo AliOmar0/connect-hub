@@ -276,8 +276,15 @@ describe("SessionsPage", () => {
       mockBreakpoint.mockReturnValue(1440);
       renderPage({ sessions: [sessionWithData] });
 
-      expect(screen.getByText("Sessions Overview")).toBeInTheDocument();
-      expect(screen.getByText("Conversation Details")).toBeInTheDocument();
+      // Both panes of the console are present and separately labelled. They
+      // are regions rather than headed panels: the rail's own header already
+      // names what it holds.
+      expect(
+        screen.getByRole("region", { name: "Sessions Overview" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "Conversation Details" }),
+      ).toBeInTheDocument();
     });
 
     it("shows only the list view below 768px until a session is opened", () => {
@@ -285,10 +292,12 @@ describe("SessionsPage", () => {
       renderPage({ sessions: [sessionWithData] });
 
       // The list is the active navigable view...
-      expect(screen.getByText("Sessions Overview")).toBeInTheDocument();
+      expect(
+        screen.getByRole("region", { name: "Sessions Overview" }),
+      ).toBeInTheDocument();
       // ...and the detail view is not rendered alongside it.
       expect(
-        screen.queryByText("Conversation Details"),
+        screen.queryByRole("region", { name: "Conversation Details" }),
       ).not.toBeInTheDocument();
     });
   });
