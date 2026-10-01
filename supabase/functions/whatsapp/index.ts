@@ -7,6 +7,91 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+const ALLOWED_SEND_ROLES = ["admin", "supervisor", "agent"];
+
+async function requireAuthorizedSender(
+  req: Request,
+  supabaseUrl: string,
+  supabaseAdmin: ReturnType<typeof createClient>,
+): Promise<{ userId: string } | { error: Response }> {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader || !authHeader.toLowerCase().startsWith("bearer ")) {
+    return {
+      error: new Response(
+        JSON.stringify({
+          error: "Missing bearer token for send_message action",
+        }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      ),
+    };
+  }
+
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  if (!anonKey) {
+    console.error(
+      "SUPABASE_ANON_KEY is missing; cannot verify caller identity",
+    );
+    return {
+      error: new Response(
+        JSON.stringify({ error: "Server auth configuration is incomplete" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      ),
+    };
+  }
+
+  const authClient = createClient(supabaseUrl, anonKey, {
+    global: {
+      headers: { Authorization: authHeader },
+    },
+  });
+
+  const {
+    data: { user },
+    error: userError,
+  } = await authClient.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      error: new Response(
+        JSON.stringify({ error: "Invalid or expired token" }),
+        {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      ),
+    };
+  }
+
+  const { data: role, error: roleError } = await supabaseAdmin
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", user.id)
+    .in("role", ALLOWED_SEND_ROLES)
+    .maybeSingle();
+
+  if (roleError || !role) {
+    return {
+      error: new Response(
+        JSON.stringify({
+          error: "Insufficient permissions for send_message action",
+        }),
+        {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      ),
+    };
+  }
+
+  return { userId: user.id };
+}
+
 serve(async (req) => {
   // Handle CORS
   if (req.method === "OPTIONS") {
@@ -22,9 +107,19 @@ serve(async (req) => {
       const token = url.searchParams.get("hub.verify_token");
       const challenge = url.searchParams.get("hub.challenge");
 
-      const VERIFY_TOKEN = Deno.env.get("WHATSAPP_VERIFY_TOKEN") || "whatsapp";
+      const verifyToken = Deno.env.get("WHATSAPP_VERIFY_TOKEN");
+      if (!verifyToken) {
+        console.error("WHATSAPP_VERIFY_TOKEN is not configured");
+        return new Response(
+          JSON.stringify({ error: "Webhook verify token is not configured" }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          },
+        );
+      }
 
-      if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      if (mode === "subscribe" && token === verifyToken) {
         console.log("Webhook verified successfully!");
         return new Response(challenge, { status: 200 });
       } else {
@@ -55,6 +150,14 @@ serve(async (req) => {
 
       // --- OUTBOUND MESSAGE HANDLING ---
       if (payload.action === "send_message") {
+        const authz = await requireAuthorizedSender(req, supabaseUrl, supabase);
+        if ("error" in authz) {
+          return authz.error;
+        }
+        console.log(
+          `Authorized send_message requested by user ${authz.userId}`,
+        );
+
         const { sessionId, content, dbMessageId } = payload;
         if (!sessionId || !content)
           throw new Error("sessionId and content required");
